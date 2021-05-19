@@ -1,6 +1,8 @@
+from __future__ import annotations
 """
 Python prototype/reference implementation
 """
+import os.path
 import sys
 
 from dataclasses import dataclass
@@ -9,10 +11,14 @@ from enum import Enum, auto
 # section: constants
 
 EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+
 PAGE_SIZE = 4096
 TABLE_MAX_PAGES = 100
 
-NEXT_ROW_INDEX = 1
+DB_FILE = 'db.file'
+
+NEXT_ROW_INDEX = 1  # for testing
 
 # constants for serialized data
 ID_SIZE = 6 # length in bytes
@@ -21,6 +27,7 @@ ROW_SIZE = ID_SIZE + BODY_SIZE
 ID_OFFSET = 0
 BODY_OFFSET = ID_OFFSET + ID_SIZE
 ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
+
 # section: enums
 
 class MetaCommandResult(Enum):
@@ -58,16 +65,6 @@ class Row:
     body: str
 
 
-def next_row():
-    """
-    helper method; should be nuked eventually
-    """
-    global NEXT_ROW_INDEX
-    row = Row(NEXT_ROW_INDEX, "hello database")
-    NEXT_ROW_INDEX += 1
-    return row
-
-
 @dataclass
 class Statement:
     statement_type: StatementType
@@ -75,21 +72,232 @@ class Statement:
 
 # section: helpers
 
-# section : table
+def next_row():
+    """
+    helper method - creates a simple `Row`
+    should be nuked when I can handle generic row definitions
+    """
+    global NEXT_ROW_INDEX
+    row = Row(NEXT_ROW_INDEX, "hello database")
+    NEXT_ROW_INDEX += 1
+    return row
+
+
+# section : helper objects/functions, e.g. table, pager
+
+def db_open(filename: str) -> Table:
+    """
+    opens connection to db, i.e. initializes
+    table and pager.
+    """
+    pager = Pager.pager_open(filename)
+    table = Table(pager)
+    # initialize table row count to file row count
+    table.num_rows = pager.rows_in_file
+    return table
+
+
+def db_close(table: Table):
+    """
+    this calls the pager `close`
+    """
+    table.pager.close(table.num_rows)
+
+
+class Pager:
+    """
+    responsible for accessing page cache and file
+    """
+    def __init__(self, filename):
+        """
+        filename is handled differently from tutorial
+        since it passes a fileptr; here I'll manage the file
+        with the `Pager` class
+        """
+        self.pages = [None for _ in range(TABLE_MAX_PAGES)]
+        self.filename = filename
+        self.fileptr = None
+        self.file_length = 0
+        # needed so table can be initialized correctly
+        self.rows_in_file = 0
+        self.open_file()
+
+    def open_file(self):
+        """
+        open database file
+        """
+        # open binary file such that it is readable and not truncated
+        # a+b (and more generally any "a") mode can only write to end
+        # of file; seeks only applies to read ops
+        # r+b allows read and write, without truncation, but errors if
+        # the file does not exist
+        # NB: this sets the file ptr location to the end of the file
+        try:
+            self.fileptr = open(self.filename, "r+b")
+        except FileNotFoundError:
+            self.fileptr = open(self.filename, "w+b")
+        self.file_length = os.path.getsize(self.filename)
+        self.rows_in_file = self.file_length // ROW_SIZE
+
+        # warm up page cache, i.e. load data into memory
+        # to load data, seek to beginning of file
+        self.fileptr.seek(0)
+        full_page_count = self.rows_in_file // ROWS_PER_PAGE
+        for page_num in range(full_page_count):
+            self.get_page(page_num)
+        # if there is a partial page at the end, load it
+        if self.rows_in_file % ROWS_PER_PAGE != 0:
+            self.get_page(full_page_count)
+
+    @classmethod
+    def pager_open(cls, filename):
+        """
+        this does nothing - keeping it so code is aligned.
+        C works with fd (ints), so you can
+        open files and pass around an int. For python, I need to
+        pass the file ref around.
+        """
+        return cls(filename)
+
+    def get_page(self, page_num: int) -> bytearray:
+        """
+        get `page` given `page_num`
+        """
+        if page_num > TABLE_MAX_PAGES:
+            print(f"Tried to fetch page out of bounds (max pages = {TABLE_MAX_PAGES})")
+            sys.exit(EXIT_FAILURE)
+
+        if self.pages[page_num] is None:
+            # cache miss. Allocate memory and load from file.
+            page = bytearray(PAGE_SIZE)
+
+            # determine number of whole pages in file
+            num_pages = self.file_length // PAGE_SIZE
+            if self.file_length % PAGE_SIZE != 0:
+                num_pages += 1
+
+            if page_num <= num_pages:
+                # this page exists on file, load from file
+                # into `page`
+                # this looks abnormal - because read will presumably
+                # return a binary buffer; but this is c does, and
+                # leaving it for now
+                read_page = self.fileptr.read(PAGE_SIZE)
+                page[:PAGE_SIZE] = read_page
+
+            self.pages[page_num] = page
+
+        return self.pages[page_num]
+
+    def close(self, num_rows: int):
+        """
+        `num_rows` is the number of rows in table
+
+        this contains all the cleanup and saving logic.
+        The rust code will be closer to this than the C,
+        since the impl will contain interconnected methods
+        """
+        # this is 0-based
+        num_full_pages = num_rows // ROWS_PER_PAGE
+        for page_num in range(num_full_pages):
+            if self.pages[page_num] is None:
+                continue
+            self.flush_page(page_num, PAGE_SIZE)
+
+        # the tutorial flushes a partial page
+        # simplifying and flushing the full page
+        if num_rows % ROWS_PER_PAGE != 0:
+            self.flush_page(num_full_pages, PAGE_SIZE)
+
+    def flush_page(self, page_num: int, size: int):
+        """
+        flush/write page to file
+        page_num is the page to write
+        size is the number of bytes to write
+        """
+        if self.pages[page_num] is None:
+            print("Tried to flush null page")
+            sys.exit(EXIT_FAILURE)
+
+        byte_offset = page_num * PAGE_SIZE
+        self.fileptr.seek(byte_offset)
+        to_write = self.pages[page_num][:size]
+        self.fileptr.write(to_write)
+
 
 class Table:
-    def __init__(self, num_rows: int = 0):
-        self.num_rows = num_rows
-        self.pages = [None for _ in range(TABLE_MAX_PAGES)]
+    """
+    represents a table object
+    """
+    def __init__(self, pager: Pager):
+        self.pager = pager
+        self.num_rows = pager.rows_in_file
 
-# section: core logic
+
+def write_to_page(table: Table, row_num: int, serialized: bytes):
+    """
+    This handles the equivalent of getting page/row location of
+    `row_slot` and serialization logic of `serialize_row`
+    """
+    # determine which page
+    page_num = row_num // ROWS_PER_PAGE
+    page = table.pager.get_page(page_num)
+
+    row_offset = row_num % ROWS_PER_PAGE
+    byte_offset = row_offset * ROW_SIZE
+    page[byte_offset: byte_offset + ROW_SIZE] = serialized
+
+
+def serialize_row(row: Row) -> bytearray:
+    """
+    turn row (object) into bytes
+    Unlike in c, where the destination is passed via a pointer
+    there is no way to do this in python. Here I will only serialize
+    the row to a bytes object. The caller will handle insertion
+    """
+
+    serialized = bytearray(ROW_SIZE)
+    ser_id = row.identifier.to_bytes(ID_SIZE, sys.byteorder)
+    # strings needs to be encoded
+    ser_body = bytes(str(row.body), "utf-8")
+    if len(ser_body) > BODY_SIZE:
+        raise ValueError("row serialization failed; body too long")
+
+    serialized[ID_OFFSET: ID_OFFSET + ID_SIZE] = ser_id
+    serialized[BODY_OFFSET: BODY_OFFSET + len(ser_body)] = ser_body
+    return serialized
+
+
+def deserialize_row(table, row_num) -> Row:
+    """
+    deserialize row
+    the deser logic will
+    """
+    page_num = row_num // ROWS_PER_PAGE
+    page = table.pager.get_page(page_num)
+    row_offset = row_num % ROWS_PER_PAGE
+    byte_offset = row_offset * ROW_SIZE
+
+    # read bytes corresponding to columns
+    id_bstr = page[byte_offset + ID_OFFSET: byte_offset + ID_OFFSET + ID_SIZE]
+    body_bstr = page[byte_offset + BODY_OFFSET: byte_offset + BODY_OFFSET + BODY_SIZE]
+
+    # this will need to be revisited when handling other data types
+    id_val = int.from_bytes(id_bstr, sys.byteorder)
+    # not sure if stripping nulls is valid (for other datatypes)
+    body_val = body_bstr.rstrip(b'\x00')
+    body_val = body_val.decode('utf-8')
+    return Row(id_val, body_val)
+
+# section: core execution/user-interface logic
 
 def is_meta_command(command: str) -> bool:
     return command[0] == '.'
 
 
-def do_meta_command(command: str) -> MetaCommandResult:
+def do_meta_command(command: str, table: Table) -> MetaCommandResult:
     if command == ".quit":
+        db_close(table)
         sys.exit(EXIT_SUCCESS)
     return MetaCommandResult.UnrecognizedCommand
 
@@ -111,70 +319,19 @@ def prepare_statement(command: str, statement: Statement) -> PrepareResult:
     return PrepareResult.UnrecognizedStatement
 
 
-def write_to_page(table: Table, row_num: int, serialized: bytes):
-    """
-    This handles the equivalent of getting page/row location of
-    `row_slot` and serialization logic of `serialize_row`
-    """
-    # determine which page
-    page_num = row_num // ROWS_PER_PAGE
-    if table.pages[page_num] is None:
-        table.pages[page_num] = bytearray(PAGE_SIZE)
-
-    page = table.pages[page_num]
-    row_offset = row_num % ROWS_PER_PAGE
-    byte_offset = row_offset * ROW_SIZE
-    page[byte_offset: byte_offset + ROW_SIZE] = serialized
-
-
-def serialize_row(row: Row) -> bytearray:
-    """
-    turn row (object) into bytes
-    Unlike in c, where the destination is passed via a pointer
-    there is no way to do this in python. Here I will only serialize
-    the row to a bytes object. The caller will handle insertion
-    """
-
-    serialized = bytearray(ROW_SIZE)
-    # truncate the values so they fit into the allocated space per row
-    serialized[ID_OFFSET: ID_SIZE] = bytes(str(row.identifier)[:ID_SIZE], "utf-8")
-    serialized[BODY_OFFSET: BODY_SIZE] = bytes(str(row.body)[:BODY_SIZE], "utf-8")
-    return serialized
-
-
-def deserialize_row(table, row_num) -> Row:
-    """
-    deserialize row
-    the deser logic will
-    """
-    page_num = row_num // ROWS_PER_PAGE
-    page = table.pages[page_num]
-    row_offset = row_num % ROWS_PER_PAGE
-    byte_offset = row_offset * ROW_SIZE
-    id_bstr = page[byte_offset + ID_OFFSET: byte_offset + ID_OFFSET + ID_SIZE]
-    body_bstr = page[byte_offset + BODY_OFFSET: byte_offset + BODY_OFFSET + BODY_SIZE]
-
-    # this will need to be revisited when handling other
-    # not sure if stripping nulls is valid
-    # will depend on if
-    id_val = id_bstr.rstrip(b'\x00')  # remove trailing nulls
-    id_val = id_val.decode('utf-8')
-    id_val = int(id_val)
-    body_val = body_bstr.rstrip(b'\x00')
-    body_val = body_val.decode('utf-8')
-    return Row(id_val, body_val)
-
-
 def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     print("executing insert...")
     if table.num_rows >= TABLE_MAX_PAGES:
         return ExecuteResult.TableFull
 
     row_to_insert = statement.row_to_insert
+    if row_to_insert is None:
+        # TODO: nuke me
+        row_to_insert = next_row()
 
     # this logic is different from tutorial
     # since in c, I can pass a pointer to an arbitrary mem location, i.e. to the
-    # middle of a buffer, I can only pass refs to objects.
+    # middle of a buffer; in py I can only pass refs to objects.
 
     # serialized bytes
     serialized = serialize_row(row_to_insert)
@@ -202,41 +359,48 @@ def execute_statement(statement: Statement, table: Table):
             execute_insert(statement, table)
 
 
-def main():
+def input_handler(input_buffer: str, table: Table):
+    """
+    handle input buffer; could contain command or meta command
+    """
+    if is_meta_command(input_buffer):
+        match do_meta_command(input_buffer, table):
+            case MetaCommandResult.Success:
+                return
+            case MetaCommandResult.UnrecognizedCommand:
+                print("Unrecognized meta command")
+                return
 
-    table = Table()
+    statement = Statement(StatementType.Uninitialized, None)
+    match prepare_statement(input_buffer, statement):
+        case PrepareResult.Success:
+            # will execute below
+            pass
+        case PrepareResult.UnrecognizedStatement:
+            print(f"Unrecognized keyword at start of '{input_buffer}'")
+            return
+
+    # handle non-meta command
+    execute_statement(statement, table)
+    print(f"Executed command '{input_buffer}'")
+
+
+def main():
+    """
+    repl
+    """
+    table = db_open(DB_FILE)
     while True:
         input_buffer = input("db > ")
-        if is_meta_command(input_buffer):
-            match do_meta_command(input_buffer):
-                case MetaCommandResult.Success:
-                    continue
-                case MetaCommandResult.UnrecognizedCommand:
-                    print("Unrecognized meta command")
-                    continue
-
-        statement = Statement(StatementType.Uninitialized, next_row())
-        match prepare_statement(input_buffer, statement):
-            case PrepareResult.Success:
-                # will execute below
-                pass
-            case PrepareResult.UnrecognizedStatement:
-                print(f"Unrecognized keyword at start of '{input_buffer}'")
-                continue
-
-        # handle non-meta command
-        execute_statement(statement, table)
-        print(f"Executed command '{input_buffer}'")
+        input_handler(input_buffer, table)
 
 
 def test():
-    table = Table()
-    statement = Statement(StatementType.Insert, next_row())
-    execute_statement(statement, table)
-    statement = Statement(StatementType.Insert, next_row())
-    execute_statement(statement, table)
-    statement = Statement(StatementType.Select, None)
-    execute_statement(statement, table)
+    table = db_open(DB_FILE)
+    #input_handler('insert', table)
+    input_handler('select', table)
+    input_handler('.quit', table)
+
 
 if __name__ == '__main__':
     main()
