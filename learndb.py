@@ -106,7 +106,8 @@ def db_close(table: Table):
 
 class Pager:
     """
-    responsible for accessing page cache and file
+    manager of pages in memory (cache)
+    and on file
     """
     def __init__(self, filename):
         """
@@ -225,69 +226,126 @@ class Pager:
         self.fileptr.write(to_write)
 
 
+
+class Cursor:
+    """
+    Represents a cursor. A cursor understands
+    how to traverse the table and how to insert, and remove
+    rows from a table.
+    """
+    def __init__(self, table: Table, row_num: int):
+        self.table = table
+        # this corresponds to the current row being pointed to
+        # the
+        self.row_num = row_num
+        self.end_of_table = table.num_rows == 0
+
+    @classmethod
+    def table_start(cls, table: Table) -> Cursor:
+        """
+        :return: cursor pointing to beginning of table
+        """
+        return cls(table, 0)
+
+    @classmethod
+    def table_end(cls, table: Table) -> Cursor:
+        """
+        initialize cursor at end of table
+        :param table:
+        :return:
+        """
+        return cls(table, table.num_rows)
+
+    def get_row(self) -> Row:
+        """
+        return row pointed by cursor
+        :return:
+        """
+        return self.table.deserialize_row(self.row_num)
+
+    def insert_row(self, row: Row):
+        """
+        insert row to location pointed by cursor
+        :return:
+        """
+        # row_num = table.num_rows
+
+        self.table.serialize_row(row, self.row_num)
+        self.table.num_rows += 1
+
+    def advance(self):
+        """
+        advance the cursor
+        :return:
+        """
+        self.row_num += 1
+        if self.row_num == self.table.num_rows:
+            self.end_of_table = True
+
+
 class Table:
     """
-    represents a table object
+    Currently `Table` interface is around (de)ser given a row number.
+    Table interacts with pager. Ultimately, the table should
+    represent the logical-relation-entity, and access to the pager, i.e. the storage
+    layer should be done via an Engine, that acts as the storage layer access for
+    all tables.
     """
     def __init__(self, pager: Pager):
         self.pager = pager
         self.num_rows = pager.rows_in_file
 
+    def serialize_row(self, row: Row, row_num: int):
+        """
+        serialize a `row` and write it to local cache.
+        """
+        serialized = self.serialize(row)
 
-def write_to_page(table: Table, row_num: int, serialized: bytes):
-    """
-    This handles the equivalent of getting page/row location of
-    `row_slot` and serialization logic of `serialize_row`
-    """
-    # determine which page
-    page_num = row_num // ROWS_PER_PAGE
-    page = table.pager.get_page(page_num)
+        page_num = row_num // ROWS_PER_PAGE
+        page = self.pager.get_page(page_num)
 
-    row_offset = row_num % ROWS_PER_PAGE
-    byte_offset = row_offset * ROW_SIZE
-    page[byte_offset: byte_offset + ROW_SIZE] = serialized
+        row_offset = row_num % ROWS_PER_PAGE
+        byte_offset = row_offset * ROW_SIZE
+        page[byte_offset: byte_offset + ROW_SIZE] = serialized
 
+    @staticmethod
+    def serialize(row: Row) -> bytearray:
+        """
+        turn row (object) into bytes
+        """
 
-def serialize_row(row: Row) -> bytearray:
-    """
-    turn row (object) into bytes
-    Unlike in c, where the destination is passed via a pointer
-    there is no way to do this in python. Here I will only serialize
-    the row to a bytes object. The caller will handle insertion
-    """
+        serialized = bytearray(ROW_SIZE)
+        ser_id = row.identifier.to_bytes(ID_SIZE, sys.byteorder)
+        # strings needs to be encoded
+        ser_body = bytes(str(row.body), "utf-8")
+        if len(ser_body) > BODY_SIZE:
+            raise ValueError("row serialization failed; body too long")
 
-    serialized = bytearray(ROW_SIZE)
-    ser_id = row.identifier.to_bytes(ID_SIZE, sys.byteorder)
-    # strings needs to be encoded
-    ser_body = bytes(str(row.body), "utf-8")
-    if len(ser_body) > BODY_SIZE:
-        raise ValueError("row serialization failed; body too long")
+        serialized[ID_OFFSET: ID_OFFSET + ID_SIZE] = ser_id
+        serialized[BODY_OFFSET: BODY_OFFSET + len(ser_body)] = ser_body
+        return serialized
 
-    serialized[ID_OFFSET: ID_OFFSET + ID_SIZE] = ser_id
-    serialized[BODY_OFFSET: BODY_OFFSET + len(ser_body)] = ser_body
-    return serialized
+    def deserialize_row(self, row_num: int) -> Row:
+        """
+        deserialize row given a `row_num`
+        the deser logic interfaces with page
+        """
+        page_num = row_num // ROWS_PER_PAGE
+        page = self.pager.get_page(page_num)
+        row_offset = row_num % ROWS_PER_PAGE
+        byte_offset = row_offset * ROW_SIZE
 
+        # read bytes corresponding to columns
+        id_bstr = page[byte_offset + ID_OFFSET: byte_offset + ID_OFFSET + ID_SIZE]
+        body_bstr = page[byte_offset + BODY_OFFSET: byte_offset + BODY_OFFSET + BODY_SIZE]
 
-def deserialize_row(table, row_num) -> Row:
-    """
-    deserialize row
-    the deser logic will
-    """
-    page_num = row_num // ROWS_PER_PAGE
-    page = table.pager.get_page(page_num)
-    row_offset = row_num % ROWS_PER_PAGE
-    byte_offset = row_offset * ROW_SIZE
+        # this will need to be revisited when handling other data types
+        id_val = int.from_bytes(id_bstr, sys.byteorder)
+        # not sure if stripping nulls is valid (for other datatypes)
+        body_val = body_bstr.rstrip(b'\x00')
+        body_val = body_val.decode('utf-8')
+        return Row(id_val, body_val)
 
-    # read bytes corresponding to columns
-    id_bstr = page[byte_offset + ID_OFFSET: byte_offset + ID_OFFSET + ID_SIZE]
-    body_bstr = page[byte_offset + BODY_OFFSET: byte_offset + BODY_OFFSET + BODY_SIZE]
-
-    # this will need to be revisited when handling other data types
-    id_val = int.from_bytes(id_bstr, sys.byteorder)
-    # not sure if stripping nulls is valid (for other datatypes)
-    body_val = body_bstr.rstrip(b'\x00')
-    body_val = body_val.decode('utf-8')
-    return Row(id_val, body_val)
 
 # section: core execution/user-interface logic
 
@@ -324,28 +382,26 @@ def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     if table.num_rows >= TABLE_MAX_PAGES:
         return ExecuteResult.TableFull
 
+    cursor = Cursor.table_end(table)
+
     row_to_insert = statement.row_to_insert
     if row_to_insert is None:
         # TODO: nuke me
         row_to_insert = next_row()
 
-    # this logic is different from tutorial
-    # since in c, I can pass a pointer to an arbitrary mem location, i.e. to the
-    # middle of a buffer; in py I can only pass refs to objects.
+    cursor.insert_row(row_to_insert)
 
-    # serialized bytes
-    serialized = serialize_row(row_to_insert)
-    row_num = table.num_rows
-    table.num_rows += 1
-
-    write_to_page(table, row_num, serialized)
     return ExecuteResult.Success
 
 
 def execute_select(table: Table):
+    # get cursor to start of table
     print("executing select...")
-    for row_num in range(table.num_rows):
-        print(deserialize_row(table, row_num))
+
+    cursor = Cursor.table_start(table)
+    while cursor.end_of_table is False:
+        print(cursor.get_row())
+        cursor.advance()
 
 
 def execute_statement(statement: Statement, table: Table):
