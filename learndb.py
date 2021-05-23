@@ -5,6 +5,7 @@ Python prototype/reference implementation
 import os.path
 import sys
 
+from typing import Union
 from dataclasses import dataclass
 from enum import Enum, auto
 
@@ -20,13 +21,41 @@ DB_FILE = 'db.file'
 
 NEXT_ROW_INDEX = 1  # for testing
 
-# constants for serialized data
+# serialized data layout (row)
 ID_SIZE = 6 # length in bytes
-BODY_SIZE = 122
+BODY_SIZE = 58
 ROW_SIZE = ID_SIZE + BODY_SIZE
 ID_OFFSET = 0
 BODY_OFFSET = ID_OFFSET + ID_SIZE
 ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
+
+# serialized data layout (tree nodes)
+# common node header layout
+NODE_TYPE_SIZE = 8
+NODE_TYPE_OFFSET = 0
+IS_ROOT_SIZE = 8
+IS_ROOT_OFFSET = NODE_TYPE_SIZE
+# NOTE: in c these are constants are defined based on width of system register
+PARENT_POINTER_SIZE = 32
+PARENT_POINTER_OFFSET = NODE_TYPE_SIZE + IS_ROOT_SIZE
+COMMON_NODE_HEADER_SIZE = NODE_TYPE_SIZE + IS_ROOT_SIZE + PARENT_POINTER_SIZE
+
+# leaf node header layout
+LEAF_NODE_NUM_CELLS_SIZE = 32
+LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
+LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE
+
+# leaf node body layout
+LEAF_NODE_KEY_SIZE = 32
+LEAF_NODE_KEY_OFFSET = 0
+# NOTE: nodes should not cross the page boundary; thus ROW_SIZE is upper
+# bounded by remaining space in page
+LEAF_NODE_VALUE_SIZE = ROW_SIZE
+LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_OFFSET + LEAF_NODE_KEY_SIZE
+LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
+LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
+LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE
+
 
 # section: enums
 
@@ -49,6 +78,7 @@ class PrepareResult(Enum):
 class ExecuteResult(Enum):
     Success = auto()
     TableFull = auto()
+
 
 
 # section: classes/structs
@@ -92,8 +122,13 @@ def db_open(filename: str) -> Table:
     """
     pager = Pager.pager_open(filename)
     table = Table(pager)
-    # initialize table row count to file row count
-    table.num_rows = pager.rows_in_file
+    table.root_page_num = 0
+
+    if pager.num_pages == 0:
+        # new database file, initialize page 0 as leaf node
+        root_node = pager.get_page(0)
+        Tree.initialize_leaf_node(root_node)
+
     return table
 
 
@@ -101,7 +136,7 @@ def db_close(table: Table):
     """
     this calls the pager `close`
     """
-    table.pager.close(table.num_rows)
+    table.pager.close(table.pager.num_pages)
 
 
 class Pager:
@@ -119,15 +154,15 @@ class Pager:
         self.filename = filename
         self.fileptr = None
         self.file_length = 0
-        # needed so table can be initialized correctly
-        self.rows_in_file = 0
+        self.num_pages = 0
         self.open_file()
 
     def open_file(self):
         """
         open database file
         """
-        # open binary file such that it is readable and not truncated
+        # open binary file such that: it is readable, not truncated(random),
+        # create if not exists, writable(random)
         # a+b (and more generally any "a") mode can only write to end
         # of file; seeks only applies to read ops
         # r+b allows read and write, without truncation, but errors if
@@ -138,17 +173,19 @@ class Pager:
         except FileNotFoundError:
             self.fileptr = open(self.filename, "w+b")
         self.file_length = os.path.getsize(self.filename)
-        self.rows_in_file = self.file_length // ROW_SIZE
+
+        if self.file_length % PAGE_SIZE != 0:
+            # avoiding exceptions since I want this to be closer to Rust, i.e panic or enum
+            print("Db file is not a whole number of pages. Corrupt file.")
+            sys.exit(EXIT_FAILURE)
+
+        self.num_pages = self.file_length // PAGE_SIZE
 
         # warm up page cache, i.e. load data into memory
         # to load data, seek to beginning of file
         self.fileptr.seek(0)
-        full_page_count = self.rows_in_file // ROWS_PER_PAGE
-        for page_num in range(full_page_count):
+        for page_num in range(self.num_pages):
             self.get_page(page_num)
-        # if there is a partial page at the end, load it
-        if self.rows_in_file % ROWS_PER_PAGE != 0:
-            self.get_page(full_page_count)
 
     @classmethod
     def pager_open(cls, filename):
@@ -172,45 +209,40 @@ class Pager:
             # cache miss. Allocate memory and load from file.
             page = bytearray(PAGE_SIZE)
 
-            # determine number of whole pages in file
+            # determine number of pages in file; there should only be complete pages
             num_pages = self.file_length // PAGE_SIZE
-            if self.file_length % PAGE_SIZE != 0:
-                num_pages += 1
-
-            if page_num <= num_pages:
+            if page_num < num_pages:
                 # this page exists on file, load from file
                 # into `page`
-                # this looks abnormal - because read will presumably
-                # return a binary buffer; but this is c does, and
-                # leaving it for now
+                self.fileptr.seek(page_num * PAGE_SIZE)
                 read_page = self.fileptr.read(PAGE_SIZE)
+                assert len(read_page) == PAGE_SIZE, "corrupt file: read page returned byte array smaller than page"
                 page[:PAGE_SIZE] = read_page
+            else:
+                pass
 
             self.pages[page_num] = page
 
+            # NOTE: the tutorial has the cond: `page_num >= pager->num_pages`
+            # that seems wrong, since the page_num should only be incremented
+            # if it's gre
+            if page_num > self.num_pages:
+                self.page_num += 1
+
         return self.pages[page_num]
 
-    def close(self, num_rows: int):
+    def close(self, num_pages: int):
         """
-        `num_rows` is the number of rows in table
-
-        this contains all the cleanup and saving logic.
-        The rust code will be closer to this than the C,
-        since the impl will contain interconnected methods
+        close the connection i.e. flush pages to file
         """
         # this is 0-based
-        num_full_pages = num_rows // ROWS_PER_PAGE
-        for page_num in range(num_full_pages):
+        # NOTE: not sure about this +1;
+        for page_num in range(num_pages + 1):
             if self.pages[page_num] is None:
                 continue
-            self.flush_page(page_num, PAGE_SIZE)
+            self.flush_page(page_num)
 
-        # the tutorial flushes a partial page
-        # simplifying and flushing the full page
-        if num_rows % ROWS_PER_PAGE != 0:
-            self.flush_page(num_full_pages, PAGE_SIZE)
-
-    def flush_page(self, page_num: int, size: int):
+    def flush_page(self, page_num: int):
         """
         flush/write page to file
         page_num is the page to write
@@ -222,7 +254,7 @@ class Pager:
 
         byte_offset = page_num * PAGE_SIZE
         self.fileptr.seek(byte_offset)
-        to_write = self.pages[page_num][:size]
+        to_write = self.pages[page_num]
         self.fileptr.write(to_write)
 
 
@@ -233,19 +265,19 @@ class Cursor:
     how to traverse the table and how to insert, and remove
     rows from a table.
     """
-    def __init__(self, table: Table, row_num: int):
+    def __init__(self, table: Table, page_num: int, cell_num: int = 0):
         self.table = table
-        # this corresponds to the current row being pointed to
-        # the
-        self.row_num = row_num
-        self.end_of_table = table.num_rows == 0
+        self.page_num = page_num
+        self.cell_num = cell_num
+        num_cells = Tree.leaf_node_num_cells(table.pager.get_page(table.root_page_num))
+        self.end_of_table = cell_num == num_cells
 
     @classmethod
     def table_start(cls, table: Table) -> Cursor:
         """
         :return: cursor pointing to beginning of table
         """
-        return cls(table, 0)
+        return cls(table, 0, 0)
 
     @classmethod
     def table_end(cls, table: Table) -> Cursor:
@@ -254,59 +286,168 @@ class Cursor:
         :param table:
         :return:
         """
-        return cls(table, table.num_rows)
+        root_node = table.pager.get_page(table.root_page_num)
+        num_cells = Tree.leaf_node_num_cells(root_node)
+        # currently this is only assuming a single node tree
+        return cls(table, table.root_page_num, num_cells)
 
     def get_row(self) -> Row:
         """
         return row pointed by cursor
         :return:
         """
-        return self.table.deserialize_row(self.row_num)
+        node = self.table.pager.get_page(self.page_num)
+        serialized = Tree.leaf_node_value(node, self.cell_num)
+        return Table.deserialize(serialized)
 
     def insert_row(self, row: Row):
         """
         insert row to location pointed by cursor
         :return:
         """
-        # row_num = table.num_rows
+        # self.table.serialize_row(row, self.row_num)
+        node = self.table.pager.get_page(self.table.root_page_num)
+        if Tree.leaf_node_num_cells(node) >= LEAF_NODE_MAX_CELLS:
+            print("Unable to insert; max leaf nodes reached")
+            return
 
-        self.table.serialize_row(row, self.row_num)
-        self.table.num_rows += 1
+        # NOTE: `row.identifier` is the sort key for the btree
+        Tree.leaf_node_insert(node, self.cell_num, row.identifier, row)
 
     def advance(self):
         """
         advance the cursor
         :return:
         """
-        self.row_num += 1
-        if self.row_num == self.table.num_rows:
+        node = self.table.pager.get_page(self.page_num)
+        self.cell_num += 1
+        # consider caching RHS value
+        if self.cell_num >= Tree.leaf_node_num_cells(node):
             self.end_of_table = True
+
+
+class Tree:
+    """
+    collections of methods related to BTree
+    Right now, this exposes a very low level API of reading/writing from bytes
+    And other actors call the relevant methods.
+    """
+    @staticmethod
+    def initialize_leaf_node(node: bytearray):
+        Tree.write_leaf_node_num_cells(node, 0)
+
+    @staticmethod
+    def leaf_node_cell_offset(cell_num: int) -> int:
+        """
+        helper to calculate cell offset; this is the
+        offset to the key for the given cell
+        """
+        return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE
+
+    @staticmethod
+    def leaf_node_cell_value_offset(cell_num: int) -> int:
+        """
+        returns offset to value
+        """
+        return Tree.leaf_node_cell_offset(cell_num) + LEAF_NODE_KEY_SIZE
+
+    @staticmethod
+    def write_leaf_node_key(node: bytes, cell_num: int, key: int):
+        offset = Tree.leaf_node_cell_offset(cell_num)
+        value = key.to_bytes(LEAF_NODE_KEY_SIZE, sys.byteorder)
+        node[offset: offset + LEAF_NODE_KEY_SIZE] = value
+
+    @staticmethod
+    def write_leaf_node_num_cells(node: bytearray, num_cells: int):
+        """
+        write num of node cells: encode to int
+        """
+        value = num_cells.to_bytes(LEAF_NODE_NUM_CELLS_SIZE, sys.byteorder)
+        node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE] = value
+
+    @staticmethod
+    def write_leaf_node_value(node: bytes, cell_num: int, value: bytes):
+        """
+        :param node:
+        :param cell_num:
+        :param value:
+        :return:
+        """
+        offset = Tree.leaf_node_cell_offset(cell_num) + LEAF_NODE_KEY_SIZE
+        node[offset: offset + LEAF_NODE_VALUE_SIZE] = value
+
+    @staticmethod
+    def leaf_node_key(node: bytes, cell_num: int) -> int:
+        offset = Tree.leaf_node_cell_offset(cell_num)
+        bin_num = node[offset: offset + LEAF_NODE_KEY_SIZE]
+        return int.from_bytes(bin_num, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_num_cells(node: bytes) -> int:
+        """
+        `node` is exactly equal to a `page`. However,`node` is in the domain
+        of the tree, while page is in the domain of storage.
+        Using the same naming convention of `prop_name` for getter and `write_prop_name` for setter
+        """
+        bin_num = node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE]
+        return int.from_bytes(bin_num, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_value(node: bytes, cell_num: int) -> bytes:
+        """
+        :param node:
+        :param cell_num: determines offset
+        :return:
+        """
+        offset = Tree.leaf_node_cell_value_offset(cell_num)
+        return node[offset: offset + LEAF_NODE_VALUE_SIZE]
+
+    @staticmethod
+    def leaf_node_insert(node, current_cell: int, key: int, value: Row):
+        """
+
+        :param node:
+        :param current_cell: the current cell that the cursor is pointing to
+        :param key:
+        :param value:
+        :return:
+        """
+        num_cells = Tree.leaf_node_num_cells(node)
+        if num_cells >= LEAF_NODE_MAX_CELLS:
+            # node full
+            print("Need to implement node splitting")
+            sys.exit(EXIT_FAILURE)
+
+        if current_cell < num_cells:
+            # make room for new cell
+            # not sure if anything is needed
+            pass
+
+        Tree.write_leaf_node_num_cells(node, num_cells + 1)
+        serialized = Table.serialize(value)
+        Tree.write_leaf_node_value(node, current_cell, serialized)
+
+    @staticmethod
+    def print_leaf_node(node: bytes):
+        num_cells = Tree.leaf_node_num_cells(node)
+        print(f"leaf (size {num_cells})")
+        for i in range(num_cells):
+            key = Tree.leaf_node_key(node, i)
+            print(f"{i} - {key}")
+
 
 
 class Table:
     """
     Currently `Table` interface is around (de)ser given a row number.
-    Table interacts with pager. Ultimately, the table should
+    Ultimately, the table should
     represent the logical-relation-entity, and access to the pager, i.e. the storage
     layer should be done via an Engine, that acts as the storage layer access for
     all tables.
     """
     def __init__(self, pager: Pager):
         self.pager = pager
-        self.num_rows = pager.rows_in_file
-
-    def serialize_row(self, row: Row, row_num: int):
-        """
-        serialize a `row` and write it to local cache.
-        """
-        serialized = self.serialize(row)
-
-        page_num = row_num // ROWS_PER_PAGE
-        page = self.pager.get_page(page_num)
-
-        row_offset = row_num % ROWS_PER_PAGE
-        byte_offset = row_offset * ROW_SIZE
-        page[byte_offset: byte_offset + ROW_SIZE] = serialized
+        self.root_page_num = 0
 
     @staticmethod
     def serialize(row: Row) -> bytearray:
@@ -325,19 +466,16 @@ class Table:
         serialized[BODY_OFFSET: BODY_OFFSET + len(ser_body)] = ser_body
         return serialized
 
-    def deserialize_row(self, row_num: int) -> Row:
+    @staticmethod
+    def deserialize(row_bytes: bytes):
         """
-        deserialize row given a `row_num`
-        the deser logic interfaces with page
-        """
-        page_num = row_num // ROWS_PER_PAGE
-        page = self.pager.get_page(page_num)
-        row_offset = row_num % ROWS_PER_PAGE
-        byte_offset = row_offset * ROW_SIZE
 
+        :param byte_offset:
+        :return:
+        """
         # read bytes corresponding to columns
-        id_bstr = page[byte_offset + ID_OFFSET: byte_offset + ID_OFFSET + ID_SIZE]
-        body_bstr = page[byte_offset + BODY_OFFSET: byte_offset + BODY_OFFSET + BODY_SIZE]
+        id_bstr = row_bytes[ID_OFFSET: ID_OFFSET + ID_SIZE]
+        body_bstr = row_bytes[BODY_OFFSET: BODY_OFFSET + BODY_SIZE]
 
         # this will need to be revisited when handling other data types
         id_val = int.from_bytes(id_bstr, sys.byteorder)
@@ -345,7 +483,6 @@ class Table:
         body_val = body_bstr.rstrip(b'\x00')
         body_val = body_val.decode('utf-8')
         return Row(id_val, body_val)
-
 
 # section: core execution/user-interface logic
 
@@ -357,6 +494,8 @@ def do_meta_command(command: str, table: Table) -> MetaCommandResult:
     if command == ".quit":
         db_close(table)
         sys.exit(EXIT_SUCCESS)
+    elif command == ".nuke":
+        os.remove(DB_FILE)
     return MetaCommandResult.UnrecognizedCommand
 
 
@@ -379,9 +518,6 @@ def prepare_statement(command: str, statement: Statement) -> PrepareResult:
 
 def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     print("executing insert...")
-    if table.num_rows >= TABLE_MAX_PAGES:
-        return ExecuteResult.TableFull
-
     cursor = Cursor.table_end(table)
 
     row_to_insert = statement.row_to_insert
@@ -452,12 +588,14 @@ def main():
 
 
 def test():
+    # os.remove(DB_FILE)
     table = db_open(DB_FILE)
+    #input_handler('insert', table)
     #input_handler('insert', table)
     input_handler('select', table)
     input_handler('.quit', table)
 
 
 if __name__ == '__main__':
-    main()
-    # test()
+    # main()
+    test()
