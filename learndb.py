@@ -8,6 +8,8 @@ import sys
 from typing import Union
 from dataclasses import dataclass
 from enum import Enum, auto
+from random import randint  # for testing
+
 
 # section: constants
 
@@ -15,6 +17,8 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 
 PAGE_SIZE = 4096
+WORD = 32
+
 TABLE_MAX_PAGES = 100
 
 DB_FILE = 'db.file'
@@ -35,18 +39,21 @@ NODE_TYPE_SIZE = 8
 NODE_TYPE_OFFSET = 0
 IS_ROOT_SIZE = 8
 IS_ROOT_OFFSET = NODE_TYPE_SIZE
-# NOTE: in c these are constants are defined based on width of system register
-PARENT_POINTER_SIZE = 32
+# NOTE: this should be defined based on width of system register
+PARENT_POINTER_SIZE = WORD
 PARENT_POINTER_OFFSET = NODE_TYPE_SIZE + IS_ROOT_SIZE
 COMMON_NODE_HEADER_SIZE = NODE_TYPE_SIZE + IS_ROOT_SIZE + PARENT_POINTER_SIZE
 
 # leaf node header layout
-LEAF_NODE_NUM_CELLS_SIZE = 32
+# layout:
+# nodetype .. is_root .. parent_pointer
+# num_keys .. key 0 .. val 0 .. key N-1 val N-1
+LEAF_NODE_NUM_CELLS_SIZE = WORD
 LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
 LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE
 
-# leaf node body layout
-LEAF_NODE_KEY_SIZE = 32
+# Leaf node body layout
+LEAF_NODE_KEY_SIZE = WORD
 LEAF_NODE_KEY_OFFSET = 0
 # NOTE: nodes should not cross the page boundary; thus ROW_SIZE is upper
 # bounded by remaining space in page
@@ -56,6 +63,27 @@ LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
 LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
 LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE
 
+# when a node is split, off number of cells, left will get one more
+LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
+LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
+
+# Internal node body layout
+# layout:
+# nodetype .. is_root .. parent_pointer
+# num_keys .. right-child-ptr
+# ptr 0 .. key 0 .. ptr N-1 key N-1
+INTERNAL_NODE_NUM_KEYS_SIZE = WORD
+INTERNAL_NODE_NUM_KEYS_OFFSET = COMMON_NODE_HEADER_SIZE
+INTERNAL_NODE_RIGHT_CHILD_SIZE  = WORD
+INTERNAL_NODE_RIGHT_CHILD_OFFSET = INTERNAL_NODE_NUM_KEYS_OFFSET + INTERNAL_NODE_NUM_KEYS_SIZE
+INTERNAL_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + INTERNAL_NODE_NUM_KEYS_SIZE + INTERNAL_NODE_RIGHT_CHILD_SIZE
+
+INTERNAL_NODE_KEY_SIZE = WORD
+# Ptr to child re
+INTERNAL_NODE_CHILD_SIZE = WORD
+INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE
+# keeping it small for testing
+INTERNAL_NODE_MAX_CELLS = 3
 
 # section: enums
 
@@ -79,6 +107,14 @@ class ExecuteResult(Enum):
     Success = auto()
     TableFull = auto()
 
+class NodeType(Enum):
+    NodeInternal =1
+    NodeLeaf = 2
+
+
+class TreeInsertResult(Enum):
+    Success = auto()
+    DuplicateKey = auto()
 
 
 # section: classes/structs
@@ -107,10 +143,11 @@ def next_row():
     helper method - creates a simple `Row`
     should be nuked when I can handle generic row definitions
     """
-    global NEXT_ROW_INDEX
-    row = Row(NEXT_ROW_INDEX, "hello database")
-    NEXT_ROW_INDEX += 1
-    return row
+    # global NEXT_ROW_INDEX
+    # row = Row(NEXT_ROW_INDEX, "hello database")
+    # NEXT_ROW_INDEX += 1
+    # return row
+    return Row(randint(1, 100), "hello database")
 
 
 # section : helper objects/functions, e.g. table, pager
@@ -119,16 +156,16 @@ def db_open(filename: str) -> Table:
     """
     opens connection to db, i.e. initializes
     table and pager.
+
+    The relationships are: `tree` is a abstracts the pages into a tree
+    and maps 1-1 with the logical entity `table`. The table.root_page_num
+    is a reference to first
+
     """
     pager = Pager.pager_open(filename)
-    table = Table(pager)
-    table.root_page_num = 0
-
-    if pager.num_pages == 0:
-        # new database file, initialize page 0 as leaf node
-        root_node = pager.get_page(0)
-        Tree.initialize_leaf_node(root_node)
-
+    # with one table the root page is hard coded to 0, but
+    # with multiple tables I will need a mapping: table_name -> root_page_num
+    table = Table(pager, root_page_num=0)
     return table
 
 
@@ -136,7 +173,7 @@ def db_close(table: Table):
     """
     this calls the pager `close`
     """
-    table.pager.close(table.pager.num_pages)
+    table.pager.close()
 
 
 class Pager:
@@ -197,6 +234,22 @@ class Pager:
         """
         return cls(filename)
 
+    def get_unused_page_num(self) -> int:
+        """
+        NOTE: this depends on num_pages being updated when a new page is requested
+        :return:
+        """
+        return self.num_pages
+
+    def page_exists(self, page_num: int) -> bool:
+        """
+
+        :param page_num: does this page exist/ has been allocated
+        :return:
+        """
+        # num_pages counts whole pages
+        return page_num < self.num_pages
+
     def get_page(self, page_num: int) -> bytearray:
         """
         get `page` given `page_num`
@@ -223,21 +276,18 @@ class Pager:
 
             self.pages[page_num] = page
 
-            # NOTE: the tutorial has the cond: `page_num >= pager->num_pages`
-            # that seems wrong, since the page_num should only be incremented
-            # if it's gre
-            if page_num > self.num_pages:
-                self.page_num += 1
+            if page_num >= self.num_pages:
+                self.num_pages += 1
 
         return self.pages[page_num]
 
-    def close(self, num_pages: int):
+    def close(self):
         """
         close the connection i.e. flush pages to file
         """
         # this is 0-based
         # NOTE: not sure about this +1;
-        for page_num in range(num_pages + 1):
+        for page_num in range(self.num_pages):
             if self.pages[page_num] is None:
                 continue
             self.flush_page(page_num)
@@ -267,6 +317,7 @@ class Cursor:
     """
     def __init__(self, table: Table, page_num: int, cell_num: int = 0):
         self.table = table
+        self.tree = table.tree
         self.page_num = page_num
         self.cell_num = cell_num
         num_cells = Tree.leaf_node_num_cells(table.pager.get_page(table.root_page_num))
@@ -278,18 +329,6 @@ class Cursor:
         :return: cursor pointing to beginning of table
         """
         return cls(table, 0, 0)
-
-    @classmethod
-    def table_end(cls, table: Table) -> Cursor:
-        """
-        initialize cursor at end of table
-        :param table:
-        :return:
-        """
-        root_node = table.pager.get_page(table.root_page_num)
-        num_cells = Tree.leaf_node_num_cells(root_node)
-        # currently this is only assuming a single node tree
-        return cls(table, table.root_page_num, num_cells)
 
     def get_row(self) -> Row:
         """
@@ -305,14 +344,8 @@ class Cursor:
         insert row to location pointed by cursor
         :return:
         """
-        # self.table.serialize_row(row, self.row_num)
-        node = self.table.pager.get_page(self.table.root_page_num)
-        if Tree.leaf_node_num_cells(node) >= LEAF_NODE_MAX_CELLS:
-            print("Unable to insert; max leaf nodes reached")
-            return
-
-        # NOTE: `row.identifier` is the sort key for the btree
-        Tree.leaf_node_insert(node, self.cell_num, row.identifier, row)
+        serialized = Table.serialize(row)
+        self.tree.insert(row.identifier, serialized)
 
     def advance(self):
         """
@@ -328,13 +361,379 @@ class Cursor:
 
 class Tree:
     """
+    Manages read/writes from/to pages corresponding
+    to a specific table. In the future 1) the btree could
+    also be used as a secondary index and 2) other data
+    structures (e.g. SSTable) could replace Tree.
+
+
     collections of methods related to BTree
     Right now, this exposes a very low level API of reading/writing from bytes
     And other actors call the relevant methods.
+
+    note: For now, making methods that don't need access to pager static
+    Also consider a higher order abstractions over bytearray of different length and
+    offset; this would be possible, if the tree understood, the node layout
     """
+
+    def __init__(self, pager: Pager, root_page_num: int):
+        """
+
+        :param pager:
+        :param root_page_num: of the table this Tree represents
+        """
+        self.pager = pager
+        self.root_page_num = root_page_num
+        self.check_create_leaf_root()
+
+    def check_create_leaf_root(self):
+        """
+        check whether root node exists, if not create it as a leaf node
+
+        :return:
+        """
+        # root page does not exist, i.e. tree does not exist
+        # initialize tree as a a single
+        if not self.pager.page_exists(self.root_page_num):
+            root_node = self.pager.get_page(self.root_page_num)
+            self.initialize_leaf_node(root_node)
+            self.set_node_is_root(root_node, True)
+
+    def insert(self, key: int, value: bytes) -> TreeInsertResult:
+        """
+
+        :param key: the
+        :return:
+        """
+        page_num, cell_num = self.find(key)
+        node = self.pager.get_page(page_num)
+        if self.leaf_node_key(node, cell_num) == key:
+            return TreeInsertResult.DuplicateKey
+
+        self.leaf_node_insert(page_num, cell_num, key, value)
+        return TreeInsertResult.Success
+
+    def find(self, key) -> tuple:
+        """
+        find where key exists or should go
+
+        :param key:
+        :return: (page_num, cell_num): (int, int)
+        """
+        root_node = self.pager.get_page(self.root_page_num)
+        if self.get_node_type(root_node) == NodeType.NodeInternal:
+            print("Can't handle internal nodes")
+            sys.exit(EXIT_FAILURE)
+
+        page_num = self.root_page_num
+
+        cell_num = self.leaf_node_find(page_num, key)
+        return page_num, cell_num
+
+    def delete(self, key):
+        raise NotImplemented
+
+    def internal_node_find(self, page_num: int, key: int) -> int:
+        pass
+
+    def leaf_node_find(self, page_num: int, key: int) -> int:
+        """
+        implement a binary search
+        :param page_num:
+        :param key:
+        :return: cell_number corresponding to insert location
+        """
+        node = self.pager.get_page(page_num)
+        num_cells = self.leaf_node_num_cells(node)
+        left_closed_index = 0
+        # 'open' since it's one past right index
+        right_open_index = num_cells
+        while left_closed_index != right_open_index:
+            # this avoid the overflow issue with
+            # index = (right_open_index + left_closed_index) // 2
+            index =  left_closed_index + (right_open_index - left_closed_index ) // 2
+            key_at_index = self.leaf_node_key(node, index)
+            if key == key_at_index:
+                # key found
+                return index
+            if key < key_at_index:
+                right_open_index = index
+            else:
+                left_closed_index = index + 1
+
+        return left_closed_index
+
+    def internal_node_insert(self, old_child_page_num: int, new_child_page_num: int):
+        """
+        Add new child/key pair to parent.
+        If parent is at capacity, recursively apply splitting to parent
+
+        NOTE: new_child is right of old_child
+        NOTE: this is only invoked when a leaf overflows.
+        """
+
+        old_child = self.pager.get_page(old_child_page_num)
+        parent_page_num = self.get_parent(old_child)
+        parent = self.pager.get_page(parent_page_num)
+
+        num_keys = self.internal_node_num_keys(parent)
+        if num_keys >= INTERNAL_NODE_MAX_CELLS:
+            self.internal_node_split_and_insert()
+            return
+
+        # insert new child into parent
+        new_child = self.pager.get_page(new_child_page_num)
+        new_child_max_key = self.get_node_max_key(new_child)
+
+        right_child_page_num = self.internal_node_right_child(parent)
+        right_child = self.pager.get_page(right_child_page_num)
+        right_child_max_key = self.get_node_max_key(right_child)
+
+        # the new child is right of the old child.
+        # If the old child was the right, (i.e. largest) child of the parent
+        # move it to a cell, and make new child the right child, i.e. the largest
+        if new_child_max_key < right_child_max_key:
+            # add `new_child` to correct location in children cells
+            # find correct location for new child
+            new_child_cell_num = self.internal_node_find(parent_page_num, new_child_max_key)
+            # move all cells right of `new_child_cell_idx`, right by 1
+            children = self.internal_node_children_starting_at(new_child_cell_num)
+            self.set_internal_node_children_starting_at(new_child_cell_num + 1, children)
+            # set new child
+            self.set_internal_node_child(parent, new_child_cell_num, new_child_page_num)
+        else:
+            # make new child, right child
+            self.set_internal_node_right_child(new_child)
+            # make right child, last child cell
+            self.set_internal_node_child(num_keys, right_child_page_num)
+            self.set_internal_node_key(num_keys, right_child_max_key)
+
+        # update count
+        self.set_internal_node_num_keys(num_keys + 1)
+
+    def internal_node_split_and_insert(self, page_num: int, child_page_num: int):
+        """
+        parent page, i.e. page at `page_num` is full.
+        split the page and insert child_page.
+        Then if the parent's parent has capacity, update it with the new node.
+        Otherwise, recurse up chain of ancestors until all nodes have no more than max
+
+        `child_page_num` is to be inserted
+
+        """
+        old_node = self.pager.get_page(page_num)
+        # create a new node
+        new_page_num = self.pager.get_unused_page_num()
+        new_node = self.pager.get_page(new_page_num)
+        self.initialize_internal_node(new_node)
+
+        child_node = self.pager.get_page(child_page_num)
+        child_key = self.get_node_max_key(child_node)
+
+        # determine key insertion location via binary search
+        num_keys = self.internal_node_num_keys(old_node)
+        left_closed_index = 0
+        right_open_index = num_keys
+        while left_closed_index != right_open_index:
+            # break when condition is false, that is the insertion point
+            index =  left_closed_index + (right_open_index - left_closed_index ) // 2
+            key_at_index = self.internal_node_key(index)
+            if child_key == key_at_index:
+                # this seems like an duplicate key error
+                print("Duplicate key detected")
+                sys.exit(EXIT_FAILURE)
+
+            if child_key < key_at_index:
+                right_open_index = index
+            else:
+                left_closed_index = index + 1
+
+        # insert child at this position
+        child_position = left_closed_index
+
+        # keys must be divided between old (left child) and new (right child)
+        # start from right, move each key (cell) to correct location
+        for cell_idx in range(INTERNAL_NODE_MAX_CELLS, -1, -1):
+            dest_node = new_node if cell_idx >= LEAF_NODE_LEFT_SPLIT_COUNT else old_node
+            new_cell_idx = -1
+            if cell_idx > child_position:
+                # this is cell that is greater than the cell to insert
+                # so it should be shifted to the right
+                # verify this logic
+                new_cell_idx = (cell_idx + 1) % LEAF_NODE_LEFT_SPLIT_COUNT
+            else:
+                new_cell_idx = cell_idx % LEAF_NODE_LEFT_SPLIT_COUNT
+
+            if cell_idx == child_position:
+                # insert new cell
+                self.set_internal_node_key(dest_node, child_position, child_key)
+                self.set_internal_node_child(dest_node, child_position, child_page_num)
+            else:  # copy an existing cell
+                cell_to_copy = self.internal_node_cell(old_node, cell_idx)
+                self.set_internal_node_cell(dest_node, new_cell_idx, cell_to_copy)
+
+        # update parent
+        if self.is_node_root(old_node):
+            self.create_new_root(new_page_num)
+        else:
+            self.internal_node_insert(page_num, new_page_num)
+
+    def leaf_node_insert(self, page_num: int, cell_num: int, key: int, value: bytes):
+        """
+
+        If there is space on the referred leaf, then the cell will be inserted,
+        and the operation will terminate.
+        If there is not, the node will have to be split.
+
+        :param page_num:
+        :param cell_num: the current cell that the cursor is pointing to
+        :param key:
+        :param value:
+        :return:
+        """
+        node = self.pager.get_page(page_num)
+        num_cells = Tree.leaf_node_num_cells(node)
+        if num_cells >= LEAF_NODE_MAX_CELLS:
+            # node full - split node and insert
+            self.leaf_node_split_and_insert(page_num, cell_num, key, value)
+            return
+
+        if cell_num < num_cells:
+            # make room for new cell
+            # not sure if anything is needed
+            pass
+
+        Tree.set_leaf_node_num_cells(node, num_cells + 1)
+        Tree.set_leaf_node_value(node, cell_num, value)
+
+    def leaf_node_split_and_insert(self, page_num: int, cell_num: int, key: int, value: bytes):
+        """
+        Split node, i.e. create a new node and move half the cells over to the new node
+        NB: after split keys on the upper half (right) must be strictly greater than lower (left) half
+
+        If the node being split is a non-root node, split the node and add the new
+        child to the parent. If the parent/ancestor is full, repeat split op until every ancestor is
+        within capacity.
+
+        If node being split is root, will need to create a new root. Root page must remain at `root_page_num`
+
+        Args:
+            cell_num: where the new entry would be inserted
+
+        example: insert 2, into leaf node: [1,3,4,5], with max node keys: 4
+            [1,2,3] [4,5]
+            note:
+                - all cells after the new cell to be inserted must be shifted right by 1
+                - cells left of new cell are unchanged
+        """
+        old_node = self.pager.get_page(page_num)
+        # create a new node
+        new_page_num = self.pager.get_unused_page_num()
+        new_node = self.pager.get_page(new_page_num)
+        self.initialize_leaf_node(new_node)
+
+        # keys must be divided between old (left child) and new (right child)
+        # start from right, move each key (cell) to correct location
+        for cell_idx in range(LEAF_NODE_MAX_CELLS, -1, -1):
+
+            dest_node = new_node if cell_idx >= LEAF_NODE_LEFT_SPLIT_COUNT else old_node
+            # this handles that the cells must be left aligned on the old/new node
+
+            # the index of the cell in the it's new node; this
+            # accounts 0for 1-right shift due to new entry, and
+            # left-aligning cells on their respective parent node
+            new_cell_idx = -1
+            if cell_idx > cell_num:
+                # this is cell that is greater than the cell to insert
+                # so it should be shifted to the right
+                # verify this logic
+                new_cell_idx = (cell_idx + 1) % LEAF_NODE_LEFT_SPLIT_COUNT
+            else:
+                new_cell_idx = cell_idx % LEAF_NODE_LEFT_SPLIT_COUNT
+
+            if cell_idx == cell_num:
+                # insert new cell
+                self.set_leaf_node_key_value(dest_node, new_cell_idx, key, value)
+            else:  # copy an existing cell
+                cell_to_copy = self.leaf_node_cell(old_node, cell_idx)
+                self.set_leaf_node_cell(dest_node, new_cell_idx, cell_to_copy)
+
+        # update counts on child nodes
+        self.set_leaf_node_num_cells(old_node, LEAF_NODE_LEFT_SPLIT_COUNT)
+        self.set_leaf_node_num_cells(new_node, LEAF_NODE_RIGHT_SPLIT_COUNT)
+
+        # add new node as child to parent of split node
+        # if split node was root, create new root and add split as children
+        if self.is_node_root(old_node):
+            self.create_new_root(new_page_num)
+        else:
+            self.internal_node_insert(page_num, new_page_num)
+
+    def create_new_root(self, right_child_page_num: int):
+        """
+        Create a root.
+        Here the old root's content is copied to new left child.
+        The reason for doing it thus, rather than allocating a new root node,
+        is because the root node needs to be the first page in the database file.
+
+        A internal node maintains a array like:
+        [ptr[0], key[0], ptr[1], key[1],...ptr[n-1]key[n-1][ptr[n]]
+        NOTE: (from book)
+        All of the keys on the left most child subtree that Ptr(0) points to have
+         values less than or equal to Key(0)
+        All of the keys on the child subtree that Ptr(1) points to have values greater
+         than Key(0) and less than or equal to Key(1), and so forth
+        All of the keys on the right most child subtree that Ptr(n) points to have values greater than Key(n - 1).
+
+        :param right_child_page_num:
+        :return:
+        """
+
+        root = self.pager.get_page(self.root_page_num)
+        # create a new left node
+        # root-page must be the first "page" in the file
+        left_child_page_num = self.pager.get_unused_page_num()
+        left_child = self.pager.get_page(left_child_page_num)
+        right_child = self.pager.get_page(right_child_page_num)
+
+        # copy root contents to left child
+        left_child[:PAGE_SIZE] = root
+        self.set_node_is_root(left_child, False)
+        self.set_node_is_root(right_child, False)
+
+        # set up root code; root code will be internal node
+        # with one key and two children
+        self.initialize_internal_node(root)
+        self.set_node_is_root(root, True)
+
+        self.set_internal_node_num_keys(root, 1)
+        self.set_internal_node_child(root, 0, left_child_page_num)
+        left_child_max_key = self.get_node_max_key(left_child)
+        self.set_internal_node_key(root, 0, left_child_max_key)
+        self.set_internal_node_right_child(root, right_child_page_num)
+
+    # section: utility methods
+
+    @staticmethod
+    def initialize_internal_node(node: bytearray):
+        Tree.set_node_type(node, NodeType.NodeInternal)
+
     @staticmethod
     def initialize_leaf_node(node: bytearray):
-        Tree.write_leaf_node_num_cells(node, 0)
+        Tree.set_node_type(node, NodeType.NodeLeaf)
+        Tree.set_leaf_node_num_cells(node, 0)
+
+    @staticmethod
+    def internal_node_cell_offset(cell_num: int) -> int:
+        return INTERNAL_NODE_HEADER_SIZE + cell_num * INTERNAL_NODE_CELL_SIZE
+
+    @staticmethod
+    def internal_node_key_offset(cell_num: int) -> int:
+        return Tree.internal_node_cell_offset(cell_num) + INTERNAL_NODE_CHILD_SIZE
+
+    @staticmethod
+    def internal_node_child_offset(cell_num: int) -> int:
+        return Tree.internal_node_cell_offset(cell_num)
 
     @staticmethod
     def leaf_node_cell_offset(cell_num: int) -> int:
@@ -345,6 +744,14 @@ class Tree:
         return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE
 
     @staticmethod
+    def leaf_node_key_offset(cell_num: int) -> int:
+        """
+        synonym's with cell offset; defining seperate key-value offset
+        methods since internal nodes have key/values in reverse order
+        """
+        return Tree.leaf_node_cell_offset(cell_num)
+
+    @staticmethod
     def leaf_node_cell_value_offset(cell_num: int) -> int:
         """
         returns offset to value
@@ -352,44 +759,106 @@ class Tree:
         return Tree.leaf_node_cell_offset(cell_num) + LEAF_NODE_KEY_SIZE
 
     @staticmethod
-    def write_leaf_node_key(node: bytes, cell_num: int, key: int):
-        offset = Tree.leaf_node_cell_offset(cell_num)
-        value = key.to_bytes(LEAF_NODE_KEY_SIZE, sys.byteorder)
-        node[offset: offset + LEAF_NODE_KEY_SIZE] = value
+    def print_internal_node(node: bytes):
+        pass
 
     @staticmethod
-    def write_leaf_node_num_cells(node: bytearray, num_cells: int):
-        """
-        write num of node cells: encode to int
-        """
-        value = num_cells.to_bytes(LEAF_NODE_NUM_CELLS_SIZE, sys.byteorder)
-        node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE] = value
+    def print_leaf_node(node: bytes):
+        num_cells = Tree.leaf_node_num_cells(node)
+        print(f"leaf (size {num_cells})")
+        for i in range(num_cells):
+            key = Tree.leaf_node_key(node, i)
+            print(f"{i} - {key}")
+
+    # section : node getter/setters: common, internal, leaf
 
     @staticmethod
-    def write_leaf_node_value(node: bytes, cell_num: int, value: bytes):
+    def get_parent(node: bytes) -> int:
         """
+        return pointer to parent page_num
+        """
+        value = node[PARENT_POINTER_OFFSET: PARENT_POINTER_OFFSET + PARENT_POINTER_SIZE]
+        return int.from_bytes(value, sys.byteorder)
+
+    @staticmethod
+    def get_node_type(node: bytes) -> NodeType:
+        value = int.from_bytes(node[NODE_TYPE_OFFSET:NODE_TYPE_OFFSET+NODE_TYPE_SIZE], sys.byteorder)
+        return NodeType(value)
+
+    @staticmethod
+    def get_node_max_key(node: bytes) -> int:
+        if Tree.get_node_type(node) == NodeType.NodeInternal:
+            return Tree.internal_node_key(Tree.internal_node_num_keys(node) - 1)
+        else:
+            return Tree.leaf_node_key(Tree.leaf_node_num_cells(node) - 1)
+
+    @staticmethod
+    def is_node_root(node: bytes) -> bool:
+        value = node[IS_ROOT_OFFSET: IS_ROOT_OFFSET + IS_ROOT_SIZE]
+        int_val = int.from_bytes(value, sys.byteorder)
+        return bool(int_val)
+
+    @staticmethod
+    def internal_node_num_keys(node: bytes) -> int:
+        value = node[INTERNAL_NODE_NUM_KEYS_OFFSET: INTERNAL_NODE_NUM_KEYS_OFFSET + INTERNAL_NODE_NUM_KEYS_SIZE]
+        return int.from_bytes(value, sys.byteorder)
+
+    @staticmethod
+    def internal_node_right_child(node: bytes) -> int:
+        value = node[INTERNAL_NODE_RIGHT_CHILD_OFFSET:INTERNAL_NODE_RIGHT_CHILD_OFFSET + INTERNAL_NODE_RIGHT_CHILD_SIZE]
+        return int.from_bytes(value, sys.byteorder)
+
+    @staticmethod
+    def internal_node_key(node: bytes, key_num: int) -> int:
+        offset = Tree.internal_node_key_offset(key_num)
+        bin_num = node[offset: offset + INTERNAL_NODE_KEY_SIZE]
+        return int.from_bytes(bin_num, sys.byteorder)
+
+    @staticmethod
+    def internal_node_children_starting_at(node: bytes, child_num: int) -> bytes:
+        """
+        return bytes corresponding to all children including at `child_num`
+
         :param node:
-        :param cell_num:
-        :param value:
+        :param child_num:
         :return:
         """
-        offset = Tree.leaf_node_cell_offset(cell_num) + LEAF_NODE_KEY_SIZE
-        node[offset: offset + LEAF_NODE_VALUE_SIZE] = value
+        offset = Tree.internal_node_cell_offset(child_num)
+        num_keys = Tree.internal_node_num_keys(node)
+        return node[offset: offset + num_keys * INTERNAL_NODE_CELL_SIZE]
 
     @staticmethod
-    def leaf_node_key(node: bytes, cell_num: int) -> int:
+    def leaf_node_cell(node: bytes, cell_num: int) -> bytes:
+        """
+        returns entire cell consisting of key and value
+        :param node:
+        :param bytes:
+        :param cell_num:
+        :return:
+        """
         offset = Tree.leaf_node_cell_offset(cell_num)
-        bin_num = node[offset: offset + LEAF_NODE_KEY_SIZE]
-        return int.from_bytes(bin_num, sys.byteorder)
+        return node[offset: offset + LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE]
 
     @staticmethod
     def leaf_node_num_cells(node: bytes) -> int:
         """
         `node` is exactly equal to a `page`. However,`node` is in the domain
         of the tree, while page is in the domain of storage.
-        Using the same naming convention of `prop_name` for getter and `write_prop_name` for setter
+        Using the same naming convention of `prop_name` for getter and `set_prop_name` for setter
         """
         bin_num = node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE]
+        return int.from_bytes(bin_num, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_key(node: bytes, cell_num: int) -> int:
+        """
+        return the leaf node key (int)
+        :param node:
+        :param cell_num:
+        :return:
+        """
+        offset = Tree.leaf_node_key_offset(cell_num)
+        bin_num = node[offset: offset + LEAF_NODE_KEY_SIZE]
         return int.from_bytes(bin_num, sys.byteorder)
 
     @staticmethod
@@ -403,38 +872,95 @@ class Tree:
         return node[offset: offset + LEAF_NODE_VALUE_SIZE]
 
     @staticmethod
-    def leaf_node_insert(node, current_cell: int, key: int, value: Row):
+    def set_node_is_root(node: bytes, is_root: bool):
+        value = is_root.to_bytes(IS_ROOT_SIZE, sys.byteorder)
+        node[IS_ROOT_OFFSET: IS_ROOT_OFFSET + IS_ROOT_SIZE] = value
+
+    @staticmethod
+    def set_node_type(node: bytes, node_type: NodeType):
+        bits = node_type.value.to_bytes(NODE_TYPE_SIZE, sys.byteorder)
+        node[NODE_TYPE_OFFSET: NODE_TYPE_OFFSET + NODE_TYPE_SIZE] = bits
+
+    @staticmethod
+    def set_internal_node_child(node: bytes, child_num: int, child_page_num: int):
         """
+        set the nth child
+        """
+        offset = Tree.internal_node_child_offset(child_num)
+        value = child_page_num.to_bytes(INTERNAL_NODE_CHILD_SIZE, sys.byteorder)
+        node[offset: offset + INTERNAL_NODE_CHILD_SIZE] = value
+
+    @staticmethod
+    def set_internal_node_children_starting_at(node: bytes, children: bytes, child_num: int ):
+        """
+        bulk set multiple cells
 
         :param node:
-        :param current_cell: the current cell that the cursor is pointing to
-        :param key:
+        :param children:
+        :param child_num:
+        :return:
+        """
+        assert len(children) % INTERNAL_NODE_CELL_SIZE == 0, "error: children are not an integer multiple of cell size"
+        offset = Tree.internal_node_cell_offset(child_num)
+        node[offset: offset + len(children)] = children
+
+    @staticmethod
+    def set_internal_node_key(node: bytes, child_num: int, key: int):
+        offset = Tree.internal_node_key_offset(child_num)
+        value = key.to_bytes(INTERNAL_NODE_CHILD_SIZE, sys.byteorder)
+        node[offset: offset + INTERNAL_NODE_NUM_KEYS_SIZE] = value
+
+    @staticmethod
+    def set_internal_node_num_keys(node: bytes, num_keys: int):
+        value = num_keys.to_bytes(INTERNAL_NODE_NUM_KEYS_SIZE, sys.byteorder)
+        node[INTERNAL_NODE_NUM_KEYS_OFFSET: INTERNAL_NODE_NUM_KEYS_OFFSET + INTERNAL_NODE_NUM_KEYS_SIZE] = value
+
+    @staticmethod
+    def set_internal_node_right_child(node: bytes, right_child_page_num: int):
+        value = right_child_page_num.to_bytes(INTERNAL_NODE_RIGHT_CHILD_SIZE, sys.byteorder)
+        node[INTERNAL_NODE_RIGHT_CHILD_OFFSET:INTERNAL_NODE_RIGHT_CHILD_OFFSET + INTERNAL_NODE_RIGHT_CHILD_SIZE] = value
+
+    @staticmethod
+    def set_leaf_node_key(node: bytes, cell_num: int, key: int):
+        offset = Tree.leaf_node_cell_offset(cell_num)
+        value = key.to_bytes(LEAF_NODE_KEY_SIZE, sys.byteorder)
+        node[offset: offset + LEAF_NODE_KEY_SIZE] = value
+
+    @staticmethod
+    def set_leaf_node_num_cells(node: bytearray, num_cells: int):
+        """
+        write num of node cells: encode to int
+        """
+        value = num_cells.to_bytes(LEAF_NODE_NUM_CELLS_SIZE, sys.byteorder)
+        node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE] = value
+
+    @staticmethod
+    def set_leaf_node_value(node: bytes, cell_num: int, value: bytes):
+        """
+        :param node:
+        :param cell_num:
         :param value:
         :return:
         """
-        num_cells = Tree.leaf_node_num_cells(node)
-        if num_cells >= LEAF_NODE_MAX_CELLS:
-            # node full
-            print("Need to implement node splitting")
-            sys.exit(EXIT_FAILURE)
-
-        if current_cell < num_cells:
-            # make room for new cell
-            # not sure if anything is needed
-            pass
-
-        Tree.write_leaf_node_num_cells(node, num_cells + 1)
-        serialized = Table.serialize(value)
-        Tree.write_leaf_node_value(node, current_cell, serialized)
+        offset = Tree.leaf_node_cell_offset(cell_num) + LEAF_NODE_KEY_SIZE
+        node[offset: offset + LEAF_NODE_VALUE_SIZE] = value
 
     @staticmethod
-    def print_leaf_node(node: bytes):
-        num_cells = Tree.leaf_node_num_cells(node)
-        print(f"leaf (size {num_cells})")
-        for i in range(num_cells):
-            key = Tree.leaf_node_key(node, i)
-            print(f"{i} - {key}")
+    def set_leaf_node_cell(node: bytes, cell_num: int, cell: bytes):
+        """
+        write both key and value for a given cell
+        """
+        offset = Tree.leaf_node_cell_offset(cell_num)
+        assert len(cell) == LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE, "cell length not equal to key len plus value length"
+        node[offset: offset + LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE] = cell
 
+    @staticmethod
+    def set_leaf_node_key_value(node: bytes, cell_num: int, key: int, value: bytes):
+        """
+        write both key and value for a given cell
+        """
+        Tree.set_leaf_node_key(node, cell_num, key)
+        Tree.set_leaf_node_value(node, cell_num, value)
 
 
 class Table:
@@ -445,9 +971,10 @@ class Table:
     layer should be done via an Engine, that acts as the storage layer access for
     all tables.
     """
-    def __init__(self, pager: Pager):
+    def __init__(self, pager: Pager, root_page_num: int = 0):
         self.pager = pager
-        self.root_page_num = 0
+        self.root_page_num = root_page_num
+        self.tree = Tree(pager, root_page_num)
 
     @staticmethod
     def serialize(row: Row) -> bytearray:
@@ -518,12 +1045,13 @@ def prepare_statement(command: str, statement: Statement) -> PrepareResult:
 
 def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     print("executing insert...")
-    cursor = Cursor.table_end(table)
+    cursor = Cursor.table_start(table)
 
     row_to_insert = statement.row_to_insert
     if row_to_insert is None:
         # TODO: nuke me
         row_to_insert = next_row()
+        print(f"inserting row with id: {row_to_insert.identifier}")
 
     cursor.insert_row(row_to_insert)
 
@@ -592,10 +1120,12 @@ def test():
     table = db_open(DB_FILE)
     #input_handler('insert', table)
     #input_handler('insert', table)
+    #input_handler('insert', table)
+    #input_handler('insert', table)
     input_handler('select', table)
     input_handler('.quit', table)
 
 
 if __name__ == '__main__':
-    # main()
+    #main()
     test()
