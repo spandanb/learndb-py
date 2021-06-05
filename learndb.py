@@ -386,7 +386,7 @@ class Cursor:
             self.end_of_table = True
             return
 
-        node_max_value = Tree.get_node_max_key(node)
+        node_max_value = self.tree.get_node_max_key(node)
         parent_page_num = Tree.get_parent_page_num(node)
         # check if current page, i.e. self.page_num is right most child of it's parent
         parent = self.table.pager.get_page(parent_page_num)
@@ -1042,7 +1042,7 @@ class Tree:
         right_child_page_num = self.internal_node_right_child(node)
         right_child = self.pager.get_page(right_child_page_num)
         right_child_key = self.get_node_max_key(right_child)
-        print(f"right - {right_child_key}")
+        print(f"right-key: {right_child_key}, child: {right_child_page_num}")
 
         if not recurse:
             return
@@ -1075,12 +1075,16 @@ class Tree:
         value = int.from_bytes(node[NODE_TYPE_OFFSET:NODE_TYPE_OFFSET+NODE_TYPE_SIZE], sys.byteorder)
         return NodeType(value)
 
-    @staticmethod
-    def get_node_max_key(node: bytes) -> int:
-        if Tree.get_node_type(node) == NodeType.NodeInternal:
-            return Tree.internal_node_key(node, Tree.internal_node_num_keys(node) - 1)
+    def get_node_max_key(self, node: bytes) -> int:
+        if self.get_node_type(node) == NodeType.NodeInternal:
+            # max key is right child's max key, so will need to fetch right child
+            right_child_page_num = self.internal_node_right_child(node)
+            right_child = self.pager.get_page(right_child_page_num)
+            right_child_key = self.get_node_max_key(right_child)
+            return right_child_key
+            #return self.internal_node_key(node, Tree.internal_node_num_keys(node) - 1)
         else:
-            return Tree.leaf_node_key(node, Tree.leaf_node_num_cells(node) - 1)
+            return self.leaf_node_key(node, self.leaf_node_num_cells(node) - 1)
 
     @staticmethod
     def is_node_root(node: bytes) -> bool:
