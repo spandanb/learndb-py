@@ -1664,34 +1664,10 @@ def input_handler(input_buffer: str, table: Table):
     print(f"Executed command '{input_buffer}'")
 
 
-
-def next_row():
-    #return next_row_simple()
-    return next_row_rand()
+def next_value(index):
 
 
-def next_row_rand():
-    """
-    helper method - creates a simple `Row`
-    should be nuked when I can handle generic row definitions
-    """
-
-    if 'seen' not in globals():
-        globals()['seen'] = set()
-
-    seen = globals()['seen']
-
-    num = randint(1, 1000)
-    while num in seen:
-        num = randint(1, 1000)
-
-    seen.add(num)
-    # print(f"seen is: {seen}")
-
-    return Row(num, "hello database")
-
-
-def next_row_simple():
+    # return randint(1, 1000)
 
     # vals = [64, 5, 13, 82]
     # vals = [82, 13, 5, 2, 0]
@@ -1702,21 +1678,22 @@ def next_row_simple():
     # vals = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
     # vals = [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516]
     # vals = [159, 597, 520, 189, 822, 725, 504, 397]
-    vals = [960, 267, 947, 400, 795, 327, 464, 884, 667, 870, 92]
-    vals = [793, 651, 165, 282, 177] #, 439, 593, ]
-    if 'next_row_index' not in globals():
-        globals()['next_row_index'] = 0
+    # vals = [960, 267, 947, 400, 795, 327, 464, 884, 667, 870, 92]
+    # vals = [793, 651, 165, 282, 177] #, 439, 593, ]
+    vals = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
 
-    next_row_index = globals()['next_row_index']
+    if index >= len(vals):
+        return vals[-1]
+    return vals[index]
 
-    row = Row(vals[next_row_index], "hello database")
-    next_row_index += 1
-    if next_row_index >= len(vals):
-        next_row_index = len(vals) - 1
 
-    globals()['next_row_index'] = next_row_index
-    return row
 
+def insert_helper(table, key):
+    """
+    helper to invoke insert for debugging
+    """
+    statement = Statement(StatementType.Insert, Row(key, "hello database"))
+    execute_statement(statement, table)
 
 
 def repl():
@@ -1735,13 +1712,19 @@ def test():
 
     Tree.print_tree_constants()
 
+    values = []
     for i in range(20):
-        input_handler('insert', table)
-        #print("."*100)
+        value = next_value(i)
+        values.append(value)
+        try:
+            insert_helper(table, value)
+        except AssertionError as e:
+            print(f"Caught assertion error; values: {values}")
+            raise
+        # input_handler('insert', table)
+
         input_handler('.btree', table)
         #input_handler('.validate', table)
-        # print(f"result of tree validation: {table.tree.validate()}")
-        #print("="*100)
         print(" ")
 
     # input_handler('select', table)
