@@ -61,7 +61,7 @@ LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
 LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
 # LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE
 # todo: nuke after testing
-LEAF_NODE_MAX_CELLS = 2
+LEAF_NODE_MAX_CELLS = 3
 
 # when a node is split, off number of cells, left will get one more
 LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
@@ -86,7 +86,7 @@ INTERNAL_NODE_SPACE_FOR_CELLS = PAGE_SIZE - INTERNAL_NODE_HEADER_SIZE
 # INTERNAL_NODE_MAX_CELLS =  INTERNAL_NODE_SPACE_FOR_CELLS / INTERNAL_NODE_CELL_SIZE
 # todo: nuke after testing
 # cells, i.e. key, child ptr in the body
-INTERNAL_NODE_MAX_CELLS = 2
+INTERNAL_NODE_MAX_CELLS = 3
 # the +1 is for the right child
 INTERNAL_NODE_MAX_CHILDREN = INTERNAL_NODE_MAX_CELLS + 1
 INTERNAL_NODE_RIGHT_SPLIT_CHILD_COUNT = (INTERNAL_NODE_MAX_CHILDREN + 1) // 2
@@ -250,9 +250,8 @@ class Pager:
         """
         get `page` given `page_num`
         """
-        if page_num > TABLE_MAX_PAGES:
+        if page_num >= TABLE_MAX_PAGES:
             print(f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})")
-            traceback.print_stack()
             sys.exit(EXIT_FAILURE)
 
         if self.pages[page_num] is None:
@@ -1729,7 +1728,7 @@ def input_handler(input_buffer: str, table: Table):
 def next_value(index):
 
 
-    # return randint(1, 1000)
+    return randint(1, 1000)
 
     # vals = [64, 5, 13, 82]
     # vals = [82, 13, 5, 2, 0]
@@ -1793,7 +1792,12 @@ def test():
     # input_handler('.btree', table)
     input_handler('.quit', table)
 
+def many_tests():
+    for i in range(100):
+        test()
+
 
 if __name__ == '__main__':
     # repl()
-    test()
+    # test()
+    many_tests()
