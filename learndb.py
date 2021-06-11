@@ -514,6 +514,10 @@ class Tree:
         NOTE: this will return a child_pos in range [0, num_children], with index at
         position num_children corresponding to the right child.
 
+        NOTE: If the key exists, then the return index should refer to the exact location
+        of the key. If it doesn't then it should refer to the insertion location
+        where the key should go. And here, any keys on returned index must be greater.
+
         NOTE: This will return special value `INTERNAL_NODE_MAX_CELLS` to indicate
         the position of the key is the right child. All callers must handle this.
 
@@ -522,7 +526,7 @@ class Tree:
         :return: child_position where key is to be inserted
         """
         node = self.pager.get_page(page_num)
-        if self.get_node_max_key(node) < key:
+        if self.get_node_max_key(node) <= key:
             # handle special case: key corresponds to right child
             return INTERNAL_NODE_MAX_CELLS
 
@@ -1196,9 +1200,9 @@ class Tree:
                     stack.append((child_page_num, child_lower_bound, child_upper_bound))
 
                 # validate right is the max key
-                assert self.internal_node_key(node, self.internal_node_num_keys(node)-1) < \
-                    self.get_node_max_key(self.pager.get_page(self.internal_node_right_child(node))), \
-                    "Expected right child to be max"
+                inner_max_key = self.internal_node_key(node, self.internal_node_num_keys(node)-1)
+                right_key = self.get_node_max_key(self.pager.get_page(self.internal_node_right_child(node)))
+                assert inner_max_key < right_key, f"Expected right child key [{right_key}] to be strictly greater than max-inner-key: {inner_max_key}"
 
                 # add right child
                 child_page_num = self.internal_node_right_child(node)
@@ -1385,9 +1389,13 @@ class Tree:
 
     def check_update_parent_on_new_right(self, node_page_num: int):
         """
-        similar to updating parent on new max child, however, invoked when
-        the right child is updated; this first checks whether the new right child
-        indeed has a max key, and then invokes foo
+        similar to updating parent on new max child, however,
+
+        Invoked when an internal node's right child is updated;
+        but the caller does not know whether a new max key was inserted.
+        This first checks whether the new right child
+        indeed has a max key- by comparing with it's parent's key for itself,
+        and then invokes `update_parent_on_new_max_child`
 
         :param node_page_num:
         :return:
@@ -1405,8 +1413,9 @@ class Tree:
         # check node position in parent
         node_child_num = self.internal_node_find(parent_page_num, node_max_key)
         if node_child_num == INTERNAL_NODE_MAX_CELLS:
-            # the node is parent's right child
-            # this can be conceptually viewed as this as parent receiving a new child
+            # the node is parent's right child; thus parent is not
+            # updated; but it's grandparent might need to.
+            # this can be conceptually viewed as this parent potentially receiving a new child
             # since get internal node max child recursively gets the rightmost leaf descendant
             self.check_update_parent_on_new_right(parent_page_num)
         else:
@@ -1435,17 +1444,14 @@ class Tree:
 
         NOTE: This must be invoked after the node has been updated and the new key has been inserted
         (into the child, i.e. `node_page_num`). This is needed, since this determines,
-        how index of the previous max child is fetched
-
-        consider: renaming update_parent, update_parents_on_new_key, update_parent_on_new_max_child
+        how index of the previous max child is fetched.
 
         :param child_page_num:
         :param prev_max_key:
         :param new_max_key:
-        :return:0
         """
-
-        # print("In update_parent_on_new_max_child")
+        #print(f"In update_parent_on_new_max_child, node_page_num: {node_page_num}, "
+        #      f"prev_max_key: {prev_max_key}, new_max_key: {new_max_key}")
         assert prev_max_key < new_max_key, f"updating parent on new max child key [{new_max_key}] " \
                                            f"requires new key be greater than previous max key [{prev_max_key}]"
 
@@ -1462,9 +1468,9 @@ class Tree:
         # determine whether node is an internal child of it's parent or right child
         prev_max_key_child_idx = self.internal_node_find(parent_page_num, prev_max_key)
 
-        print(f"In update_parent_child_key; node_page_num: {node_page_num}, prev_max_key: {prev_max_key}, new_max_key: {new_max_key}",
-              f"parent_page_num: {parent_page_num}, prev_max_key_child_idx: {prev_max_key_child_idx}, "
-              f"INTERNAL_NODE_MAX_CELLS: {INTERNAL_NODE_MAX_CELLS}")
+        #print(f"In update_parent_on_new_max_child; node_page_num: {node_page_num}, prev_max_key: {prev_max_key}, new_max_key: {new_max_key}",
+        #      f"parent_page_num: {parent_page_num}, prev_max_key_child_idx: {prev_max_key_child_idx}, "
+        #      f"INTERNAL_NODE_MAX_CELLS: {INTERNAL_NODE_MAX_CELLS}")
 
         if prev_max_key_child_idx < INTERNAL_NODE_MAX_CELLS:
             # key is not parent's right child; update parent at child idx and terminate op
@@ -1723,14 +1729,13 @@ def input_handler(input_buffer: str, table: Table):
 def next_value(index):
 
 
-    return randint(1, 1000)
+    # return randint(1, 1000)
 
     # vals = [64, 5, 13, 82]
     # vals = [82, 13, 5, 2, 0]
     # vals = [10, 20, 30, 40, 50, 60, 70]
     # vals = [1,2,3,4]
     # vals = [72, 79, 96, 38, 47]
-    # vals = [i for i in range(1, 100)]
     # vals = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
     # vals = [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516]
     # vals = [159, 597, 520, 189, 822, 725, 504, 397]
@@ -1739,6 +1744,7 @@ def next_value(index):
     # vals = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
     # vals = [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305]
     # vals = [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182, 305, 428, 180, 22]
+    #vals = [15, 382, 653, 668, 139, 70, 828, 17, 891, 121, 175, 642, 491, 281, 920]
     vals = [967, 163, 791, 938, 939, 196, 104, 465, 886, 355, 58, 251, 928, 758, 535, 737, 357, 125, 171, 58, 838, 572, 745, 999, 417, 393, 458, 292, 904, 158, 286, 900, 859, 668, 183]
     if index >= len(vals):
         return vals[-1]
