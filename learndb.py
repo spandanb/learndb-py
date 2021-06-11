@@ -701,7 +701,7 @@ class Tree:
                 # key has changed, update
                 self.set_internal_node_key(parent, old_child_insert_pos, old_child_key)
 
-        # create a new node, i.e. corresponding to the right split
+        # create a new node, i.e. corresponding to the right split of `parent`
         new_page_num = self.pager.get_unused_page_num()
         new_node = self.pager.get_page(new_page_num)
         self.initialize_internal_node(new_node)
@@ -717,8 +717,12 @@ class Tree:
         # determine insertion location of `new_child_page_num`, using key (child-node-max-key)
         new_child = self.pager.get_page(new_child_page_num)
         new_child_key = self.get_node_max_key(new_child)
+        # NOTE: this find op assumes node has capacity for new child
+        # specifically if it returns `INTERNAL_NODE_MAX_CELLS` that may represent
+        # right child insert point or last cell
         new_child_insert_pos = self.internal_node_find(page_num, new_child_key)
-        if new_child_insert_pos == INTERNAL_NODE_MAX_CELLS:
+        # check if the insert point is referring to right child
+        if new_child_insert_pos == INTERNAL_NODE_MAX_CELLS and new_child_key > self.get_node_max_key(parent):
             # the logic below expects this to +1 shifted
             new_child_insert_pos += 1
 
@@ -731,6 +735,7 @@ class Tree:
 
             # determine destination node from the shifted position
             if shifted_index >= INTERNAL_NODE_LEFT_SPLIT_CHILD_COUNT:
+                # NOTE: `new_node` is the split of parent
                 dest_node = new_node
                 split_right_count += 1
             else:
@@ -745,7 +750,7 @@ class Tree:
             is_right_child_after_split = split_left_count == 1 or split_right_count == 1
 
             # debugging info
-            dest_name = "old/left" if dest_node == old_child else "new/right"
+            dest_name = "old/left" if dest_node == parent else "new/right"
 
             # insert new child
             if shifted_index == new_child_insert_pos:
@@ -778,6 +783,7 @@ class Tree:
                 # current right child, remains a right child
                 current_child_page_num = self.internal_node_right_child(parent)
                 self.set_internal_node_right_child(dest_node, current_child_page_num)
+                print(f"In loop; right to right; current_child_page_num: {current_child_page_num}")
             elif is_current_right_child:
                 # current right child, becomes an internal cell
                 # lookup key from right child page num
@@ -786,28 +792,36 @@ class Tree:
                 current_child_key = self.get_node_max_key(current_child)
                 self.set_internal_node_key(dest_node, post_partition_index, current_child_key)
                 self.set_internal_node_child(dest_node, post_partition_index, current_child_page_num)
+                print(f"In loop; is_current_right; current_child_page_num: {current_child_page_num}, "
+                      f"current_child_key: {current_child_key} ")
             elif is_right_child_after_split:
                 # internal cell becomes right child
                 current_child_page_num = self.internal_node_child(parent, current_idx)
                 self.set_internal_node_right_child(dest_node, current_child_page_num)
+                print(f"In loop; to_right; current_child_page_num: {current_child_page_num}")
             else:  # never a right child
                 assert current_idx < num_keys, \
                     f"Internal node set cell location [{current_idx}] must be less than num_cells [{num_keys}]"
 
                 cell_to_copy = self.internal_node_cell(parent, current_idx)
                 self.set_internal_node_cell(dest_node, post_partition_index, cell_to_copy)
+                print(f"non-right to non-right")
+            print(" ")
 
         # set left and right split counts
         # -1 since the number of keys excludes right child's key
         self.set_internal_node_num_keys(parent, split_left_count - 1)
         self.set_internal_node_num_keys(new_node, split_right_count - 1)
 
+        # some children got moved to the new/right node; update that nodes' children
+        self.check_update_parent_ref_in_children(new_page_num)
+
         # for testing
-        #print("In internal_node_split_and_insert")
-        #print("print old/left internal node after split")
-        #self.print_internal_node(old_child, recurse=False)
-        #print("print new/right internal node after split")
-        #self.print_internal_node(new_node, recurse=False)
+        print("In internal_node_split_and_insert")
+        print("print old/left internal node after split")
+        self.print_internal_node(parent, recurse=False)
+        print("print new/right internal node after split")
+        self.print_internal_node(new_node, recurse=False)
 
         # update parent
         if self.is_node_root(parent):
@@ -852,6 +866,7 @@ class Tree:
         if cell_num == num_cells:
             # get previous max key, so we can determine what index to update in parent
             prev_max_key = Tree.leaf_node_key(node, num_cells - 1)
+            #print("")
             self.update_parent_on_new_max_child(page_num, prev_max_key, key)
 
     def leaf_node_split_and_insert(self, page_num: int, new_key_cell_num: int, key: int, value: bytes):
@@ -993,8 +1008,6 @@ class Tree:
         # update all of left node's children to refer to new left page
         self.check_update_parent_ref_in_children(left_child_page_num)
 
-
-
     # section: utility methods
 
     @staticmethod
@@ -1065,14 +1078,14 @@ class Tree:
         root = self.pager.get_page(root_page_num)
         parent_num = "NOPAR" if self.is_node_root(root) else self.get_parent_page_num(root)
         if self.get_node_type(root) == NodeType.NodeLeaf:
-            body = f"printing leaf node at page num: {root_page_num}. parent: [{parent_num}]"
+            body = f"printing leaf node at page num: [{root_page_num}]. parent: [{parent_num}]"
             divider = f"{indent}{len(body) * '.'}"
             print(f"{indent}{body}")
             print(divider)
             self.print_leaf_node(root, depth = depth)
             print(divider)
         else:
-            body = f"printing internal node at page num: {root_page_num}. parent: [{parent_num}]"
+            body = f"printing internal node at page num: [{root_page_num}]. parent: [{parent_num}]"
             divider = f"{indent}{len(body) * '.'}"
             print(f"{indent}{body}")
             print(divider)
@@ -1126,9 +1139,19 @@ class Tree:
             key = Tree.leaf_node_key(node, i)
             print(f"{indent}{i} - {key}")
 
+    def validate(self):
+        """
+        invoke all sub-validators
+        :return:
+        """
+        self.validate_ordering()
+        self.validate_parent_keys()
+
     def validate_parent_keys(self) -> bool:
         """
-        validates that each parent key value exists in its right child
+        validate:
+            1) that each parent key value (referring to child) is max value in right child
+            2) child contains correct parent page ref
         """
         stack = [self.root_page_num]
         while stack:
@@ -1140,11 +1163,19 @@ class Tree:
                     child_page_num = self.internal_node_child(node, child_num)
                     child_node = self.pager.get_page(child_page_num)
                     child_max_key = self.get_node_max_key(child_node)
+                    #  validate that each parent key value (referring to child) is max value in right child
                     assert child_key == child_max_key, \
                         f"Expected at pos [{child_num}] key [{child_key}]; child-max-key: {child_max_key}; parent_page_num: " \
                         f"{node_page_num}, child_page_num: {child_page_num}"
 
-    def validate(self) -> bool:
+                    # validate that child's ref to parent page num is correct
+                    child_parent_ref = self.get_parent_page_num(child_node)
+                    assert child_parent_ref == node_page_num, \
+                        f"child ref to parent [{child_parent_ref}], does not match parent page num: [{node_page_num}] " \
+                        f"child page num is {child_page_num}"
+
+
+    def validate_ordering(self) -> bool:
         """
         traverse the tree, starting at root, and ensure values are ordered as expected
 
@@ -1157,11 +1188,12 @@ class Tree:
             node_page_num, lower_bound, upper_bound = stack.pop()
             node = self.pager.get_page(node_page_num)
             if self.get_node_type(node) == NodeType.NodeInternal:
-                print(f"validating internal node on page_num: {node_page_num}")
-                self.print_internal_node(node, recurse=False)
+                # print(f"validating internal node on page_num: {node_page_num}")
+                # self.print_internal_node(node, recurse=False)
+
+                # validate inner keys are ordered
                 for child_num in range(self.internal_node_num_keys(node)):
                     key = self.internal_node_key(node, child_num)
-                    # TODO: should these checks be inclusive?
                     assert lower_bound < key, f"validation: global lower bound [{lower_bound}] constraint violated [{key}]"
                     assert upper_bound >= key, f"validation: global upper bound [{upper_bound}] constraint violated [{key}]"
 
@@ -1171,8 +1203,6 @@ class Tree:
                         assert key > prev_key, f"validation: internal node siblings must be strictly greater key: {key}. " \
                                                f"prev_key:{prev_key}"
 
-                    # todo: check right child is consistent, i.e. max?
-
                     # add children to stack
                     child_page_num = self.internal_node_child(node, child_num)
                     # lower bound is prev child for non-zero child, and parent's lower bound for 0-child
@@ -1181,6 +1211,11 @@ class Tree:
                     child_upper_bound = self.internal_node_key(node, child_num)
                     stack.append((child_page_num, child_lower_bound, child_upper_bound))
 
+                # validate right is the max key
+                assert self.internal_node_key(node, self.internal_node_num_keys(node)-1) < \
+                    self.get_node_max_key(self.pager.get_page(self.internal_node_right_child(node))), \
+                    "Expected right child to be max"
+
                 # add right child
                 child_page_num = self.internal_node_right_child(node)
                 # lower bound is last key
@@ -1188,8 +1223,8 @@ class Tree:
                 stack.append((child_page_num, child_lower_bound, upper_bound))
 
             else:  # leaf node
-                print(f"validating leaf node on page_num: {node_page_num}")
-                self.print_leaf_node(node)
+                # print(f"validating leaf node on page_num: {node_page_num}")
+                # self.print_leaf_node(node)
                 for cell_num in range(self.leaf_node_num_cells(node)):
                     if cell_num > 0:
                         key = self.leaf_node_key(node, cell_num)
@@ -1373,6 +1408,7 @@ class Tree:
         :param node_page_num:
         :return:
         """
+        print("In check_update_parent_on_new_right")
         node = self.pager.get_page(node_page_num)
         if self.is_node_root(node):
             # nothing to do
@@ -1425,7 +1461,9 @@ class Tree:
         :return:0
         """
 
-        assert prev_max_key < new_max_key, f"updating parent on new max child key [{new_max_key}] requires new key be greater than previous max key [{prev_max_key}]"
+        print("In update_parent_on_new_max_child")
+        assert prev_max_key < new_max_key, f"updating parent on new max child key [{new_max_key}] " \
+                                           f"requires new key be greater than previous max key [{prev_max_key}]"
 
         node = self.pager.get_page(node_page_num)
         if self.is_node_root(node):
@@ -1441,7 +1479,8 @@ class Tree:
         prev_max_key_child_idx = self.internal_node_find(parent_page_num, prev_max_key)
 
         print(f"In update_parent_child_key; node_page_num: {node_page_num}, prev_max_key: {prev_max_key}, new_max_key: {new_max_key}",
-              f"parent_page_num: {parent_page_num}, prev_max_key_child_idx: {prev_max_key_child_idx}, INTERNAL_NODE_MAX_CELLS: {INTERNAL_NODE_MAX_CELLS}")
+              f"parent_page_num: {parent_page_num}, prev_max_key_child_idx: {prev_max_key_child_idx}, "
+              f"INTERNAL_NODE_MAX_CELLS: {INTERNAL_NODE_MAX_CELLS}")
 
         if prev_max_key_child_idx < INTERNAL_NODE_MAX_CELLS:
             # key is not parent's right child; update parent at child idx and terminate op
@@ -1613,10 +1652,9 @@ def do_meta_command(command: str, table: Table) -> MetaCommandResult:
         print("Finished printing tree" + "-"*50)
         return MetaCommandResult.Success
     elif command == ".validate":
-        print("Validating tree" + "-"*50)
-        #table.tree.validate()
-        table.tree.validate_parent_keys()
-        print("Validation succeeded" + "-"*50)
+        print("Validating tree....")
+        table.tree.validate()
+        print("Validation succeeded.......")
         return MetaCommandResult.Success
     elif command == ".nuke":
         os.remove(DB_FILE)
@@ -1647,7 +1685,7 @@ def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     row_to_insert = statement.row_to_insert
     print(f"inserting row with id: [{row_to_insert.identifier}]")
     cursor.insert_row(row_to_insert)
-    print(f"insert [id] successful {row_to_insert.identifier}")
+    print(f"insert [{row_to_insert.identifier}] is successful")
     return ExecuteResult.Success
 
 
@@ -1713,8 +1751,10 @@ def next_value(index):
     # vals = [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516]
     # vals = [159, 597, 520, 189, 822, 725, 504, 397]
     # vals = [960, 267, 947, 400, 795, 327, 464, 884, 667, 870, 92]
-    # vals = [793, 651, 165, 282, 177] #, 439, 593, ]
-    vals = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
+    # vals = [793, 651, 165, 282, 177, 439, 593]
+    # vals = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
+    # vals = [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305]
+    vals = [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182, 305, 428, 180, 22]
 
     if index >= len(vals):
         return vals[-1]
@@ -1747,25 +1787,20 @@ def test():
     Tree.print_tree_constants()
 
     values = []
-    for i in range(20):
+    for i in range(100):
         value = next_value(i)
         values.append(value)
         try:
             insert_helper(table, value)
-            #input_handler('.validate', table)
+            input_handler('.btree', table)
+            input_handler('.validate', table)
+            print(" ")
         except AssertionError as e:
             print(f"Caught assertion error; values: {values}")
             raise
-        # input_handler('insert', table)
-
-        input_handler('.btree', table)
-        input_handler('.validate', table)
-        print(" ")
 
     # input_handler('select', table)
     # input_handler('.btree', table)
-
-
     input_handler('.quit', table)
 
 
