@@ -557,13 +557,13 @@ def test():
     Tree.print_tree_constants()
 
     values = []
-    for i in range(100):
+    for i in range(10):
         value = next_value(i)
         values.append(value)
         try:
             insert_helper(table, value)
-            input_handler('.btree', table)
-            input_handler('.validate', table)
+            #input_handler('.btree', table)
+            #input_handler('.validate', table)
             print(" ")
         except AssertionError as e:
             print(f"Caught assertion error; values: {values}")
@@ -573,6 +573,7 @@ def test():
     # input_handler('.btree', table)
     input_handler('.quit', table)
 
+
 def many_tests():
     for i in range(100):
         test()
@@ -580,5 +581,5 @@ def many_tests():
 
 if __name__ == '__main__':
     # repl()
-    # test()
-    many_tests()
+    test()
+    #many_tests()
