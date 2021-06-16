@@ -1,5 +1,6 @@
 import inspect
 
+# disabling makes tests a lot faster
 DEBUG = True
 
 
@@ -18,6 +19,7 @@ def get_caller_info() -> str:
         return info
     finally:
         del caller
+        del stack
 
 
 def debug(string: str):

@@ -42,7 +42,7 @@ INTERNAL_NODE_SPACE_FOR_CELLS = PAGE_SIZE - INTERNAL_NODE_HEADER_SIZE
 # INTERNAL_NODE_MAX_CELLS =  INTERNAL_NODE_SPACE_FOR_CELLS / INTERNAL_NODE_CELL_SIZE
 # todo: nuke after testing
 # cells, i.e. key, child ptr in the body
-INTERNAL_NODE_MAX_CELLS = 2
+INTERNAL_NODE_MAX_CELLS = 3
 # the +1 is for the right child
 INTERNAL_NODE_MAX_CHILDREN = INTERNAL_NODE_MAX_CELLS + 1
 INTERNAL_NODE_RIGHT_SPLIT_CHILD_COUNT = (INTERNAL_NODE_MAX_CHILDREN + 1) // 2
@@ -68,7 +68,7 @@ LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
 LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
 # LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE
 # todo: nuke after testing
-LEAF_NODE_MAX_CELLS = 2
+LEAF_NODE_MAX_CELLS = 3
 
 # when a node is split, off number of cells, left will get one more
 LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
@@ -115,7 +115,7 @@ class Tree:
 
     def insert(self, key: int, value: bytes) -> TreeInsertResult:
         """
-
+        TODO: add a high level description of the algorithm
         :param key: key to insert
         :param value: value associated with key
         :return:
@@ -314,7 +314,7 @@ class Tree:
 
         # right child was split; but we don't know whether a new max key was inserted
         if right_child_updated:
-            self.check_update_parent_on_new_right(parent_page_num)
+            self.check_update_parent_key(parent_page_num)
 
     def internal_node_split_and_insert(self, page_num: int, new_child_page_num: int, old_child_page_num: int):
         """
@@ -504,13 +504,10 @@ class Tree:
         Tree.set_leaf_node_value(node, cell_num, value)
         Tree.set_leaf_node_num_cells(node, num_cells + 1)
 
-        # TODO: verify this logic is correct
         # new key was inserted at largest index, i.e. new max-key - update parent
         if cell_num == num_cells:
-            # get previous max key, so we can determine what index to update in parent
-            prev_max_key = Tree.leaf_node_key(node, num_cells - 1)
-            #print("")
-            self.update_parent_on_new_max_child(page_num, prev_max_key, key)
+            # update the parent's key
+            self.check_update_parent_key(page_num)
 
     def leaf_node_split_and_insert(self, page_num: int, new_key_cell_num: int, key: int, value: bytes):
         """
@@ -544,8 +541,7 @@ class Tree:
 
         # keys must be divided between old (left child) and new (right child)
         # start from right, move each key (cell) to correct location
-        split_left_count = 0
-        split_right_count = 0
+
         # `shifted_cell_num` iterates from [n..0], i.e. an entry for all existing cells
         # and the new cell to be inserted
         for shifted_cell_num in range(LEAF_NODE_MAX_CELLS, -1, -1):
@@ -553,10 +549,8 @@ class Tree:
             # determine destination node from it's shifted position
             if shifted_cell_num >= LEAF_NODE_LEFT_SPLIT_COUNT:
                 dest_node = new_node
-                split_right_count += 1
             else:
                 dest_node = old_node
-                split_left_count += 1
 
             # determine new cell, i.e. post-splitting location
             # cell should be left aligned on its node
@@ -577,16 +571,13 @@ class Tree:
             cell_to_copy = self.leaf_node_cell(old_node, current_cell_num)
             self.set_leaf_node_cell(dest_node, new_cell_num, cell_to_copy)
 
-            #key_to_move = self.leaf_node_key(old_node, current_cell_num)
-            #node_name = "old_node" if dest_node is old_node else "new_node"
-            #print(f"key_to_move: {key_to_move} from cell_idx: {current_cell_num} to [{node_name}, {new_cell_num}]")
+            # key_to_move = self.leaf_node_key(old_node, current_cell_num)
+            # node_name = "old_node" if dest_node is old_node else "new_node"
+            # print(f"key_to_move: {key_to_move} from cell_idx: {current_cell_num} to [{node_name}, {new_cell_num}]")
 
         # update counts on child nodes
-        # NOTE: the constants `LEAF_NODE_LEFT_SPLIT_COUNT`, `LEAF_NODE_RIGHT_SPLIT_COUNT`
-        # don't account for insertion position of new key
-        # TODO: verify this is indeed the case^
-        self.set_leaf_node_num_cells(old_node, split_left_count)
-        self.set_leaf_node_num_cells(new_node, split_right_count)
+        self.set_leaf_node_num_cells(old_node, LEAF_NODE_LEFT_SPLIT_COUNT)
+        self.set_leaf_node_num_cells(new_node, LEAF_NODE_RIGHT_SPLIT_COUNT)
 
         print("printing old leaf node after split-insert")
         self.print_leaf_node(old_node)
@@ -666,19 +657,19 @@ class Tree:
             right_child = self.pager.get_page(self.internal_node_right_child(node))
             self.set_parent_page_num(right_child, node_page_num)
 
-    def check_update_parent_on_new_right(self, node_page_num: int):
+    def check_update_parent_key(self, node_page_num: int):
         """
-        similar to updating parent on new max child, however,
+        Checks whether the parent of the node (`node_page_num`) has a different key, than
+        the right-most value of node. If it does, it updates it to the correct value.
+        This should be invoked when the right-most child of (either internal or leaf) node
+        is updated. If parent's key does not need to be updated, this is a no-op. However,
+        unnecessary calls should be avoided, as it is expensive.
 
-        Invoked when an internal node's right child is updated;
-        but the caller does not know whether a new max key was inserted.
-        This first checks whether the new right child
-        indeed has a max key- by comparing with it's parent's key for itself,
-        and then invokes `update_parent_on_new_max_child`
-
+        :param self:
         :param node_page_num:
         :return:
         """
+
         node = self.pager.get_page(node_page_num)
         if self.is_node_root(node):
             # nothing to do
@@ -689,73 +680,26 @@ class Tree:
 
         node_max_key = self.get_node_max_key(node)
         # check node position in parent
+        # NOTE: the node position in parent should be unchanged after
+        # insertion/deletion of key, i.e. which may have changed the `node_max_key`
+        # since the added\removed key's value is still be bounded by the prev
+        # and subsequent key values in parent
         node_child_num = self.internal_node_find(parent_page_num, node_max_key)
         if node_child_num == INTERNAL_NODE_MAX_CELLS:
             # the node is parent's right child; thus parent is not
             # updated; but it's grandparent might need to.
             # this can be conceptually viewed as this parent potentially receiving a new child
             # since get internal node max child recursively gets the rightmost leaf descendant
-            self.check_update_parent_on_new_right(parent_page_num)
+            self.check_update_parent_key(parent_page_num)
         else:
             # node is a non-right child of it's parent
             old_child_key = self.internal_node_key(parent, node_child_num)
-            if old_child_key < node_max_key:
+            if old_child_key != node_max_key:
                 # we indeed have a new max key
-                # update the node
+                # update the parent node
                 self.set_internal_node_key(parent, node_child_num, node_max_key)
-                self.update_parent_on_new_max_child(parent_page_num, old_child_key, node_max_key)
-            else:
-                # logical error in the invocation, since if old is less than node, then it must be max
-                assert old_child_key == node_max_key
-                # parent does not need to be updated
-
-    def update_parent_on_new_max_child(self, node_page_num: int, prev_max_key: int, new_max_key: int):
-        """
-        Invoked when node at `node_page_num` has max key `prev_max_key` replaced with
-        `new_max_key`.
-
-        Thus, if the node was a non-right child, update the parent's key referring
-        to this child, and the op terminates. If the node was a right-child, the parent does
-        not need to be updated. (since the parent doesn't hold the right key). However,
-        now update the grandparent, since the max key of it's child (the parent) has changed. This
-        op recurses until, we update a non-right child or reach the root.
-
-        NOTE: This must be invoked after the node has been updated and the new key has been inserted
-        (into the child, i.e. `node_page_num`). This is needed, since this determines,
-        how index of the previous max child is fetched.
-
-        :param child_page_num:
-        :param prev_max_key:
-        :param new_max_key:
-        """
-        #print(f"In update_parent_on_new_max_child, node_page_num: {node_page_num}, "
-        #      f"prev_max_key: {prev_max_key}, new_max_key: {new_max_key}")
-        assert prev_max_key < new_max_key, f"updating parent on new max child key [{new_max_key}] " \
-                                           f"requires new key be greater than previous max key [{prev_max_key}]"
-
-        node = self.pager.get_page(node_page_num)
-        if self.is_node_root(node):
-            # nothing to do
-            return
-
-        # find node's parent
-        parent_page_num = self.get_parent_page_num(node)
-        parent = self.pager.get_page(parent_page_num)
-        assert self.get_node_type(parent) == NodeType.NodeInternal, "update parent invoked on leaf node"
-
-        # determine whether node is an internal child of it's parent or right child
-        prev_max_key_child_idx = self.internal_node_find(parent_page_num, prev_max_key)
-
-        #print(f"In update_parent_on_new_max_child; node_page_num: {node_page_num}, prev_max_key: {prev_max_key}, new_max_key: {new_max_key}",
-        #      f"parent_page_num: {parent_page_num}, prev_max_key_child_idx: {prev_max_key_child_idx}, "
-        #      f"INTERNAL_NODE_MAX_CELLS: {INTERNAL_NODE_MAX_CELLS}")
-
-        if prev_max_key_child_idx < INTERNAL_NODE_MAX_CELLS:
-            # key is not parent's right child; update parent at child idx and terminate op
-            self.set_internal_node_key(parent, prev_max_key_child_idx, new_max_key)
-        else:
-            # key is parent's right child; recurse to parent' parent
-            self.update_parent_on_new_max_child(parent_page_num, prev_max_key, new_max_key)
+                # as this is a non-right node, the operation
+                # terminates here
 
     # section: initialization helpers
 
@@ -940,7 +884,6 @@ class Tree:
                         f"child ref to parent [{child_parent_ref}], does not match parent page num: [{node_page_num}] " \
                         f"child page num is {child_page_num}"
 
-
     def validate_ordering(self) -> bool:
         """
         traverse the tree, starting at root, and ensure values are ordered as expected
@@ -999,6 +942,21 @@ class Tree:
                         assert key > prev_key, "validation: leaf node siblings must be strictly greater"
 
         return True
+
+    def validate_existence(self, keys: list):
+        """
+        given a list of `keys` asserts that all the keys exist within the tree.
+
+        Adding this method to temporarily validate existence. In principle,
+        this should be straight forward once input handler can return result. Then
+        this validation can be done entirely through the public API.
+        :param keys:
+        :return:
+        """
+        for key in keys:
+            page_num, cell_num = self.find(key)
+            node = self.pager.get_page(page_num)
+            assert key == self.leaf_node_key(node, cell_num)
 
     # section : node getter/setters: common, internal, leaf
 

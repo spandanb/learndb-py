@@ -222,6 +222,7 @@ class Pager:
             if self.pages[page_num] is None:
                 continue
             self.flush_page(page_num)
+        self.fileptr.close()
 
     def flush_page(self, page_num: int):
         """
@@ -459,14 +460,18 @@ def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     return ExecuteResult.Success
 
 
-def execute_select(table: Table):
+def execute_select(table: Table) -> list:
     # get cursor to start of table
     print("executing select...")
 
+    rows = []
     cursor = Cursor.table_start(table)
     while cursor.end_of_table is False:
-        print(cursor.get_row())
+        row = cursor.get_row()
         cursor.advance()
+        rows.append(rows)
+
+    return rows
 
 
 def execute_statement(statement: Statement, table: Table):
@@ -551,13 +556,14 @@ def repl():
 
 
 def test():
-    os.remove(DB_FILE)
+    if os.path.exists(DB_FILE):
+        os.remove(DB_FILE)
     table = db_open(DB_FILE)
 
     Tree.print_tree_constants()
 
     values = []
-    for i in range(10):
+    for i in range(20):
         value = next_value(i)
         values.append(value)
         try:
@@ -568,6 +574,12 @@ def test():
         except AssertionError as e:
             print(f"Caught assertion error; values: {values}")
             raise
+
+    print("validating existence")
+    input_handler(".validate", table)
+    table.tree.validate_existence(values)
+
+    print(f"values inserted/validated: {values}")
 
     # input_handler('select', table)
     # input_handler('.btree', table)
@@ -581,5 +593,5 @@ def many_tests():
 
 if __name__ == '__main__':
     # repl()
-    test()
-    #many_tests()
+    #test()
+    many_tests()
