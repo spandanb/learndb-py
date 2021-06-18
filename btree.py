@@ -80,6 +80,10 @@ class TreeInsertResult(Enum):
     DuplicateKey = auto()
 
 
+class TreeDeleteResult(Enum):
+    Success = auto()
+
+
 class NodeType(Enum):
     NodeInternal =1
     NodeLeaf = 2
@@ -101,7 +105,7 @@ class Tree:
     level helpers that support find, insert, and delete.
     """
 
-    def __init__(self, pager: Pager, root_page_num: int):
+    def __init__(self, pager: 'Pager', root_page_num: int):
         """
 
         :param pager:
@@ -115,7 +119,31 @@ class Tree:
 
     def insert(self, key: int, value: bytes) -> TreeInsertResult:
         """
-        TODO: add a high level description of the algorithm
+        insert a `key` into the tree
+
+        Algorithm:
+            find the key location i.e. leaf page num, and cell num. If key
+            at location is same as key to insert, raise/return failure since
+            duplicate keys are not supported.
+
+            Check whether the leaf node has capacity to insert the new entry.
+            If it does, move all entries, right of insert point, right by 1.
+            If it does not, split the leaf into lower (aka left) and upper (right) splits.
+            The convention is that after a split, the left is the older node, while
+            the right a newly created split.
+
+            Check if the parent, has capacity to add new/right/upper child.
+            If it does, add the child and the operation terminates.
+            Otherwise, the parent must be split. This splitting op proceeds recursively
+            until an ancestor has enough room.
+
+            If we reach the root and it too does not have enough capacity, create a new root.
+            NOTE: The root page num must not change. Thus when creating a new root, it must
+            occupy the root page, which will require the left split to be copied to a new node.
+
+            Finally, if a the right(-most) child is updated, then it's ancestors
+            keys for the children may need to be updated.
+
         :param key: key to insert
         :param value: value associated with key
         :return:
@@ -157,10 +185,96 @@ class Tree:
     def delete(self, key: int):
         """
         delete `key`
+
+        Algorithm:
+            find the key, i.e. leaf page num, and cell num
+             if the key does not exist, op terminates
+
+            if the key exist, delete the key, i.e. reduce
+            num_keys - 1 and move all cells from key position left by 1
+
+            if deleted key was max key, then the parent's key for
+             the child will have to be updated. If the child was the parent right
+             child, then the parent is unchanged, but the grandparent may
+             need to be updated. This chain of updates may go all the way upto the root.
+
+            Next, we check whether the node, and specifically, the node plus it's left
+            and right adjacent sibling have total number of elements less than some threshold.
+            i.e. L + R + N <= LEAF_NODE_MAX_KEYS * 2 - buffer
+
+            If the parent falls below the threshold, apply restructing recursively. If the
+            root needs to be restructured, delete the root, i.e. the tree reduces in height by 1.
+            NOTE: when the root is deleted, the tree must be such that the new root is at the same
+            root page num.
         """
-        raise NotImplemented
+        # find
+        page_num, cell_num = self.find(key)
+        node = self.pager.get_page(page_num)
+        if self.leaf_node_key(node, cell_num) != key:
+            return TreeDeleteResult.Success
 
     # section: core logic helpers
+
+    def leaf_node_delete(self, page_num: int, cell_num: int):
+        """
+        delete key at `cell_num`
+
+        :param self:
+        :param page_num:
+        :param cell_num:
+        :param key:
+        :return:
+        """
+        node = self.pager.get_page(page_num)
+        num_cells = Tree.leaf_node_num_cells(node)
+
+        # move cells left by 1
+        cells = self.leaf_node_cells_starting_at(node, cell_num)
+        self.set_leaf_node_cells_starting_at(node, cell_num - 1, cells)
+
+        # reduce cell count
+        self.set_leaf_node_num_cells(num_cells - 1)
+
+        # right-most child was deleted; parent key may
+        # need to be updated
+        if cell_num == num_cells - 1:
+            self.check_update_parent_key(page_num)
+
+        # check whether we need to restructure
+        # if the current node, and it's left and right siblings
+        # have less than
+
+    def restructure_leaf_node(self, page_num: int):
+        """
+        check whether node at `page_num` and it's left and right siblings
+        have a combined number of keys/children below the restructuring threshold.
+        If so, the nodes are restructured into
+        :param page_num:
+        :return:
+        """
+
+        node = self.pager.get_page(page_num)
+        if self.is_root(node):
+            # nothing to do
+            return
+
+        parent_page_num = self.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+
+        # find node's location in parent
+        node_max_key = self.get_node_max_key(node)
+        node_child_num = self.internal_node_find(parent_page_num, node_max_key)
+
+        # check if sum of cells in left and right sibling and node
+        # is below threshold, if so restructure the nodes.
+        total_count = self.leaf_node_num_cells(node)
+        if node_child_num > 0:
+            # left sibling exists, add number of cells in left to total
+            left_page_num = self.internal_node_child(parent, node_child_num - 1)
+            left = self.pager.get_page(left_page_num)
+            total_count += self.leaf_node_num_cells(left)
+
+        # Todo: complete
 
     def internal_node_find(self, page_num: int, key: int) -> int:
         """
@@ -464,9 +578,9 @@ class Tree:
         # for testing
         debug("In internal_node_split_and_insert")
         debug("print old/left internal node after split")
-        self.print_internal_node(parent, recurse=False)
+        # self.print_internal_node(parent, recurse=False)
         debug("print new/right internal node after split")
-        self.print_internal_node(new_parent, recurse=False)
+        # self.print_internal_node(new_parent, recurse=False)
 
         # update parent
         if self.is_node_root(parent):
@@ -579,10 +693,10 @@ class Tree:
         self.set_leaf_node_num_cells(old_node, LEAF_NODE_LEFT_SPLIT_COUNT)
         self.set_leaf_node_num_cells(new_node, LEAF_NODE_RIGHT_SPLIT_COUNT)
 
-        print("printing old leaf node after split-insert")
-        self.print_leaf_node(old_node)
-        print("printing new leaf node after split-insert")
-        self.print_leaf_node(new_node)
+        debug("printing old leaf node after split-insert")
+        # self.print_leaf_node(old_node)
+        debug("printing new leaf node after split-insert")
+        # self.print_leaf_node(new_node)
 
         # add new node as child to parent of split node
         # if split node was root, create new root and add split as children
@@ -950,6 +1064,10 @@ class Tree:
         Adding this method to temporarily validate existence. In principle,
         this should be straight forward once input handler can return result. Then
         this validation can be done entirely through the public API.
+
+        NOTE: this checks whether tree has all keys in `keys`; but not whether there are keys in `keys`
+        not in key; i.e. this only validates inserts work, not deletes.
+
         :param keys:
         :return:
         """

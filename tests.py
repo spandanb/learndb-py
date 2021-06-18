@@ -1,13 +1,13 @@
 import os
 
 from tempfile import NamedTemporaryFile
-from learndb import db_open, insert_helper, input_handler
+from learndb import db_open, insert_helper, input_handler, validate_existence
 
 
 DB_FILE = "db.test.file"
 
 
-def test_cases():
+def test_inserts():
     # list of test cases
     cases = [
         [1, 2, 3, 4],
@@ -24,10 +24,10 @@ def test_cases():
         [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305],
         [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182, 305, 428, 180, 22],
         [15, 382, 653, 668, 139, 70, 828, 17, 891, 121, 175, 642, 491, 281, 920],
-        [967, 163, 791, 938, 939, 196, 104, 465, 886, 355, 58, 251, 928, 758, 535, 737, 357, 125, 171, 58, 838, 572, 745, 999, 417, 393, 458, 292, 904, 158, 286, 900, 859, 668, 183],
+        [967, 163, 791, 938, 939, 196, 104, 465, 886, 355, 58, 251, 928, 758, 535, 737, 357, 125, 171, 838, 572, 745, 999, 417, 393, 458, 292, 904, 158, 286, 900, 859, 668, 183],
         [726, 361, 583, 121, 908, 789, 842, 67, 871, 461, 522, 394, 225, 637, 792, 393, 656, 748, 39, 696],
         [54, 142, 440, 783, 619, 273, 95, 961, 692, 369, 447, 825, 555, 908, 483, 356, 40, 110, 519, 599],
-        [413, 748, 452, 666, 956, 926, 94, 813, 245, 237, 264, 709, 706, 872, 706, 535, 214, 561, 882, 646]
+        [413, 748, 452, 666, 956, 926, 94, 813, 245, 237, 264, 709, 706, 872, 535, 214, 561, 882, 646]
     ]
 
     # failure should raise an assertion
@@ -40,8 +40,10 @@ def test_cases():
 
         print(f"running: {test_case}")
         multi_insert(test_case, table)
-        check_existence(test_case, table)
 
+        # check_existence(test_case, table)
+        select = input_handler('select', table)
+        validate_existence(select.body, test_case)
         del table
 
 
@@ -61,9 +63,18 @@ def multi_insert(values: list, table):
     """
 
     for value in values:
-        insert_helper(table, value)
+        # insert_helper(table, value)
+        resp = input_handler(f'insert {value}', table)
+        assert resp.success is True
         input_handler('.validate', table)
 
     # input_handler('select', table)
     # input_handler('.btree', table)
     # input_handler('.quit', table)
+
+
+def test_duplicate_inserts():
+    """
+    TODO: refactor test setup so can be reused here
+    :return:
+    """
