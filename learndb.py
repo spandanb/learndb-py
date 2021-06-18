@@ -5,13 +5,13 @@ Python prototype/reference implementation
 import os.path
 import sys
 
-from typing import Union
+from typing import Union, List, Any
 from dataclasses import dataclass
 from enum import Enum, auto
 from random import randint  # for testing
 import traceback # for testing
 
-from btree import Tree, TreeInsertResult, NodeType
+from btree import Tree, TreeInsertResult, TreeDeleteResult, NodeType, INTERNAL_NODE_MAX_CELLS
 
 # section: constants
 
@@ -35,16 +35,12 @@ ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
 
 
 # section: enums
+# NOTE: each enum that corresponds to a fail-able operation
+# should be defined with member "Success", and any other failure codes
 
 class MetaCommandResult(Enum):
     Success = auto()
     UnrecognizedCommand = auto()
-
-
-class StatementType(Enum):
-    Uninitialized = auto()
-    Insert = auto()
-    Select = auto()
 
 
 class PrepareResult(Enum):
@@ -57,9 +53,23 @@ class ExecuteResult(Enum):
     TableFull = auto()
 
 
+class StatementType(Enum):
+    Uninitialized = auto()
+    Insert = auto()
+    Select = auto()
+    Delete = auto()
 
 
 # section: classes/structs
+@dataclass
+class Response:
+    """
+    Use as a generic class to encapsulate a response and a body
+    """
+    success: bool
+    body: Any = None
+
+
 @dataclass
 class Row:
     """
@@ -76,7 +86,8 @@ class Row:
 @dataclass
 class Statement:
     statement_type: StatementType
-    row_to_insert: Row
+    row_to_insert: Row = None
+    key_to_delete: int = None
 
 # section: helpers
 
@@ -271,13 +282,6 @@ class Cursor:
         # node must be leaf node
         self.end_of_table = (Tree.leaf_node_num_cells(node) == 0)
 
-    @classmethod
-    def table_start(cls, table: Table) -> Cursor:
-        """
-        cursor pointing to beginning of table
-        """
-        return cls(table, 0)
-
     def get_row(self) -> Row:
         """
         return row pointed by cursor
@@ -287,24 +291,29 @@ class Cursor:
         serialized = Tree.leaf_node_value(node, self.cell_num)
         return Table.deserialize(serialized)
 
-    def insert_row(self, row: Row):
+    def insert_row(self, row: Row) -> Response:
         """
-        insert row to location pointed by cursor
+        insert row
         :return:
         """
         serialized = Table.serialize(row)
-        self.tree.insert(row.identifier, serialized)
+        match self.tree.insert(row.identifier, serialized):
+            case TreeInsertResult.Success:
+                return Response(True)
+            case TreeInsertResult.DuplicateKey:
+                return Response(False, TreeInsertResult.DuplicateKey)
 
-    def advance_old(self):
+
+    def delete_key(self, key: int) -> Response:
         """
-        advance the cursor
+        delete key from table
+
+        :param key:
         :return:
         """
-        node = self.table.pager.get_page(self.page_num)
-        self.cell_num += 1
-        # consider caching RHS value
-        if self.cell_num >= Tree.leaf_node_num_cells(node):
-            self.end_of_table = True
+        match self.tree.delete(key):
+            case TreeDeleteResult.Success:
+                return Response(True)
 
     def next_leaf(self):
         """
@@ -393,7 +402,7 @@ class Table:
     def deserialize(row_bytes: bytes):
         """
 
-        :param byte_offset:
+        :param row_bytes:
         :return:
         """
         # read bytes corresponding to columns
@@ -406,6 +415,57 @@ class Table:
         body_val = body_bstr.rstrip(b'\x00')
         body_val = body_val.decode('utf-8')
         return Row(id_val, body_val)
+
+# section: parsing logic
+
+def parse_insert(command: str) -> Row:
+    """
+    parse insert statement, formatted like: insert `key`
+    :param command:
+    :return: row to insert
+    """
+    tokens = command.split(" ")
+    # for now, can only handle commands of the form: insert 3
+    assert len(tokens) == 2
+    key = int(tokens[1])
+    return Row(key, "hello database")
+
+
+def parse_delete(command: str) -> int:
+    """
+    parse delete statement, formatted like: delete `key`
+    :param command:
+    :return: key to delete
+    """
+    tokens = command.split(" ")
+    # for now, can only handle commands of the form: insert 3
+    assert len(tokens) == 2
+    key = int(tokens[1])
+    return key
+
+
+def validate_existence(rows: List[Row], expected_keys: List[int]):
+    """
+    check `rows` match `expected_keys`
+    NB: This implements a slow N^2 search
+    :param rows:
+    :param expected_keys:
+    :return:
+    """
+    for row in rows:
+        assert row.identifier in expected_keys, f"key [{row.identifier}] not expected"
+
+
+    for key in expected_keys:
+        found = False
+        for ri, row in enumerate(rows):
+            if row.identifier == key:
+                found = True
+                break
+        assert found is True, f"key [{key}] not found"
+
+    assert len(rows) == len(expected_keys), f"number of rows [{len(rows)}] != expected_keys [{len(expected_keys)}]"
+
 
 # section: core execution/user-interface logic
 
@@ -442,6 +502,11 @@ def prepare_statement(command: str, statement: Statement) -> PrepareResult:
     """
     if command.startswith("insert"):
         statement.statement_type = StatementType.Insert
+        statement.row_to_insert = parse_insert(command)
+        return PrepareResult.Success
+    elif command.startswith("delete"):
+        statement.statement_type = StatementType.Delete
+        statement.key_to_delete = parse_delete(command)
         return PrepareResult.Success
     elif command.startswith("select"):
         statement.statement_type = StatementType.Select
@@ -451,95 +516,102 @@ def prepare_statement(command: str, statement: Statement) -> PrepareResult:
 
 def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     print("executing insert...")
-    cursor = Cursor.table_start(table)
+    cursor = Cursor(table)
 
     row_to_insert = statement.row_to_insert
     print(f"inserting row with id: [{row_to_insert.identifier}]")
-    cursor.insert_row(row_to_insert)
-    print(f"insert [{row_to_insert.identifier}] is successful")
-    return ExecuteResult.Success
+    resp = cursor.insert_row(row_to_insert)
+    if resp.success:
+        print(f"insert [{row_to_insert.identifier}] is successful")
+        return Response(True)
+    else:
+        print(f"insert [{row_to_insert.identifier}] failed, due to [{resp.body}]")
+        return Response(False, resp.body)
+
+
+def execute_delete(statement: Statement, table: Table) -> ExecuteResult:
+    print("executing delete...")
+    key_to_delete = statement.key_to_delete
+
+    print(f"deleting key: [{key_to_delete}]")
+    # return ExecuteResult.Success
+
+    cursor = Cursor(table)
+    resp = cursor.delete_key(key_to_delete)
+    if resp.success:
+        print(f"delete [{key_to_delete}] is successful")
+        return Response(True)
+    else:
+        print(f"delete [{key_to_delete}] failed")
+        return Response(False, resp.body)
+
 
 
 def execute_select(table: Table) -> list:
-    # get cursor to start of table
     print("executing select...")
 
     rows = []
-    cursor = Cursor.table_start(table)
+    cursor = Cursor(table)
     while cursor.end_of_table is False:
         row = cursor.get_row()
+        # print(f"printing row: {row}")
         cursor.advance()
-        rows.append(rows)
+        rows.append(row)
 
-    return rows
+    return Response(True, rows)
 
 
-def execute_statement(statement: Statement, table: Table):
+def execute_statement(statement: Statement, table: Table) -> Response:
     """
-    execute statement
+    execute statement;
+    returns return of child-invocation
     """
     match statement.statement_type:
         case StatementType.Select:
-            execute_select(table)
+            return execute_select(table)
         case StatementType.Insert:
-            execute_insert(statement, table)
+            return execute_insert(statement, table)
+        case StatementType.Delete:
+            return execute_delete(statement, table)
 
 
-def input_handler(input_buffer: str, table: Table):
+def input_handler(input_buffer: str, table: Table) -> Response:
     """
     handle input buffer; could contain command or meta command
+
+    returns: tuple (is_success: bool, result: object)
     """
     if is_meta_command(input_buffer):
         match do_meta_command(input_buffer, table):
             case MetaCommandResult.Success:
-                return
+                return Response(True)
             case MetaCommandResult.UnrecognizedCommand:
                 print("Unrecognized meta command")
-                return
+                return Response(False)
 
-    statement = Statement(StatementType.Uninitialized, None)
+    statement = Statement(StatementType.Uninitialized)
     match prepare_statement(input_buffer, statement):
         case PrepareResult.Success:
             # will execute below
             pass
         case PrepareResult.UnrecognizedStatement:
             print(f"Unrecognized keyword at start of '{input_buffer}'")
-            return
+            return Response(False, PrepareResult.UnrecognizedStatement)
 
     # handle non-meta command
-    execute_statement(statement, table)
-    print(f"Executed command '{input_buffer}'")
-
-
-def next_value(index):
-
-
-    return randint(1, 1000)
-
-    # vals = [64, 5, 13, 82]
-    # vals = [82, 13, 5, 2, 0]
-    # vals = [10, 20, 30, 40, 50, 60, 70]
-    # vals = [1,2,3,4]
-    # vals = [72, 79, 96, 38, 47]
-    # vals = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
-    # vals = [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516]
-    # vals = [159, 597, 520, 189, 822, 725, 504, 397]
-    # vals = [960, 267, 947, 400, 795, 327, 464, 884, 667, 870, 92]
-    # vals = [793, 651, 165, 282, 177, 439, 593]
-    # vals = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
-    # vals = [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305]
-    # vals = [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182, 305, 428, 180, 22]
-    #vals = [15, 382, 653, 668, 139, 70, 828, 17, 891, 121, 175, 642, 491, 281, 920]
-    vals = [967, 163, 791, 938, 939, 196, 104, 465, 886, 355, 58, 251, 928, 758, 535, 737, 357, 125, 171, 58, 838, 572, 745, 999, 417, 393, 458, 292, 904, 158, 286, 900, 859, 668, 183]
-    if index >= len(vals):
-        return vals[-1]
-    return vals[index]
-
+    resp = execute_statement(statement, table)
+    if resp.success:
+        print(f"Execution of command '{input_buffer}' succeeded")
+        return Response(True, resp.body)
+    else:
+        return Response(False, resp)
+        print(f"Execution of command '{input_buffer}' failed")
 
 
 def insert_helper(table, key):
     """
     helper to invoke insert for debugging
+    TODO: nuke me
     """
     statement = Statement(StatementType.Insert, Row(key, "hello database"))
     execute_statement(statement, table)
@@ -555,43 +627,49 @@ def repl():
         input_handler(input_buffer, table)
 
 
-def test():
+def main():
+    """
+    new inner loop
+    :return:
+    """
     if os.path.exists(DB_FILE):
         os.remove(DB_FILE)
     table = db_open(DB_FILE)
 
-    Tree.print_tree_constants()
+    # insert
+    keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
+    for key in keys:
+        input_handler(f"insert {key}", table)
 
-    values = []
-    for i in range(20):
-        value = next_value(i)
-        values.append(value)
-        try:
-            insert_helper(table, value)
-            #input_handler('.btree', table)
-            #input_handler('.validate', table)
-            print(" ")
-        except AssertionError as e:
-            print(f"Caught assertion error; values: {values}")
-            raise
-
-    print("validating existence")
     input_handler(".validate", table)
-    table.tree.validate_existence(values)
+    table.tree.validate_existence(keys)
 
-    print(f"values inserted/validated: {values}")
+    select = input_handler("select", table)
 
-    # input_handler('select', table)
+    print(f'Number of keys inserted: {len(keys)}; select returned: {len(select.body)}')
+    validate_existence(select.body, keys)
+
+    # input_handler('.btree', table)
+
+    # delete keys
+    key = keys[0]
+    remaining = keys[1:]
+    input_handler(f"delete {key}", table)
+
+    input_handler(".validate", table)
+
+    # select rows
+    #select = input_handler("select", table)
+    #print(f'select returned: {select.is_success} {select.result}')
+
+    # validate all expected keys exist
+    #validate_existence(select.result, remaining)
+
     # input_handler('.btree', table)
     input_handler('.quit', table)
 
 
-def many_tests():
-    for i in range(100):
-        test()
-
 
 if __name__ == '__main__':
     # repl()
-    #test()
-    many_tests()
+    main()
