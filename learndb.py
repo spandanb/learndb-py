@@ -608,15 +608,6 @@ def input_handler(input_buffer: str, table: Table) -> Response:
         print(f"Execution of command '{input_buffer}' failed")
 
 
-def insert_helper(table, key):
-    """
-    helper to invoke insert for debugging
-    TODO: nuke me
-    """
-    statement = Statement(StatementType.Insert, Row(key, "hello database"))
-    execute_statement(statement, table)
-
-
 def repl():
     """
     repl
@@ -637,35 +628,43 @@ def main():
     table = db_open(DB_FILE)
 
     # insert
-    keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
+    # keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
+    keys = [1,2,3,4]
     for key in keys:
         input_handler(f"insert {key}", table)
 
     input_handler(".validate", table)
-    table.tree.validate_existence(keys)
+    input_handler('.btree', table)
+    # table.tree.validate_existence(keys)
 
     select = input_handler("select", table)
 
-    print(f'Number of keys inserted: {len(keys)}; select returned: {len(select.body)}')
+    # print(f'Number of keys inserted: {len(keys)}; select returned: {len(select.body)}')
     validate_existence(select.body, keys)
-
-    # input_handler('.btree', table)
 
     # delete keys
     key = keys[0]
     remaining = keys[1:]
-    input_handler(f"delete {key}", table)
+    input_handler(f"delete 1", table)
+    input_handler('.btree', table)
+
+    input_handler(f"delete 2", table)
+    input_handler('.btree', table)
+
+    input_handler(f"delete 3", table)
+    input_handler('.btree', table)
 
     input_handler(".validate", table)
 
+    input_handler('.btree', table)
     # select rows
-    #select = input_handler("select", table)
+    select = input_handler("select", table)
     #print(f'select returned: {select.is_success} {select.result}')
 
     # validate all expected keys exist
-    #validate_existence(select.result, remaining)
+    validate_existence(select.body, [4])
 
-    # input_handler('.btree', table)
+    input_handler('.btree', table)
     input_handler('.quit', table)
 
 
