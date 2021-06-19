@@ -213,6 +213,9 @@ class Tree:
         if self.leaf_node_key(node, cell_num) != key:
             return TreeDeleteResult.Success
 
+        self.leaf_node_delete(page_num, cell_num)
+        return TreeDeleteResult.Success
+
     # section: core logic helpers
 
     def leaf_node_delete(self, page_num: int, cell_num: int):
@@ -229,11 +232,12 @@ class Tree:
         num_cells = Tree.leaf_node_num_cells(node)
 
         # move cells left by 1
-        cells = self.leaf_node_cells_starting_at(node, cell_num)
-        self.set_leaf_node_cells_starting_at(node, cell_num - 1, cells)
+        # TODO: ensure `leaf_node_cells_starting_at` can handle when cell_num + 1 is greater than num_cells
+        cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
+        self.set_leaf_node_cells_starting_at(node, cell_num, cells)
 
         # reduce cell count
-        self.set_leaf_node_num_cells(num_cells - 1)
+        self.set_leaf_node_num_cells(node, num_cells - 1)
 
         # right-most child was deleted; parent key may
         # need to be updated
@@ -1056,25 +1060,6 @@ class Tree:
                         assert key > prev_key, "validation: leaf node siblings must be strictly greater"
 
         return True
-
-    def validate_existence(self, keys: list):
-        """
-        given a list of `keys` asserts that all the keys exist within the tree.
-
-        Adding this method to temporarily validate existence. In principle,
-        this should be straight forward once input handler can return result. Then
-        this validation can be done entirely through the public API.
-
-        NOTE: this checks whether tree has all keys in `keys`; but not whether there are keys in `keys`
-        not in key; i.e. this only validates inserts work, not deletes.
-
-        :param keys:
-        :return:
-        """
-        for key in keys:
-            page_num, cell_num = self.find(key)
-            node = self.pager.get_page(page_num)
-            assert key == self.leaf_node_key(node, cell_num)
 
     # section : node getter/setters: common, internal, leaf
 

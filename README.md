@@ -3,7 +3,7 @@
 > What I Cannot Create, I Do Not Understand -Richard Feynman
 
 In the spirit of Feynman's immortal words, the goal of this project is to better understand the internals of databases by
-implementing a database (sqlite clone) from scratch.
+implementing a database management system (DBMS) (sqlite clone) from scratch.
 
 References consulted:
 
