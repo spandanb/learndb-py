@@ -246,7 +246,8 @@ class Tree:
 
         # check whether we need to restructure
         # if the current node, and it's left and right siblings
-        # have less than
+        # have less than threshold
+        self.restructure_leaf_node(page_num)
 
     def restructure_leaf_node(self, page_num: int):
         """
@@ -258,7 +259,7 @@ class Tree:
         """
 
         node = self.pager.get_page(page_num)
-        if self.is_root(node):
+        if self.is_node_root(node):
             # nothing to do
             return
 
@@ -272,12 +273,34 @@ class Tree:
         # check if sum of cells in left and right sibling and node
         # is below threshold, if so restructure the nodes.
         total_count = self.leaf_node_num_cells(node)
+        sisters = 1
+        # check if left sibling exists
         if node_child_num > 0:
-            # left sibling exists, add number of cells in left to total
+            # add number of cells in left to total
             left_page_num = self.internal_node_child(parent, node_child_num - 1)
             left = self.pager.get_page(left_page_num)
             total_count += self.leaf_node_num_cells(left)
+            sisters += 1
 
+        # check if right sibling exists
+        # what should the condition here be; double check this logic
+        if node_child_num < INTERNAL_NODE_MAX_CELLS and node_child_num < self.internal_node_num_keys(parent) - 1:
+            right_page_num = self.internal_node_child(parent, node_child_num + 1)
+            right = self.pager.get_page(right_page_num)
+            total_count += self.leaf_node_num_cells(right)
+            sisters += 1
+
+        # consider whether we would pack the cells of the siblings (without any buffer)
+        # into fewer node
+        assert sisters != 1, "Invalid state; there are no siblings"
+        if sisters == 2:
+            if total_count <= LEAF_NODE_MAX_CELLS:
+                # can be packed
+        if sisters == 3:
+            if total_count <= LEAF_NODE_MAX_CELLS * 2:
+                # can be packed
+
+            # distribute contents of node
         # Todo: complete
 
     def internal_node_find(self, page_num: int, key: int) -> int:
