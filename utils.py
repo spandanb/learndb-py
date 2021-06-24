@@ -1,7 +1,7 @@
 import inspect
 
 # disabling makes tests a lot faster
-DEBUG = False
+DEBUG = True
 
 
 def get_caller_info() -> str:
@@ -10,6 +10,7 @@ def get_caller_info() -> str:
     :return:
     """
     info = ""
+    caller = None
     try:
         stack = inspect.stack()
         # note stack 0,1 are `get_caller` and `debug` skip those and

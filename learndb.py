@@ -458,7 +458,7 @@ def validate_existence(rows: List[Row], expected_keys: List[int]):
 
     for key in expected_keys:
         found = False
-        for ri, row in enumerate(rows):
+        for row in rows:
             if row.identifier == key:
                 found = True
                 break
