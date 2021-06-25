@@ -405,7 +405,6 @@ class Tree:
 
         # todo: recycle `node_page_num`
 
-
     def restructure_inner_node(self, page_num: int):
         """
         Invoked when children of node at `page_num`
@@ -416,7 +415,10 @@ class Tree:
 
     def left_align_leaves(self, siblings: list):
         """
-        left-align cells on siblings and return number of siblings that contain all the data
+        left-align cells on leaf node siblings
+        update each sibling with the updated cell count
+
+        todo: rename compact_leaf_nodes
 
         :param siblings:
         :return: number of siblings needed to compress original cells into
@@ -432,6 +434,10 @@ class Tree:
             # check if src is at last node, last cell, i.e. all cells
             # have been copied; break
             if src_idx == len(siblings) - 1 and src_cell == siblings[src_idx].count:
+                # set number of leaves on dest
+                # only needed for dest, since unused src nodes will be recycled
+                # NOTE: `dest_cell` is the new cell idx to write to == count of cells written
+                self.set_leaf_node_num_cells(siblings[dest_idx].node, dest_cell)
                 break
 
             # if src or dest is at boundary, move it to next node
@@ -439,7 +445,9 @@ class Tree:
                 src_idx += 1
                 src_cell = 0
 
-            if dest_cell == LEAF_NODE_MAX_CELLS:  # siblings[dest_idx].count:
+            if dest_cell == LEAF_NODE_MAX_CELLS:
+                # set number of leaves
+                self.set_leaf_node_num_cells(siblings[dest_idx].node, LEAF_NODE_MAX_CELLS)
                 dest_idx += 1
                 dest_cell = 0
 
@@ -455,8 +463,7 @@ class Tree:
                 src_cell += 1
                 dest_cell += 1
 
-        # all the cells have been moved
-        # update parent
+        # return number of used nodes after compaction
         return dest_idx + 1
 
     def internal_node_find(self, page_num: int, key: int) -> int:

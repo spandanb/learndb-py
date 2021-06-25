@@ -1,7 +1,7 @@
 import inspect
 
 # disabling makes tests a lot faster
-DEBUG = True
+DEBUG = False
 
 
 def get_caller_info() -> str:
