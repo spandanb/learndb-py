@@ -35,6 +35,16 @@ def test_cases():
         ]
 
 
+@pytest.fixture
+def small_test_cases():
+    return [
+            [1, 2, 3, 4],
+            [4, 3, 2, 1],
+            [64, 5, 13, 82],
+            #[82, 13, 5, 2, 0],
+        ]
+
+
 # section : helpers
 
 def clean_db(db_file: str):
@@ -81,12 +91,12 @@ def insert_helper(keys: list, table):
         input_handler('.validate', table)
 
 
-def test_deletes(test_cases):
+def test_deletes(small_test_cases):
     """
     delete
     :return:
     """
-    for test_case in test_cases:
+    for test_case in small_test_cases:
         # clean db; create table
         clean_db(DB_FILE)
         table = db_open(DB_FILE)
@@ -129,7 +139,7 @@ def test_duplicate_inserts():
     table = db_open(DB_FILE)
     resp = input_handler(f'insert 5', table)
     assert resp.success is True
-    input_handler(f'insert 5', table)
+    resp = input_handler(f'insert 5', table)
     assert resp.success is False
 
 

@@ -5,7 +5,7 @@ Contains the implementation of the btree
 import sys
 from enum import Enum, auto
 
-from collections import namedtuple
+from collections import namedtuple, deque
 
 from utils import debug
 
@@ -92,6 +92,9 @@ class NodeType(Enum):
     NodeLeaf = 2
 
 
+Sibling = namedtuple('Sibling', 'node count page_num parent_pos')
+
+
 class Tree:
     """
     Manages read/writes from/to pages corresponding
@@ -118,7 +121,7 @@ class Tree:
         self.root_page_num = root_page_num
         self.check_create_leaf_root()
 
-    # section : public interface: find, search, and delete
+    # section : public interface: insert, find, and delete
 
     def insert(self, key: int, value: bytes) -> TreeInsertResult:
         """
@@ -156,7 +159,6 @@ class Tree:
         if self.leaf_node_key(node, cell_num) == key:
             return TreeInsertResult.DuplicateKey
 
-        # print(f"inserting key: {key}, page_num: {page_num}, cell_num: {cell_num} ")
         self.leaf_node_insert(page_num, cell_num, key, value)
         return TreeInsertResult.Success
 
@@ -234,10 +236,10 @@ class Tree:
         node = self.pager.get_page(page_num)
         num_cells = Tree.leaf_node_num_cells(node)
 
-        # move cells left by 1
-        # TODO: ensure `leaf_node_cells_starting_at` can handle when cell_num + 1 is greater than num_cells
-        cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
-        self.set_leaf_node_cells_starting_at(node, cell_num, cells)
+        # move cells left by 1, if anything exists
+        if cell_num <= num_cells - 2:
+            cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
+            self.set_leaf_node_cells_starting_at(node, cell_num, cells)
 
         # reduce cell count
         self.set_leaf_node_num_cells(node, num_cells - 1)
@@ -261,36 +263,46 @@ class Tree:
         :param page_num:
         :return:
         """
-        # step 0: if node at `page_num` is root
+        # step 0: if node at `page_num` is root, nothing to do
         node = self.pager.get_page(page_num)
         if self.is_node_root(node):
-            # nothing to do
             return
 
         parent_page_num = self.get_parent_page_num(node)
         parent = self.pager.get_page(parent_page_num)
 
-        # 1: determine whether nodes can be compactified into fewer nodes
+        # 1: determine whether nodes can be compacted into fewer nodes
         # 1.1 find node's location in parent
         node_max_key = self.get_node_max_key(node)
         node_child_num = self.internal_node_find(parent_page_num, node_max_key)
-        assert node_max_key == self.internal_node_key(parent, node_child_num)
+        if node_child_num == INTERNAL_NODE_MAX_CELLS:
+            parent_ref_child_page_num = self.internal_node_right_child(parent)
+        else:
+            parent_ref_child_page_num = self.internal_node_child(parent, node_child_num)
+
+        # if the node was right child or node's previous max key was deleted, then the parent's key
+        # and the node/child's max keys will be different.
+        # compare with the child page nums
+        assert page_num == parent_ref_child_page_num
 
         # 1.2 check if sum of cells in left and right sibling and node
         # is below threshold needed to initiate restructuring of the nodes.
-        Sibling = namedtuple('Sibling', 'node count page_num parent_pos')
-        # todo: make siblings a deque
-        siblings = []
-        # sib_counts = []
-        # sib_page_nums = []
+        siblings = deque()
         # one of the siblings is a right child
         is_right_child = False
-        # 1.2.1 check if left sibling exists
+        # 1.2.1 get left sibling if if exists
         if node_child_num > 0:
-            # add number of cells in left to total
-            left_page_num = self.internal_node_child(parent, node_child_num - 1)
+            if node_child_num == INTERNAL_NODE_MAX_CELLS:
+                # left sibling of right node is the last inner cell
+                parent_pos = self.internal_node_num_keys(parent) - 1
+                left_page_num = self.internal_node_child(parent, parent_pos)
+            else:
+                # left sibling is the left sibling for an inner node
+                parent_pos = node_child_num - 1
+                left_page_num = self.internal_node_child(parent, parent_pos)
+
             left = self.pager.get_page(left_page_num)
-            siblings.append(Sibling(left, self.leaf_node_num_cells(left), left_page_num, node_child_num - 1))
+            siblings.append(Sibling(left, self.leaf_node_num_cells(left), left_page_num, parent_pos))
 
         siblings.append(Sibling(node, self.leaf_node_num_cells(node), page_num, node_child_num))
 
@@ -333,8 +345,8 @@ class Tree:
         # whether root should be deleted
         delete_root = can_compress_to_unary and should_compress_to_unary
 
-        # the below conditions modify siblings to ensure we don't end up
-        # with an invalid tree
+        # the below conditions modify `siblings` to ensure our compactions
+        # don't leave us with a unary tree
         if delete_root:
             # compress all siblings
             pass
@@ -348,11 +360,11 @@ class Tree:
                 node_is_right_child = False
             # siblings [1, 2] can be compressed
             elif siblings[1].count + siblings[2].count < LEAF_NODE_MAX_CELLS:
-                siblings = siblings[1:]
+                siblings.popleft()
 
         # 2. left-align leave cells
-        num_siblings= len(siblings)
-        post_compact_num_siblings = self.left_align_leaves(siblings)
+        num_siblings = len(siblings)
+        post_compact_num_siblings = self.compact_leaf_nodes(siblings)
         # otherwise, did any compaction even happen?
         assert post_compact_num_siblings < len(siblings)
 
@@ -369,7 +381,7 @@ class Tree:
             assert self.internal_node_child(parent, siblings[0].parent_pos) == siblings[0].page_num
             max_key = self.get_node_max_key(siblings[0].node)
             self.set_internal_node_key(parent, siblings[0].parent_pos, max_key)
-            siblings = siblings[1:]
+            siblings.popleft()
 
         # 3.3: update parent num_cells
         new_num_keys = parent_child_count - (num_siblings - post_compact_num_siblings)
@@ -395,6 +407,7 @@ class Tree:
         """
         root = self.pager.get_page(node_page_num)
         assert self.is_node_root(root)
+        # NOTE: The node referenced in `node_page_num` only has one child, i.e. is unary.
         assert self.internal_node_num_keys(root) == 1
         child = self.pager.get_page(self.internal_node_child(root, 0))
 
@@ -413,16 +426,16 @@ class Tree:
         """
         raise NotImplementedError
 
-    def left_align_leaves(self, siblings: list):
+    def compact_leaf_nodes(self, siblings: list):
         """
         left-align cells on leaf node siblings
         update each sibling with the updated cell count
 
-        todo: rename compact_leaf_nodes
-
         :param siblings:
         :return: number of siblings needed to compress original cells into
         """
+        # debug(f"len siblings = {len(siblings)}")
+        # debug("siblings:  " + " ".join([f"count={s.count} page_num={s.page_num}" for s in siblings]))
         # pack cells leftwards, starting at left most sibling
         # start packing contents of sibling
         src_idx = 1
@@ -456,8 +469,8 @@ class Tree:
 
             # copy if src and dest are different
             if src_idx != dest_idx or src_cell != dest_cell:
-                debug(f'about to copy: src_idx: {src_idx} pg:{siblings[src_idx].page_num}, src_cell: {src_cell}; '
-                      f'dest_idx: {dest_idx}, pg:{siblings[dest_idx].page_num} dest_cell: {dest_cell}')
+                # debug(f'about to copy: src_idx: {src_idx} pg:{siblings[src_idx].page_num}, src_cell: {src_cell}; '
+                #      f'dest_idx: {dest_idx}, pg:{siblings[dest_idx].page_num} dest_cell: {dest_cell}')
                 to_copy = self.leaf_node_cell(src_node, src_cell)
                 self.set_leaf_node_cell(dest_node, dest_cell, to_copy)
                 src_cell += 1
@@ -1367,6 +1380,7 @@ class Tree:
         :param child_num:
         :return:
         """
+        assert cell_num <= Tree.leaf_node_num_cells(node) - 1, f"out of bounds cell [{cell_num}] lookup [total: {Tree.leaf_node_num_cells(node)}]"
         offset = Tree.leaf_node_cell_offset(cell_num)
         num_keys = Tree.leaf_node_num_cells(node)
         num_keys_to_shift = num_keys - cell_num
