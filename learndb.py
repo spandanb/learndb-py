@@ -223,6 +223,13 @@ class Pager:
 
         return self.pages[page_num]
 
+    def return_page(self, page_num: int):
+        """
+        
+        :param page_num:
+        :return:
+        """
+
     def close(self):
         """
         close the connection i.e. flush pages to file
@@ -627,10 +634,14 @@ def main():
         os.remove(DB_FILE)
     table = db_open(DB_FILE)
 
+    ret1 = input_handler(f"insert 5", table)
+    ret2 = input_handler(f"insert 5", table)
+
     # insert
     # keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
-    keys = [1,2,3,4]
-    #keys = [64, 5, 13, 82],
+    # keys = [1,2,3,4]
+    keys = [64, 5, 13, 82]
+    #keys = [4,3,2,1]
     for key in keys:
         input_handler(f"insert {key}", table)
 
