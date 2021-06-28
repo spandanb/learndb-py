@@ -634,14 +634,13 @@ def main():
         os.remove(DB_FILE)
     table = db_open(DB_FILE)
 
-    ret1 = input_handler(f"insert 5", table)
-    ret2 = input_handler(f"insert 5", table)
-
     # insert
     # keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
     # keys = [1,2,3,4]
-    keys = [64, 5, 13, 82]
-    #keys = [4,3,2,1]
+    # keys = [64, 5, 13, 82]
+    # keys = [82, 13, 5, 2, 0]
+    # keys = [4,3,2,1]
+    keys = [10, 20, 30, 40, 50, 60, 70]
     for key in keys:
         input_handler(f"insert {key}", table)
 
