@@ -41,7 +41,8 @@ def small_test_cases():
             [1, 2, 3, 4],
             [4, 3, 2, 1],
             [64, 5, 13, 82],
-            #[82, 13, 5, 2, 0],
+            [82, 13, 5, 2, 0],
+            # [10, 20, 30, 40, 50, 60, 70],
         ]
 
 
@@ -91,7 +92,7 @@ def insert_helper(keys: list, table):
         input_handler('.validate', table)
 
 
-def test_deletes(small_test_cases):
+def test_deletes(test_cases, small_test_cases):
     """
     delete
     :return:

@@ -236,17 +236,28 @@ class Tree:
         node = self.pager.get_page(page_num)
         num_cells = Tree.leaf_node_num_cells(node)
 
+        debug(f"page_num: {page_num}, cell_num: {cell_num}")
+
         # move cells left by 1, if anything exists
         if cell_num <= num_cells - 2:
             cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
             self.set_leaf_node_cells_starting_at(node, cell_num, cells)
+
+        # delete entire node
+        #if num_cells == 1:
+            #node_max_key = self.get_node_max_key(node)
+            # TODO: what to do here
+            # what should this delete child do? delete node in parent
+            # could this leave tree in an inconsistent state
+            #self.delete_child(page_num)
 
         # reduce cell count
         self.set_leaf_node_num_cells(node, num_cells - 1)
 
         # right-most child was deleted; parent key may
         # need to be updated
-        if cell_num == num_cells - 1:
+        # TODO: handle if node has 0 cells after delete
+        if cell_num == num_cells - 1 and num_cells > 1:
             self.check_update_parent_key(page_num)
 
         # check whether we need to restructure
@@ -326,7 +337,7 @@ class Tree:
         # number of total cells can be packed in at least one less than
         # the total number of nodes;
         total_sib_count = sum([s.count for s in siblings])
-        if total_sib_count >= (len(siblings) - 1) * LEAF_NODE_MAX_CELLS:
+        if total_sib_count > (len(siblings) - 1) * LEAF_NODE_MAX_CELLS:
             return
 
         # NOTE restructuring should not leave any node with a single child, i.e. a unary tree
@@ -338,22 +349,20 @@ class Tree:
         # number of children = num of keys + 1 for right
         parent_child_count = self.internal_node_num_keys(parent) + 1
 
-        # whether all cells can fit on one node
+        # whether all cells on all siblings can fit on one node
         can_compress_to_unary = total_sib_count <= LEAF_NODE_MAX_CELLS
         # should compress to unary when: 1) siblings are all parent's children; 2) parent is root
         should_compress_to_unary = len(siblings) == parent_child_count and self.is_node_root(parent)
         # whether root should be deleted
         delete_root = can_compress_to_unary and should_compress_to_unary
 
-        # the below conditions modify `siblings` to ensure our compactions
-        # don't leave us with a unary tree
-        if delete_root:
-            # compress all siblings
-            pass
-        elif parent_child_count == 2:
-            # do not create unary tree for non-root parent
-            return
-        elif parent_child_count == 3:
+        if can_compress_to_unary and not should_compress_to_unary:
+            # should not compress to unary; see if we can
+            # compress 3 to 2; nothing can be done for 2 node case
+            assert len(siblings) != 1
+            if len(siblings) == 2:
+                return
+
             # siblings[0, 1] can be compressed
             if siblings[0].count + siblings[1].count < LEAF_NODE_MAX_CELLS:
                 siblings.pop()
@@ -986,11 +995,15 @@ class Tree:
         :param node_page_num:
         :return:
         """
-
         node = self.pager.get_page(node_page_num)
         if self.is_node_root(node):
             # nothing to do
             return
+
+        # assert node is not empty
+        if self.get_node_type(node) == NodeType.NodeLeaf:
+            assert self.leaf_node_num_cells(node) > 0
+            # TODO: is a similar check for internal node needed
 
         parent_page_num = self.get_parent_page_num(node)
         parent = self.pager.get_page(parent_page_num)
