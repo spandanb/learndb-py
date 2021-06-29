@@ -135,6 +135,7 @@ class Pager:
         self.file_length = 0
         self.num_pages = 0
         self.open_file()
+        self.returned_pages = []
 
     def open_file(self):
         """
@@ -181,6 +182,9 @@ class Pager:
         NOTE: this depends on num_pages being updated when a new page is requested
         :return:
         """
+        if len(self.returned_pages):
+            # first check the returned page cache
+            return self.return_pages.pop()
         return self.num_pages
 
     def page_exists(self, page_num: int) -> bool:
@@ -229,6 +233,10 @@ class Pager:
         :param page_num:
         :return:
         """
+        # cleaning it to catch issues with invalid refs
+        # self.get_page(page_num)[:PAGE_SIZE] = bytearray(PAGE_SIZE)
+        self.returned_pages.append(page_num)
+
 
     def close(self):
         """
@@ -638,9 +646,10 @@ def main():
     # keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
     # keys = [1,2,3,4]
     # keys = [64, 5, 13, 82]
-    # keys = [82, 13, 5, 2, 0]
+    # keys = [13, 5, 2, 0]
     # keys = [4,3,2,1]
-    keys = [10, 20, 30, 40, 50, 60, 70]
+    # keys = [10, 20, 30, 40, 50, 60, 70]
+    keys = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
     for key in keys:
         input_handler(f"insert {key}", table)
 
@@ -656,6 +665,8 @@ def main():
     # delete keys
     while keys:
         key = keys[0]
+        if key == 311:
+            pass
         remaining = keys = keys[1:]
         input_handler(f"delete {key}", table)
         input_handler('.btree', table)

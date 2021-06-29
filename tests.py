@@ -42,7 +42,7 @@ def small_test_cases():
             [4, 3, 2, 1],
             [64, 5, 13, 82],
             [82, 13, 5, 2, 0],
-            # [10, 20, 30, 40, 50, 60, 70],
+            [10, 20, 30, 40, 50, 60, 70],
         ]
 
 
@@ -97,7 +97,7 @@ def test_deletes(test_cases, small_test_cases):
     delete
     :return:
     """
-    for test_case in small_test_cases:
+    for test_case in test_cases:
         # clean db; create table
         clean_db(DB_FILE)
         table = db_open(DB_FILE)
