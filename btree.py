@@ -243,22 +243,8 @@ class Tree:
             cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
             self.set_leaf_node_cells_starting_at(node, cell_num, cells)
 
-        # delete entire node
-        #if num_cells == 1:
-            #node_max_key = self.get_node_max_key(node)
-            # TODO: what to do here
-            # what should this delete child do? delete node in parent
-            # could this leave tree in an inconsistent state
-            #self.delete_child(page_num)
-
         # reduce cell count
         self.set_leaf_node_num_cells(node, num_cells - 1)
-
-        # right-most child was deleted; parent key may
-        # need to be updated
-        # TODO: handle if node has 0 cells after delete
-        if cell_num == num_cells - 1 and num_cells > 1:
-            self.check_update_parent_key(page_num)
 
         # check whether we need to restructure
         # if the current node, and it's left and right siblings
@@ -267,10 +253,16 @@ class Tree:
 
     def restructure_leaf_node(self, page_num: int):
         """
-        Typically invoked after delete key
-        check whether node at `page_num` and it's left and right siblings
+        Typically invoked after a key is deleted.
+        Check whether node at `page_num` and it's left and right siblings
         have a combined number of keys/children below the restructuring threshold.
-        If so, the nodes are restructured into
+        If so, the nodes are restructured into fewer nodes.
+
+        A delete op may leave a leaf empty; thus updating `check_update_parent_key`
+        cannot be invoked fully; i.e. may need to be invoked after restructuring.
+        Thus, I'm making this responsible for invoking `check_update_parent_key`.
+        This holds even when no restructuring is done
+
         :param page_num:
         :return:
         """
@@ -338,44 +330,19 @@ class Tree:
         # the total number of nodes;
         total_sib_count = sum([s.count for s in siblings])
         if total_sib_count > (len(siblings) - 1) * LEAF_NODE_MAX_CELLS:
+            self.check_update_parent_key(page_num)
             return
-
-        # NOTE restructuring should not leave any node with a single child, i.e. a unary tree
-        # since, I have assumed in many methods that an internal node must have at least
-        # two children. The one exception to this when we are deleting the root node and reducing
-        # the depth of the tree by 1.
-        # The following rules, encode these conditions for when compaction should be applied
-
-        # number of children = num of keys + 1 for right
-        parent_child_count = self.internal_node_num_keys(parent) + 1
-
-        # whether all cells on all siblings can fit on one node
-        can_compress_to_unary = total_sib_count <= LEAF_NODE_MAX_CELLS
-        # should compress to unary when: 1) siblings are all parent's children; 2) parent is root
-        should_compress_to_unary = len(siblings) == parent_child_count and self.is_node_root(parent)
-        # whether root should be deleted
-        delete_root = can_compress_to_unary and should_compress_to_unary
-
-        if can_compress_to_unary and not should_compress_to_unary:
-            # should not compress to unary; see if we can
-            # compress 3 to 2; nothing can be done for 2 node case
-            assert len(siblings) != 1
-            if len(siblings) == 2:
-                return
-
-            # siblings[0, 1] can be compressed
-            if siblings[0].count + siblings[1].count < LEAF_NODE_MAX_CELLS:
-                siblings.pop()
-                node_is_right_child = False
-            # siblings [1, 2] can be compressed
-            elif siblings[1].count + siblings[2].count < LEAF_NODE_MAX_CELLS:
-                siblings.popleft()
 
         # 2. left-align leave cells
         num_siblings = len(siblings)
         post_compact_num_siblings = self.compact_leaf_nodes(siblings)
         # otherwise, did any compaction even happen?
         assert post_compact_num_siblings < len(siblings)
+
+        # 2.5 recycle unused nodes
+        for _ in range(post_compact_num_siblings, num_siblings):
+            self.pager.return_page(siblings.pop().page_num)
+            # TODO: restructure_inner_node should update the parents and remove recycled children
 
         # 3. update parent node
         # 3.1 if right child was plucked, re-attach a right child
@@ -393,14 +360,21 @@ class Tree:
             siblings.popleft()
 
         # 3.3: update parent num_cells
-        new_num_keys = parent_child_count - (num_siblings - post_compact_num_siblings)
+        current_num_keys = self.internal_node_num_keys(parent)
+        new_num_keys = current_num_keys - (num_siblings - post_compact_num_siblings)
+        # todo: fix me : this is wrong; since earlier siblings may have been reduced
+        # to fix this; I would need to ensure that the parent also does compaction
         self.set_internal_node_num_keys(parent, new_num_keys)
 
-        if delete_root:
+        if new_num_keys == 0 and self.is_node_root(parent):
             self.delete_root(parent_page_num)
+            return
 
-        # if parent is not root
-        # invoke restructure parent node
+        if is_right_child:
+            # update ancestors of siblings on new key
+            self.check_update_parent_key(self.internal_node_right_child(parent))
+
+        # restructure parent node
         # self.restructure_inner_node(parent_page_num)
 
     def delete_root(self, node_page_num: int):
@@ -417,15 +391,16 @@ class Tree:
         root = self.pager.get_page(node_page_num)
         assert self.is_node_root(root)
         # NOTE: The node referenced in `node_page_num` only has one child, i.e. is unary.
-        assert self.internal_node_num_keys(root) == 1
-        child = self.pager.get_page(self.internal_node_child(root, 0))
+        assert self.internal_node_num_keys(root) == 0
+        child = self.pager.get_page(self.internal_node_right_child(root))
 
         # copy child onto root page
         root[:PAGE_SIZE] = child
+        # todo: update children of root; since parent page_num has changed
 
         self.set_node_is_root(root, True)
 
-        # todo: recycle `node_page_num`
+        self.pager.return_page(node_page_num)
 
     def restructure_inner_node(self, page_num: int):
         """
@@ -485,6 +460,10 @@ class Tree:
                 src_cell += 1
                 dest_cell += 1
 
+        # mark all to-recycled nodes with 0 count
+        for i in range(dest_idx + 1, len(siblings)):
+            self.set_leaf_node_num_cells(siblings[i].node, 0)
+
         # return number of used nodes after compaction
         return dest_idx + 1
 
@@ -506,15 +485,23 @@ class Tree:
         :return: child_position where key is to be inserted
         """
         node = self.pager.get_page(page_num)
+        num_cells = self.internal_node_num_keys(node)
+
+        # handle corner cases
         if self.get_node_max_key(node) <= key:
-            # handle special case: key corresponds to right child
+            # key corresponds to right child
             return INTERNAL_NODE_MAX_CELLS
+        elif num_cells == 0:
+            # node is unary- it's single child is right child
+            # current key is less than right node's key; hence
+            # it's the first inner child
+            return 0
 
         # do a binary search
         left_closed_index = 0
         right_open_index = self.internal_node_num_keys(node)
         while left_closed_index != right_open_index:
-            index =  left_closed_index + (right_open_index - left_closed_index ) // 2
+            index = left_closed_index + (right_open_index - left_closed_index ) // 2
             key_at_index = self.internal_node_key(node, index)
             if key == key_at_index:
                 return index
@@ -540,7 +527,7 @@ class Tree:
         while left_closed_index != right_open_index:
             # this avoid the overflow issue with
             # index = (right_open_index + left_closed_index) // 2
-            index =  left_closed_index + (right_open_index - left_closed_index ) // 2
+            index = left_closed_index + (right_open_index - left_closed_index) // 2
             key_at_index = self.leaf_node_key(node, index)
             if key == key_at_index:
                 # key found
