@@ -317,45 +317,45 @@ class Tree:
         """
         delete key on node at `page_num` at cell `cell_num`.
         This also checks whether this delete allows the children of this
-        node and it's sibling to be compacted into fewer nodes
+        node and it's sibling to be compacted into fewer nodes; if so
+        invokes method to compact/restructure the siblings.
 
+        Any compaction that may lead to restructuring of the tree should
+        be handled in the _restructure variant of this method. While this
+        should handle mutating a node, without changing the tree structure.
 
-        -- The below is the old description
-
-        Typically invoked after a key is deleted.
-        Check whether node at `page_num` and it's left and right siblings
-        have a combined number of keys/children below the restructuring threshold.
-        If so, the nodes are restructured into fewer nodes.
-
-        A delete op may leave a leaf empty; thus updating `check_update_parent_key`
-        cannot be invoked fully; i.e. may need to be invoked after restructuring.
-        Thus, I'm making this responsible for invoking `check_update_parent_key`.
-        This holds even when no restructuring is done
+        Currently, restructuring is done as proactively as possible, i.e.
+        if there is enough capacity, restructuring will be performed. In practice,
+        we may want to tune the set of buffer, after which we restructure.
 
         :param page_num:
         :return:
         """
-        # step 0: if node at `page_num` is root, nothing to do
+
         node = self.pager.get_page(page_num)
-        if self.is_node_root(node):
-            return
 
-        # 1. determine whether nodes can be compacted into fewer nodes
-        siblings = self.get_leaf_siblings(page_num)
+        if not self.is_node_root(node):
+            # the following applies only to non-root nodes
 
-        # 1.1. check if we will need to do any restructuring
-        # restructuring is performed when sum of cells in left and right sibling
-        # and node can be packed in at least one less than
-        # the total number of nodes;
-        total_sib_count = sum([s.count for s in siblings])
-        # the - 1 represents the as yet undeleted key
-        if total_sib_count - 1 <= (len(siblings) - 1) * LEAF_NODE_MAX_CELLS:
-            self.leaf_node_delete_and_restructure(page_num, cell_num)
-            return
+            # 1. determine whether we need to restructure
+            siblings = self.get_leaf_siblings(page_num)
+
+            # 1.1. check if we will need to do any restructuring
+            # restructuring is performed when sum of cells in left and right sibling
+            # and node can be packed in at least one less than the total number of nodes
+            # NB: the - 1 represents the as yet undeleted key
+            total_sib_count = sum([s.count for s in siblings]) - 1
+            can_fit_on_fewer_nodes = total_sib_count <= (len(siblings) - 1) * LEAF_NODE_MAX_CELLS
+            # 1.2. a single node which might become unary
+            # NB: the case for node become zero-ary is handled in total_sib_count conditions
+            can_reduce_to_unary = len(siblings) == 1 and total_sib_count == 1
+
+            if can_fit_on_fewer_nodes and can_reduce_to_unary:
+                # handle all mutations of tree structure in this branch
+                self.leaf_node_delete_and_restructure(page_num, cell_num)
+                return
 
         num_cells = self.leaf_node_num_cells(node)
-        # this should be handled in restructure branch
-        assert num_cells != 1
 
         # 2. delete cell
         # 2.1. move cells over left by 1
@@ -380,26 +380,25 @@ class Tree:
         :return:
         """
 
-        # step 0: if node at `page_num` is root, nothing to do
+        # step 0: setup
         node = self.pager.get_page(page_num)
-        if self.is_node_root(node):
-            return
 
-        parent_page_num = self.get_parent_page_num(node)
-        parent = self.pager.get_page(parent_page_num)
-
-        # 1: get siblings
-        siblings = self.get_leaf_siblings(page_num)
-
-        # 2. delete cell
+        # 1. delete cell
         num_cells = self.leaf_node_num_cells(node)
-        # 2.1. move cells left by 1
+        # 1.1. move cells left by 1
         if cell_num <= num_cells - 2:
             cells = self.leaf_node_cells_starting_at(node, cell_num + 1)
             self.set_leaf_node_cells_starting_at(node, cell_num, cells)
 
-        # 2.2. reduce node's cell count
+        # 1.2. reduce node's cell count
         self.set_leaf_node_num_cells(node, num_cells - 1)
+
+        if self.is_node_root(node):
+            # nothing more to do
+            return
+
+        # 2: get siblings
+        siblings = self.get_leaf_siblings(page_num)
 
         # 3: compact the siblings
         if len(siblings) > 1:
@@ -423,11 +422,16 @@ class Tree:
         # positions of children that were deleted
         deleted_children = [s.parent_pos for s in siblings[post_compact_num_siblings:]]
 
-        self.internal_node_delete(parent_page_num, updated_children, deleted_children)
+        parent_page_num = self.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+        if self.is_node_root(parent):
+            self.delete_root(parent_page_num)
+        else:
+            self.internal_node_delete(parent_page_num, updated_children, deleted_children)
 
     def internal_node_delete(self, page_num: int, updated_children: deque[int], deleted_children: deque[int]):
         """
-        invoked when children of `node_page_num` have undergone a delete and restructuring.
+        invoked when children of `page_num` have undergone a delete and restructuring.
 
         :param page_num:
         :param updated_children: list of positions of children that were updated
@@ -435,28 +439,28 @@ class Tree:
         :return:
         """
 
-        # 1. attach updated children
-        # Update `node` such that deleted and updated nodes are handled
+        # 0. setup
         node = self.pager.get_page(page_num)
         children = updated_children + deleted_children
-        # children must be sorted
+        # children must be sorted; code assumes deleted children to be node referring to
+        # higher child nums
         assert list(sorted(children)) == children
         assert len(deleted_children) != 0
+        has_updated_children = len(updated_children) > 0
 
-        last_updated_child_num = None
-        has_updated_nodes = len(updated_children) > 0
-        if has_updated_nodes:
-            last_updated_child_num = updated_children[-1]
-
+        # 1. ensure node is consistent w.r.t. to updated children
         # 1.1. attach right child, if one was taken
         is_right_child = any([child_pos == INTERNAL_NODE_MAX_CELLS for child_pos in children])
-        if is_right_child:
-            # a right child was taken, attach right-most child as right child
+        if is_right_child and updated_children:
+            # a right child was taken, attach right-most child as parent's right child
             child_pos = updated_children.pop()
             self.set_internal_node_right_child(node, child_pos)
 
         # 1.2. handle any remaining (inner) children
         # there can be 1 or 2
+        # NB: there is a difference between attaching right child and updating inner children
+        # since the new right may be a different node; whereas an inner node does not change
+        # whereas it's key may need to be updated
         while updated_children:
             child_num = updated_children.popleft()
             assert child_num != INTERNAL_NODE_MAX_CELLS
@@ -464,22 +468,38 @@ class Tree:
             max_key = self.get_node_max_key(child)
             self.set_internal_node_key(node, child_num, max_key)
 
-        # 2. ensure the parent is consistent
-        # 2.1 todo: handle two corner cases; 1) parent has one child; 2) zero child
-        # for one child, check if node is root; if so invoke delete_root
-        # if there are zero children, then `node` must be deleted; in recursive call to parent
+        # 2. determine whether tree structure will be modified: i.e.
+        # node and siblings can be restructured into fewer nodes or root may be deleted
+        # jump to restructure branch
+        can_fit_on_fewer_nodes = False
+        can_reduce_to_zeroary = False
+        can_reduce_to_unary = False
+        if not self.is_node_root(node):
+            siblings = self.get_internal_siblings(page_num)
+            # the -N represents the as yet undeleted children
+            total_sib_count = sum([s.count for s in siblings]) - len(deleted_children)
+            can_fit_on_fewer_nodes = total_sib_count <= (len(siblings) - 1) * INTERNAL_NODE_MAX_CHILDREN
+            can_reduce_to_zeroary = total_sib_count == 0
+            can_reduce_to_unary = total_sib_count == 1
+        else:
+            node_child_count = self.internal_node_num_keys(node) + 1
+            # root will have to be deleted in these cases
+            can_reduce_to_zeroary = node_child_count - len(deleted_children) == 0
+            can_reduce_to_unary = node_child_count - len(deleted_children) == 1
 
-        deleted_children_page_nums = [self.internal_node_child(node, child_num) if child_num < INTERNAL_NODE_MAX_CELLS
-                                      else self.internal_node_right_child(node)
-                                      for child_num in deleted_children]
+        if can_fit_on_fewer_nodes or can_reduce_to_zeroary or can_reduce_to_unary:
+            self.internal_node_delete_and_restructure(page_num, deleted_children, has_updated_children)
+            return
 
-        # 2.2. left align inner children for regular case
-        # move anything past the last updated child, left by number of deleted children
-        last_deleted_child_num = deleted_children[-1]
-        to_move_children = self.internal_node_children_starting_at(node, last_deleted_child_num + 1)
-        self.set_internal_node_children_starting_at(node, to_move_children, last_updated_child_num + 1)
+        # non-restructuring branch
+        # 3. delete children
+        # 3.1. left align inner children
+        # move anything past the last deleted child
+        # left until it is at the tail of the last updated node
+        to_move_children = self.internal_node_children_starting_at(node, deleted_children[-1] + 1)
+        self.set_internal_node_children_starting_at(node, to_move_children, deleted_children[0])
 
-        # 2.3 set updated parent cell count
+        # 3.2 set updated parent cell count
         current_num_keys = self.internal_node_num_keys(node)
         new_num_keys = current_num_keys - len(deleted_children)
         if is_right_child:
@@ -487,62 +507,116 @@ class Tree:
             # then new_num_keys is higher +1
             new_num_keys += 1
 
-        # should this be moved after I have made determination whether internal node
-        # will be compacted
-        # yes; because otherwise, this will cause the same issue as before; namely
-        # that
+        # this should be handled in the restructure branch
+        assert (is_right_child and new_num_keys > 1) or (new_num_keys > 0)
+
         self.set_internal_node_num_keys(node, new_num_keys)
 
         # 3. recycle deleted children
-        while deleted_children_page_nums:
-            self.pager.return_page(deleted_children_page_nums.pop())
+        while deleted_children:
+            child_num = deleted_children.pop()
+            child_page_num = self.internal_node_child(node, child_num) if child_num < INTERNAL_NODE_MAX_CELLS \
+                                else self.internal_node_right_child(node)
+            self.pager.return_page(child_page_num)
 
-        # 4. check and handle node is root
+        # update parent refs
+        self.check_update_parent_key(page_num)
+
+    def internal_node_delete_and_restructure(self, page_num: int, deleted_children: deque[int], has_updated_children: bool):
+        """
+
+        :param page_num:
+        :param deleted_children:
+        :return:
+        """
+        # 0. setup
+        node = self.pager.get_page(page_num)
+
+        # 1. delete
+        # 1.1. left align inner children
+        # move anything past the last deleted child, left by number of deleted children
+        to_move_children = self.internal_node_children_starting_at(node, deleted_children[-1] + 1)
+        self.set_internal_node_children_starting_at(node, to_move_children, deleted_children[0])
+
+        # 1.2 set updated parent cell count
+        current_num_keys = self.internal_node_num_keys(node)
+        new_num_keys = current_num_keys - len(deleted_children)
+        # if the right child was deleted; it would have to be in the deleted children;
+        # since deleted children are ordered, and compacted, in left-ward order
+        is_right_child = INTERNAL_NODE_MAX_CELLS in deleted_children
+        if is_right_child:
+            # if deleted/updated children contain the right child
+            # then new_num_keys is higher +1
+            new_num_keys += 1
+
+        self.set_internal_node_num_keys(node, new_num_keys)
+
+        # 2. recycle nodes
+        while deleted_children:
+            child_num = deleted_children.pop()
+            child_page_num = self.internal_node_child(node, child_num) if child_num < INTERNAL_NODE_MAX_CELLS \
+                                else self.internal_node_right_child(node)
+            self.pager.return_page(child_page_num)
+
+        # 3. handle root
         if self.is_node_root(node):
             if new_num_keys == 0:
-                if not has_updated_nodes:
-                    # todo: not sure what to do; reduce node to empty leaf
+                if not has_updated_children:
+                    # this is the zero-ary case
+                    # todo: reduce root to empty leaf
                     pass
                 else:
+                    # this is unary case
                     self.delete_root(page_num)
             # node is root- nothing else to do
             return
 
-        # todo: do ancestors need to updated on max key change
-
-        # 5. check whether compaction of siblings is possible
+        # 4. compact siblings
         siblings = self.get_internal_siblings(page_num)
+        if len(siblings) > 1:
+            post_compact_num_siblings = self.compact_internal_nodes(siblings)
+            assert post_compact_num_siblings < len(siblings)
+        else:
+            # todo: check logic below; copied from leaf method
+            assert len(siblings) == 1
+            assert siblings[0].page_num == page_num
+            # NOTE: this refers to the pre-delete count
+            if siblings[0].count == 1:
+                # there was one cell for lone siblings; no siblings are left
+                post_compact_num_siblings = 0
+            else:
+                post_compact_num_siblings = 1
 
-        total_sib_count = sum([s.count for s in siblings])
-        # the - 1 represents the as yet undeleted key
-        if total_sib_count - 1 <= (len(siblings) - 1) * INTERNAL_NODE_MAX_CHILDREN:
-            # self.internal_node_delete_and_restructure(page_num, ???)
-            return
+        # 5. handle recursive call
+        updated_children = [s.parent_pos for s in siblings[:post_compact_num_siblings]]
+        # positions of children that were deleted
+        deleted_children = [s.parent_pos for s in siblings[post_compact_num_siblings:]]
 
-        # no node is deleted
+        parent_page_num = self.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+        if self.is_node_root(parent):
+            self.delete_root(parent_page_num)
+        else:
+            self.internal_node_delete(parent_page_num, updated_children, deleted_children)
 
-
-        # check whether to recurse
-
-
-    def internal_node_delete_and_restructure(self):
-        pass
-
-    def delete_root(self, node_page_num: int):
+    def delete_root(self, page_num: int):
         """
-        Delete the root.
+        Delete the root at `page_num`
 
         Note that root_page_num must not change. So we must
         copy the contents of the new root, onto the page that corresponds to the old
         root.
 
-        :param node_page_num: the node to delete
+        :param page_num: the node to delete
         :return:
         """
-        root = self.pager.get_page(node_page_num)
+        root = self.pager.get_page(page_num)
         assert self.is_node_root(root)
         # NOTE: The node referenced in `node_page_num` only has one child, i.e. is unary.
-        assert self.internal_node_num_keys(root) == 0
+        if self.internal_node_num_keys(root) != 0:
+            # only delete root, if root is unary
+            return
+
         child = self.pager.get_page(self.internal_node_right_child(root))
 
         # copy child onto root page
@@ -551,9 +625,17 @@ class Tree:
 
         self.set_node_is_root(root, True)
 
-        self.pager.return_page(node_page_num)
+        self.pager.return_page(page_num)
 
-    def compact_leaf_nodes(self, siblings: list):
+    def compact_internal_nodes(self, siblings: list) -> int:
+        """
+
+        :param siblings:
+        :return:
+        """
+        # todo: implement me
+
+    def compact_leaf_nodes(self, siblings: list) -> int:
         """
         left-align cells on leaf node siblings
         update each sibling with the updated cell count
