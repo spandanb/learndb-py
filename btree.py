@@ -232,7 +232,7 @@ class Tree:
         if self.leaf_node_key(node, cell_num) != key:
             return TreeDeleteResult.Success
 
-        if key == 450:
+        if key == 248:
             pass
         self.leaf_node_delete(page_num, cell_num)
         return TreeDeleteResult.Success
@@ -282,9 +282,6 @@ class Tree:
 
         # 1. find node's location in parent
         # even though children of node may be deleted, it's position in parent
-        # doesn't change
-        # TODO: handle empty siblings correctly
-        # I suppose, find will have to check if parent is empty
         node_child_num = self.internal_node_find(parent_page_num, node_max_key)
         debug(f"removed key is {removed_key}; node_child_num is: {node_child_num}; node max key: {node_max_key}; "
               f"parent_page_num: {parent_page_num}")
@@ -408,13 +405,13 @@ class Tree:
         self. post_compaction_helper(parent_page_num, updated, deleted)
         # the parent node must now be consistent
 
-        # debug("post compaction...")
-        # self.print_tree(parent_page_num)
+        debug("post compaction...")
+        self.print_tree(parent_page_num)
 
-        # debug("printing leaf node post compaction leaf........")
-        # self.print_leaf_node(node)
-        # debug("printing tree node post compaction leaf........")
-        # self.print_tree()
+        debug("printing leaf node post compaction leaf........")
+        self.print_leaf_node(node)
+        debug("printing tree node post compaction leaf........")
+        self.print_tree()
 
         # determine if the root needs to be deleted;
         if self.is_node_root(parent):
@@ -614,7 +611,7 @@ class Tree:
             # set as inner child
             right_child = self.pager.get_page(right_child_page_num)
             right_child_max_key = self.get_node_max_key(right_child)
-            greatest_unused_child_num = self.internal_node_num_keys(first.node)
+            greatest_unused_child_num = siblings[0].count - 1
             self.set_internal_node_child(first.node, greatest_unused_child_num, right_child_page_num)
             self.set_internal_node_key(first.node, greatest_unused_child_num, right_child_max_key)
             # set has no right child
@@ -622,7 +619,10 @@ class Tree:
 
         while True:
             # check if copying is complete; i.e. src is at last node, last cell
-            if src_idx == len(siblings) - 1 and src_cell == siblings[src_idx].count:
+            # this condition isn't quiet right: src_cell == siblings[src_idx].count
+            # if src_idx == len(siblings) - 1 and src_cell == siblings[src_idx].count:
+
+            if src_idx == len(siblings) - 1 and src_cell == INTERNAL_NODE_MAX_CHILDREN:
                 # set number of keys on dest
                 # NOTE: `dest_cell` is the new cell idx to write to == count of cells written
                 if dest_cell < INTERNAL_NODE_MAX_CHILDREN:
@@ -636,9 +636,15 @@ class Tree:
                 break
 
             # if src or dest is at boundary, move it to next node
-            if src_cell == siblings[src_idx].count:
+            # NB: src_cell assumes the following values: [0, num_cells), INTERNAL_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CHILDREN
+            if src_cell == INTERNAL_NODE_MAX_CHILDREN:
                 src_idx += 1
                 src_cell = 0
+
+            # if src is pointing to a non-existent inner child
+            # move it to the right child
+            if src_cell == siblings[src_idx].count - 1:
+                src_cell = INTERNAL_NODE_MAX_CELLS
 
             if dest_cell == INTERNAL_NODE_MAX_CHILDREN:
                 # set count
@@ -654,10 +660,17 @@ class Tree:
             # NB: src and dest can point to the same node
             if src_idx != dest_idx or src_cell != dest_cell:
                 # determine src
+                # the error below is that I'm not checking num_cells for whether there is a next inner cell
+                # if src_cell < INTERNAL_NODE_MAX_CELLS and
+
                 if src_cell == INTERNAL_NODE_MAX_CELLS:
                     to_copy_page_num = self.internal_node_right_child(src_node)
                 else:
                     to_copy_page_num = self.internal_node_child(src_node, src_cell)
+
+                # todo: nuke me: ad-hoc assertion; this likely implies an error
+                assert to_copy_page_num != 0
+
                 to_copy_key = self.get_node_max_key(self.pager.get_page(to_copy_page_num))
 
                 # determine destination
@@ -698,8 +711,6 @@ class Tree:
         if len(siblings) == 1:
             return 1
 
-        # debug(f"compacting siblings [{len(siblings)}]  " + " ".join([f"count={s.count} page_num={s.page_num}" for s in siblings]))
-
         for sib in siblings:
             debug(f"printing sib before compaction: {sib.page_num}")
             self.print_tree(sib.page_num)
@@ -737,7 +748,7 @@ class Tree:
 
             src_key = self.leaf_node_key(src_node, src_cell)  # used for debugging
             debug(f'before copy: src_idx: {src_idx}, src_key: {src_key} pg:{siblings[src_idx].page_num}, src_cell: {src_cell}; '
-                f'dest_idx: {dest_idx}, pg:{siblings[dest_idx].page_num} dest_cell: {dest_cell}')
+                  f'dest_idx: {dest_idx}, pg:{siblings[dest_idx].page_num} dest_cell: {dest_cell}')
 
             # copy if src and dest are different
             # otherwise, just increment the pointers
@@ -754,8 +765,6 @@ class Tree:
             self.set_leaf_node_num_cells(siblings[i].node, 0)
 
         # return number of used nodes after compaction
-        # debug(f"compacting siblings [{len(siblings)}]  " + " ".join([f"count={s.count} page_num={s.page_num}" for s in siblings]))
-        # debug(f"num used nodes for compaction: {dest_idx + 1}; total sib: {len(siblings)}")
         return dest_idx + 1
 
     def internal_node_find(self, page_num: int, key: int) -> int:

@@ -288,8 +288,12 @@ class Cursor:
         # start with root and descend until we hit left most leaf
         node = self.table.pager.get_page(self.page_num)
         while Tree.get_node_type(node) == NodeType.NodeInternal:
-            assert Tree.internal_node_num_keys(node) > 0, "invalid tree with zero keys internal node"
-            child_page_num = Tree.internal_node_child(node, 0)
+            assert Tree.internal_node_has_right_child(node), "invalid tree with no right child"
+            if Tree.internal_node_num_keys(node) == 0:
+                # get right child- unary tree
+                child_page_num = Tree.internal_node_right_child(node)
+            else:
+                child_page_num = Tree.internal_node_child(node, 0)
             self.page_num = child_page_num
             node = self.table.pager.get_page(child_page_num)
 
@@ -346,6 +350,8 @@ class Cursor:
             return
 
         node_max_value = self.tree.get_node_max_key(node)
+        assert node_max_value is not None
+
         parent_page_num = Tree.get_parent_page_num(node)
         # check if current page, i.e. self.page_num is right most child of it's parent
         parent = self.table.pager.get_page(parent_page_num)
@@ -567,6 +573,7 @@ def execute_select(table: Table) -> list:
 
     rows = []
     cursor = Cursor(table)
+
     while cursor.end_of_table is False:
         row = cursor.get_row()
         # print(f"printing row: {row}")
@@ -645,16 +652,22 @@ def main():
     # insert
     # keys = [72, 79, 96, 38, 47, 99, 1090, 876, 4]
     # keys = [1,2,3,4]
+    # keys = [1,2,3,4,5,6]
     # keys = [64, 5, 13, 82]
-    # keys = [13, 5, 2, 0]
+    #keys = [13, 5, 2, 0]
     # keys = [4,3,2,1]
     # keys = [10, 20, 30, 40, 50, 60, 70]
-    keys = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
+    # keys = [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438]
+    # keys = [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182, 305, 428, 180, 22]
+    # keys = [82, 13, 5, 2, 0]
+    # keys = [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38]
+    keys = [726, 361, 583, 121, 908, 789, 842, 67, 871, 461, 522, 394, 225, 637, 792, 393, 656, 748, 39, 696]
     for key in keys:
         input_handler(f"insert {key}", table)
 
-    input_handler(".validate", table)
     input_handler('.btree', table)
+    input_handler(".validate", table)
+
     # table.tree.validate_existence(keys)
 
     select = input_handler("select", table)
@@ -665,13 +678,12 @@ def main():
     # delete keys
     while keys:
         key = keys[0]
-        if key == 311:
-            pass
         remaining = keys = keys[1:]
         input_handler(f"delete {key}", table)
         input_handler('.btree', table)
 
         select = input_handler("select", table)
+        print(" ")
         #print(f'select returned: {select.is_success} {select.result}')
 
         # validate all expected keys exist
