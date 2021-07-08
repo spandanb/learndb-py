@@ -35,3 +35,10 @@ The following are some parts of a DBMS (In no particular order):
 
 - Also consulted: https://ocw.mit.edu/courses/electrical-engineering-and-computer-science/6-830-database-systems-fall-2010/
 
+## Run
+
+- Requires > python 3.10 and pytest
+- Run tests: 
+`python -m pytest -s tests.py`
+
+- Run REPL: `python learndb.py`
