@@ -1,0 +1,136 @@
+Engineering Journal
+-------------------
+
+5/20
+    context: thinking about interface/api for cursor
+
+    thoughts: who should be responsible for storing.
+pager handles interaction with pages
+cursor handles interfacing with table, and understands table position
+    i.e. where to insert/read from, and how to traverse table
+table: right now functions as the engine, since it handles interacting with the storage layer
+    to support multiple tables, storage access, would have to be moved to engine
+    then table will primarily represent the logical operations on the table
+
+consider what the ideal interface between Table, Engine, Cursor, Pager should be
+
+5/24
+    translating c tutorial, get's tricky because pointers allow for a different interface
+    than pythons reference. This does bring up the point about what is a correct modelling
+    of the underlying exchange.
+    Specifically, should a btree have a higher up interface?
+
+
+6/4
+    One challenge is inconsistencies in your logical flow. The compiler/interpreter/language will
+    enforce and offer some framing. But all sufficiently complex applications will break out of this box. This box
+    being, the subset of the ways your code can be incorrect that can be caught by compiler. But once you're concerned
+    about the flow values, or rather what states of program are valid or not.
+
+    All interface design- e.g. the breakdown of logic into components like functions, classes, methods,
+    i.e. not just interface in the OO interface, or interface in a specific language, but rather, in the broadest sense,
+    the communication patterns of all modules in your program- can be thought of as designing a language- a DSL.
+    This metaphor of interface as language, allows us to reason about incorrectness in code in terms of undefined behavior
+    of the language. And this is what all manners of tests (unit, functional, end-to-end) are attempting to do, ensure
+    that the program doesn't invalid states/"undefined behavior".
+
+    Mostly, this interface, this DSL is not explicitly defined.
+
+    One example of the above challenges, is working with pages of bytes in the context of btree. Now, since I'm reading
+    writing subsets of bytes to larger byte strings, the interpreter can't directly help. And I need to either implement,
+    a better lower level DSL, i.e. one that supports better debugging.
+
+6/9
+    When the codebase gets complex, all interfaces will show their leakiness. Leakiness will manifest in wanting to
+    expose internal variables (e.g. propagating max key value when max key inserted in leaf up internal node ancestors;
+    if the max value is not propagated, the internal node will have to look it up, which would be a replicated op- and this
+    also speaks to the broader compute/storage tradeoff. ). The options are these: 1) break the abstraction, expose
+    internals- makes the code brittle; 2) keep the abstraction, make the code less performant, 3) rethink the abstraction
+    such that the internal to be exposed is a first-class exposed objects- more work, but keeps the code performant and
+    abstractions sounds.
+
+6/10
+    I missed a crucial detail in my modelling of the insert algorithms, since I assumed some things about how a node
+    would be split, and how the post-split key distribution will look like; this meant a lot of debugging. This is
+    why it's very important to independently reason about the algorithm. Because, I kept persisting in that modelling error
+    and so in the program all that was left to was fix the control flow, the +1 errors.
+
+6/10
+    There's a critical stress between core developement and auxilary tools development, i.e. broadly infra. Core is
+    fundamentally the algorithm of the business. If it involves humans, it maybe better thought of the aggregate flows
+    of the business. And there are things that don't have a direct value add, but are needed, e.g. testing. It's not
+    a direct value add, but it is an indirect value add in reliability.
+
+    But the infra should involve with the complexity of the core, e.g. insert keys into tree in sorted order;
+    small tree - manually inspect state of tree is feasible, for medium tree- tests on expected values, for large trees-
+    internal consistency checkers, combined with random tree generators. Here sizes are metaphors for complexity.
+
+6/11
+    An off by one error fixed here, and an inequality fixed there, and poof, you have a (semi-) working btree (only find, and
+    insert; no delete). It's cool, how it all comes together. It's a very fascinating exercise to work with this pure
+    level of abstraction, i.e. just the raw data structure, and some algorithm applied thereon. Aside about how complexity, and
+    friction in the context of code arises: complexity arises either due to the inherent nature of the problem, or it arises
+    due to the complexity of "integrations". This pure level of abstraction is where complexity arises entirely from the problem.
+    Because there is no integration, e.g. the btree with 2000 lines has no non-system imports. And it's certainly a good
+    thing to exercise your brain thus.
+
+    The next step before implementing anything else, would be some code hygiene, e.g. move tree to a separate module. Assess,
+    if any logic should be refactored, api's cleaned up. Add any more validations.
+
+    Actually, the actual next step should be to reflect on whether to work on delete, learndb-rs, debugging/inner-loop.
+
+6/17
+    There are two crucial aspects to testing. The first is given this input, my system should return this output. And we
+    can think about these input/output, more abstractly to include metrics like SLA, e.g. the calculator should solve 2+2
+    in under 10ms. These are the known knowns. The second aspect of testing, is the known unknowns, and the unknown unknown.
+    A known unknown maybe the exact concurrency limit (curve) of a system. The known unknowns are the un-measured, or the
+    un-modelled aspects of the system. These could with more effort be made more known, but never perfectly so.
+    A unknown unknown is a completely unknown behavior of your system. But it's always grounded in some assumption. In the
+    most extreme case, consider a beta-particle hitting your memory, and flipping a bit or two in an undetectable way. Now
+    this is a very rare, scenario, but your assumptions that integers are immutable is valid insofar, as your physical
+    memory is perfectly isolated.
+
+    This distinction is important, because the unknown aspects of the systems, can cause failure. One way to discover the
+    unknowns is through randomized searches, through your program's state space.
+
+6/28
+    A case study in evolving code. I initially started with the assumption that trees can never be unary. This simplified
+    some operations, e.g. find; and it was not possible for a (sub-)tree to become unary from insert ops. When I
+    started implementing delete/restructure- I faced the choice of either allow unary trees and update the existing ops
+    to handle a unary tree. Or guard against the tree ending up in such a state. I opted for this initially because
+    it seemed easier to restrict the tree not becoming unary. But then this started getting more hairy; for example- some
+    delete ops, could lead to unary node; and you would need many conditions in delete; restructure; and find and possibly
+    even some rebalancing (e.g. if a node's child cells are all deleted).
+
+    One take away from this is that software that's less piece-meal and more of a consistent and well-thought abstraction is
+    more likely to generalize in it's use cases; and in likely to be less complex in its logic.
+
+
+6/29
+    I'm doing a fairly crude compaction (left most; without any buffer). In practice, this should be configurable, and
+    perhaps at least not so eager.
+
+7/2
+    internal_num_keys vs. internal_num_children.
+    internal_num_keys is the accessor for the number of keys on an internal node; This is very similar
+    to leaf_num_keys; with the crucial difference, that internal node have +1 (right) children than keys, while leaf
+    node have the same number of cells- and this is because the two node types have different functions.
+
+    This makes delete tricky, because it makes the interpretation of number of children on a node, ambiguous. This
+    itself is related to the underlying modeling of the tree, and whether unary is a valid tree etc. Specifically,
+    internal_num_cells == 0 could be a unary or zeroary tree. So delete has to track the state of tree before
+    and determine which of these two buckets it's in. A clearer way would be to use a new accessor internal_num_children.
+    Ideally, this would have include the total count; and could easily disambiguate unary and zeroary calls. But this
+    is where the ideal design runs into the weight of the existing work; specifically, my options are: 1) introduce a new field-
+    wastes space; 2) update internal_num_keys to internal_num_children but this is tricky because its a very commonly used
+    method, including in find, binary search etc; but anyways this is not an excuse;
+
+    The point being, somewhere in the deep of the mist, you will realize the weakest aspects of your design.
+
+    Anyways for now, will opt for contextual delete, i.e. no new fields?
+
+7/5
+    One challenge of memory vs on-disk data structures is that all memory protections, etc. are gone, since they
+    only exist for in memory object. For on-disk objects, all of that: memory management, resource management, has to
+    be one by oneself. And more importantly, it depends on the correctness of other parts of the system.
+
