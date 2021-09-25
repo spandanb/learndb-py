@@ -59,3 +59,36 @@ The following are some parts of a DBMS (In no particular order):
 `python -m pytest -s tests.py`
 
 - Run REPL: `python learndb.py`
+
+## Getting Started- Tutorial
+
+Let's consider how we can use the repl
+
+start the repl
+
+>> python learndb.py repl
+
+Currently, supported commands include
+
+insert 3 into tree 
+  
+>>  insert 3
+
+select and output all rows (no filtering support for now)
+
+>> select 
+  
+delete 3 from tree
+>> delete 3  
+
+Supported meta-commands:
+quit REPl
+>> .quit  
+
+print btree
+>> .btree  
+
+performs internal consistentcy checks on tree
+>> .validate
+
+Deleting the `db.file` will effectively drop the entire database.

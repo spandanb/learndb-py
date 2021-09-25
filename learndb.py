@@ -509,6 +509,7 @@ def do_meta_command(command: str, table: Table) -> MetaCommandResult:
         print("Validation succeeded.......")
         return MetaCommandResult.Success
     elif command == ".nuke":
+        # NB: doesn't work; the file is in use
         os.remove(DB_FILE)
     return MetaCommandResult.UnrecognizedCommand
 
@@ -640,9 +641,9 @@ def repl():
         input_handler(input_buffer, table)
 
 
-def main():
+def devloop():
     """
-    new inner loop
+    inner dev-loop
     :return:
     """
     if os.path.exists(DB_FILE):
@@ -694,7 +695,32 @@ def main():
     input_handler('.quit', table)
 
 
+def parse_args_and_start(args: list):
+    """
+    parse args and starts
+    :return:
+    """
+    args_description = """Usage:
+python learndb.py repl
+    // start repl
+python learndb.py devloop
+    // start a dev-loop function
+    """
+    if len(args) < 1:
+        print(f"Error: run-mode not specified")
+        print(args_description)
+        return
+
+    runmode = args[0].lower()
+    if runmode == 'repl':
+        repl()
+    elif runmode == 'devloop':
+        devloop()
+    else:
+        print(f"Error: Invalid run mode [{runmode}]")
+        print(args_description)
+        return
+
 
 if __name__ == '__main__':
-    # repl()
-    main()
+    parse_args_and_start(sys.argv[1:])
