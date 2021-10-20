@@ -33,6 +33,33 @@ ID_OFFSET = 0
 BODY_OFFSET = ID_OFFSET + ID_SIZE
 ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
 
+USAGE = '''
+Supported commands:
+-------------------
+insert 3 into tree
+> insert 3
+
+select and output all rows (no filtering support for now)
+> select
+
+delete 3 from tree
+> delete 3
+
+Supported meta-commands:
+------------------------
+print usage
+.help
+
+quit REPl
+> .quit
+
+print btree
+> .btree
+
+performs internal consistentcy checks on tree
+> .validate
+'''
+
 
 # section: enums
 # NOTE: each enum that corresponds to a fail-able operation
@@ -229,7 +256,7 @@ class Pager:
 
     def return_page(self, page_num: int):
         """
-        
+
         :param page_num:
         :return:
         """
@@ -511,6 +538,9 @@ def do_meta_command(command: str, table: Table) -> MetaCommandResult:
     elif command == ".nuke":
         # NB: doesn't work; the file is in use
         os.remove(DB_FILE)
+    elif command == ".help":
+        print(USAGE)
+        return MetaCommandResult.Success
     return MetaCommandResult.UnrecognizedCommand
 
 
