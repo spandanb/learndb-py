@@ -1,0 +1,7 @@
+Using crafting interpreter's outline for recursive descent parser:
+https://craftinginterpreters.com/contents.html
+
+for sql grammar, e.g. 
+
+https://www.postgresql.org/docs/9.5/sql-select.html
+
