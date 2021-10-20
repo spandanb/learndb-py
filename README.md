@@ -64,31 +64,31 @@ The following are some parts of a DBMS (In no particular order):
 
 Let's consider how we can use the repl
 
-start the repl
+start the REPL (Only supports a global, implicit table)
 
->> python learndb.py repl
+> python learndb.py repl
 
 Currently, supported commands include
 
-insert 3 into tree 
-  
->>  insert 3
+insert 3 into tree
+
+>  insert 3
 
 select and output all rows (no filtering support for now)
 
->> select 
-  
+> select
+
 delete 3 from tree
->> delete 3  
+> delete 3
 
 Supported meta-commands:
 quit REPl
->> .quit  
+> .quit
 
 print btree
->> .btree  
+> .btree
 
 performs internal consistentcy checks on tree
->> .validate
+> .validate
 
 Deleting the `db.file` will effectively drop the entire database.
