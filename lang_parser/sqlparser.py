@@ -9,7 +9,7 @@ Attempting a recursive descent parser.
 NOTES about language design;
 I'll go with postgres notion- semicolon is (optional) statement terminator
 """
-from typing import Any, List, Union
+from typing import Any, List, Type, Tuple, Union
 from enum import Enum, auto
 
 from dataclasses import dataclass
@@ -78,6 +78,12 @@ KEYWORDS = {
     'delete',
     'update',
     'insert',
+
+    #  datatypes
+    'integer',
+    'real',  # floating point number
+    'text',  # variable length text
+
 }
 
 # exceptions
@@ -85,6 +91,26 @@ KEYWORDS = {
 
 class ParseError(Exception):
     pass
+
+# utils
+
+
+def pascal_to_snake_case(name) -> str:
+    """
+    convert case
+    HelloWorld -> hello_world
+    :return:
+    """
+    snake_name = []
+    for i, ch in enumerate(name):
+        if i == 0:
+            snake_name.append(ch.lower())
+        elif ch.isupper():
+            snake_name.append('_' + ch.lower())
+        else:
+            snake_name.append(ch)
+
+    return ''.join(snake_name)
 
 
 # core handler: tokenizer
@@ -301,19 +327,22 @@ class Symbol:
     def accept(self, visitor: 'Visitor') -> Any:
         return visitor.visit(self)
 
+
 @dataclass
 class Program(Symbol):
-    statements: List[Union[SelectExpr]]
+    statements: List[Union[SelectExpr, CreateTableStmnt]]
+
 
 @dataclass
 class CreateTableStmnt(Symbol):
-    table_name: Token
+    table_name: NamedEntity
     column_def_list: List[ColumnDef]
+
 
 @dataclass
 class ColumnDef(Symbol):
-    column_name: Token
-    datatype: Token
+    column_name: NamedEntity
+    datatype: NamedEntity
 
 
 @dataclass
@@ -323,34 +352,31 @@ class SelectExpr(Symbol):
     Stmnt change the state of the system; and may or may not
     return value
     """
-    selectable: Any
-    from_location: Any
+    selectable: Selectable
+    from_location: Token
     where_clause: Any = None  # optional
+
 
 @dataclass
 class NamedEntity(Symbol):
     # represents a name, e.g. a column name
     name: str
 
+
 @dataclass
 class Selectable(Symbol):
     selectables: List
 
-@dataclass
-class ColumnName(Symbol):
-    column_name: Token
-
-@dataclass
-class FromLocation(Symbol):
-    from_location: Token
 
 @dataclass
 class WhereClause(Symbol):
     and_clauses: List[AndClause]
 
+
 @dataclass
 class AndClause(Symbol):
     predicates: List[Predicate]
+
 
 @dataclass
 class Predicate(Symbol):
@@ -359,6 +385,7 @@ class Predicate(Symbol):
     first: Term
     op: Token
     second: Term
+
 
 @dataclass
 class Term(Symbol):
@@ -438,14 +465,27 @@ class Parser:
                 return True
         return False
 
-    def match_symbol(self, *symbols: Symbol) -> bool:
+    def match_symbol(self, symbol_type: Type[Symbol]) -> Union[Tuple[bool, Any]]:
         """
-        Analog to match that matches on entire symbol
-        instead of tokens
-        :param symbols:
-        :return:
+        Analog to `match` that `matches` on symbol instead of tokens.
+
+
+        :return: tuple: (is_match, matched_symbol)
         """
-        raise NotImplemented
+        # store token ptr position, so we can reset
+        # otherwise, on non-match, some tokens would still be consumed.
+        old_current = self.current
+
+        # determine method that will attempt to parse the symbol
+        symbol_typename = symbol_type.__name__.__str__()
+        handler_name = pascal_to_snake_case(symbol_typename)
+        handler = getattr(self, handler_name)
+        try:
+            symbol = handler()
+            return True, symbol
+        except ParseError as e:
+            self.current = old_current
+            return False, None
 
     def check(self, token_type: TokenType):
         """
@@ -466,10 +506,10 @@ class Parser:
     def program(self) -> Symbol:
         program = []
         while not self.is_at_end():
-            if self.peek() == TokenType.SELECT:
+            if self.peek().token_type == TokenType.SELECT:
                 # select statement
                 program.append(self.select_expr())
-            elif self.peek() == TokenType.CREATE:
+            elif self.peek().token_type == TokenType.CREATE:
                 # create
                 program.append(self.create_table_stmnt())
         return Program(program)
@@ -485,16 +525,26 @@ class Parser:
 
     def column_def_list(self) -> List[ColumnDef]:
         column_defs = []
-        # todo: change match_symbol to return (bool: matched, symbol: matched)
-        while self.match_symbol(ColumnDef):
-            pass
+        while True:
+            is_match, matched_symbol = self.match_symbol(ColumnDef)
+            if not is_match:
+                break
+            column_defs.append(matched_symbol)
 
-    def table_name(self) -> NamedEntity:
-        token = self.consume(TokenType.IDENTIFIER, "Expected identifier for table name")
-        return NamedEntity(token.literal)
+        return column_defs
+
+    def table_name(self) -> Token:
+        return self.consume(TokenType.IDENTIFIER, "Expected identifier for table name")
 
     def column_def(self) -> ColumnDef:
-        pass
+        """
+        column_def -> column_name datatype ("primary key")? ("not null")?
+        :return:
+        """
+        col_name = self.column_name()
+        # todo: there should be a validation on datatype
+        datatype_token = self.consume(TokenType.IDENTIFIER, "Expected a datatype identifier")
+        return ColumnDef(col_name, datatype_token)
 
     def select_expr(self) -> SelectExpr:
         # select and from are required
@@ -518,15 +568,15 @@ class Parser:
             items.append(self.column_name())
         return Selectable(items)
 
-    def column_name(self):
-        return ColumnName(self.consume(TokenType.IDENTIFIER, "expected identifier for column name"))
+    def column_name(self) -> Token:
+        return self.consume(TokenType.IDENTIFIER, "expected identifier for column name")
 
-    def from_location(self):
-        return FromLocation(self.consume(TokenType.IDENTIFIER, "expected identifier for from location"))
+    def from_location(self) -> Token:
+        return self.consume(TokenType.IDENTIFIER, "expected identifier for from location")
 
     def where_clause(self):
         """
-                where_clause  -> (and_clause "or")* (and_clause)
+        where_clause  -> (and_clause "or")* (and_clause)
         :return:
         """
         clauses = [self.and_clause()]
@@ -549,6 +599,7 @@ class Parser:
         :return:
         """
         first = self.term()
+        operator = None
         if self.match(TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL,
                       TokenType.NOT_EQUAL, TokenType.EQUAL):
             operator = self.previous()
