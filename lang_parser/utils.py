@@ -1,10 +1,18 @@
+import re
+
 
 class ParseError(Exception):
     pass
 
 
+def camel_to_snake(name: str) -> str:
+    """
+    change casing
+    """
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
 
-def pascal_to_snake_case(name) -> str:
+
+def pascal_to_snake(name) -> str:
     """
     convert case
     HelloWorld -> hello_world

@@ -3,6 +3,7 @@ from __future__ import annotations
 Contains symbol classes used by parser
 """
 
+from tokens import Token
 from typing import Any, List, Type, Tuple, Union
 from symbols import *
 from dataclasses import dataclass
@@ -27,14 +28,14 @@ class Program(Symbol):
 
 @dataclass
 class CreateTableStmnt(Symbol):
-    table_name: NamedEntity
+    table_name: Token
     column_def_list: List[ColumnDef]
 
 
 @dataclass
 class ColumnDef(Symbol):
-    column_name: NamedEntity
-    datatype: NamedEntity
+    column_name: Token
+    datatype: Token
 
 
 @dataclass
@@ -47,12 +48,6 @@ class SelectExpr(Symbol):
     selectable: Selectable
     from_location: Token
     where_clause: Any = None  # optional
-
-
-@dataclass
-class NamedEntity(Symbol):
-    # represents a name, e.g. a column name
-    name: str
 
 
 @dataclass
