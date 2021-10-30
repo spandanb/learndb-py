@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tokenizer import Tokenizer
 from sqlparser import Parser
+from interpreter import Interpreter
 
 
 def sql_handler(source: str):
@@ -29,8 +30,13 @@ def sql_handler(source: str):
         print(parser.errors)
         return
 
+    # likely, the interpreter, vm will sit elsewhere
+    interpreter = Interpreter(statements)
+    interpreter.interpret()
+
 
 if __name__ == "__main__":
-    cmdtext = "select colA from foo where colA <> 4.2"
+    # cmdtext = "select colA from foo where colA <> 4.2"
     # cmdtext = "select colA, colFOO from foo"
+    cmdtext = "create table foo ( colA integer, colB text)"
     sql_handler(cmdtext)
