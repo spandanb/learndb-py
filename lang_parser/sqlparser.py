@@ -1,5 +1,6 @@
 from tokens import TokenType, KEYWORDS, Token
 from symbols import *
+from utils import pascal_to_snake, ParseError
 
 
 class Parser:
@@ -81,13 +82,13 @@ class Parser:
 
         :return: tuple: (is_match, matched_symbol)
         """
-        # store token ptr position, so we can reset
+        # store token ptr position, so we can reset on non-match
         # otherwise, on non-match, some tokens would still be consumed.
         old_current = self.current
 
         # determine method that will attempt to parse the symbol
         symbol_typename = symbol_type.__name__.__str__()
-        handler_name = pascal_to_snake_case(symbol_typename)
+        handler_name = pascal_to_snake(symbol_typename)
         handler = getattr(self, handler_name)
         try:
             symbol = handler()
@@ -130,7 +131,7 @@ class Parser:
         self.consume(TokenType.LEFT_PAREN, "Expected [(]")  # '('
         column_def_list = self.column_def_list()
         self.consume(TokenType.RIGHT_PAREN, "Expected [)]")
-        CreateTableStmnt(table_name=table_name, column_def_list=column_def_list)
+        return CreateTableStmnt(table_name=table_name, column_def_list=column_def_list)
 
     def column_def_list(self) -> List[ColumnDef]:
         column_defs = []
@@ -139,7 +140,10 @@ class Parser:
             if not is_match:
                 break
             column_defs.append(matched_symbol)
-
+            if self.check(TokenType.COMMA):
+                self.advance()
+            else:
+                break
         return column_defs
 
     def table_name(self) -> Token:
@@ -151,8 +155,11 @@ class Parser:
         :return:
         """
         col_name = self.column_name()
-        # todo: there should be a validation on datatype
-        datatype_token = self.consume(TokenType.IDENTIFIER, "Expected a datatype identifier")
+        datatype_token = None
+        if self.match(TokenType.REAL, TokenType.INTEGER, TokenType.TEXT):
+            datatype_token = self.previous()
+        else:
+            raise ParseError(f"Expected datatype found {self.peek()}")
         return ColumnDef(col_name, datatype_token)
 
     def select_expr(self) -> SelectExpr:

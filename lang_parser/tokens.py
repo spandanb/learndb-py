@@ -50,6 +50,11 @@ class TokenType(Enum):
     BY = auto()
     SELECT = auto()
     NULL = auto()
+    TABLE = auto()
+
+    INTEGER = auto()
+    REAL = auto()
+    TEXT = auto()
 
 
 KEYWORDS = {
@@ -70,6 +75,7 @@ KEYWORDS = {
     'delete',
     'update',
     'insert',
+    'table',
 
     #  datatypes
     'integer',
