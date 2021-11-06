@@ -2,7 +2,7 @@
 Contains types related to tokens
 """
 from enum import Enum, auto
-from typing import Any, List, Type, Tuple, Union
+from typing import Any
 
 
 class TokenType(Enum):
@@ -20,6 +20,7 @@ class TokenType(Enum):
     LESS = auto()  # <
     GREATER = auto()  # >
     COMMA = auto()  # ,
+    SEMI_COLON = auto(), # ;
 
     # 2-char tokens
     LESS_EQUAL = auto()  # <=
