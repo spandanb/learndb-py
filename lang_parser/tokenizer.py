@@ -9,7 +9,7 @@ class Tokenizer:
         # start of token in current line
         self.start = 0
         # current position in current line
-        self.current =0
+        self.current = 0
         self.line = 1
         self.errors = []
 
@@ -85,6 +85,8 @@ class Tokenizer:
             self.add_token(TokenType.EQUAL)
         elif char == ',':
             self.add_token(TokenType.COMMA)
+        elif char == ';':
+            self.add_token(TokenType.SEMI_COLON)
         # could be single or double char; depends on next char
         elif char == '<':
             token_type = TokenType.LESS

@@ -38,5 +38,7 @@ def sql_handler(source: str):
 if __name__ == "__main__":
     # cmdtext = "select colA from foo where colA <> 4.2"
     # cmdtext = "select colA, colFOO from foo"
-    cmdtext = "create table foo ( colA integer, colB text)"
+    # cmdtext = "create table foo ( colA integer, colB text)"
+    # cmdtext = "create table foo ()"
+    cmdtext = "create table foo ( colA integer, colB text); select colA from foo"
     sql_handler(cmdtext)

@@ -7,8 +7,11 @@ class Parser:
     """
     sql parser
 
+    Args:
+        raise_error(bool): whether to raise on parse error
+
     grammar :
-        program -> stmnt* EOF
+        program -> (stmnt ";") * EOF
 
         stmnt   -> select_expr
                 | create_table_stmnt
@@ -32,10 +35,11 @@ class Parser:
         -- term should also handle other literals
         term          -> NUMBER | STRING | IDENTIFIER
     """
-    def __init__(self, tokens: List):
+    def __init__(self, tokens: List, raise_error=True):
         self.tokens = tokens
         self.current = 0  # pointer to current token
         self.errors = []
+        self.raise_error = raise_error
 
     def advance(self) -> Token:
         """
@@ -85,17 +89,25 @@ class Parser:
         # store token ptr position, so we can reset on non-match
         # otherwise, on non-match, some tokens would still be consumed.
         old_current = self.current
+        # check point; we need parser to raise error so
+        # we may backtrack
+        old_raise_error_state = self.raise_error
+        self.raise_error = True
 
         # determine method that will attempt to parse the symbol
         symbol_typename = symbol_type.__name__.__str__()
         handler_name = pascal_to_snake(symbol_typename)
         handler = getattr(self, handler_name)
+        resp = None, None
         try:
             symbol = handler()
-            return True, symbol
+            resp = True, symbol
         except ParseError as e:
             self.current = old_current
-            return False, None
+            resp = False, None
+        # restore raise_error
+        self.raise_error = old_raise_error_state
+        return resp
 
     def check(self, token_type: TokenType):
         """
@@ -105,11 +117,13 @@ class Parser:
             return False
         return self.peek().token_type == token_type
 
-    def error(self, token, message: str):
+    def report_error(self, message: str, token: Token = None):
         """
         report error and return error sentinel object
         """
         self.errors.append((token, message))
+        if self.raise_error:
+            raise ParseError(message, token)
 
     # section: rule handlers
 
@@ -122,6 +136,10 @@ class Parser:
             elif self.peek().token_type == TokenType.CREATE:
                 # create
                 program.append(self.create_table_stmnt())
+            elif self.check(TokenType.SEMI_COLON):
+                self.consume(TokenType.SEMI_COLON, "Expected [;]")
+            else:
+                self.report_error("Unexpected token", self.peek())
         return Program(program)
 
     def create_table_stmnt(self) -> CreateTableStmnt:
@@ -140,10 +158,9 @@ class Parser:
             if not is_match:
                 break
             column_defs.append(matched_symbol)
-            if self.check(TokenType.COMMA):
-                self.advance()
-            else:
+            if not self.check(TokenType.COMMA):
                 break
+            self.advance()
         return column_defs
 
     def table_name(self) -> Token:
@@ -159,7 +176,7 @@ class Parser:
         if self.match(TokenType.REAL, TokenType.INTEGER, TokenType.TEXT):
             datatype_token = self.previous()
         else:
-            raise ParseError(f"Expected datatype found {self.peek()}")
+            self.report_error(f"Expected datatype found {self.peek()}", self.peek())
         return ColumnDef(col_name, datatype_token)
 
     def select_expr(self) -> SelectExpr:
@@ -231,8 +248,7 @@ class Parser:
         """
         if self.match(TokenType.NUMBER, TokenType.STRING, TokenType.IDENTIFIER):
             return Term(value=self.previous())
-
-        raise ParseError("expected a valid term")
+        self.report_error("expected a valid term")
 
     def parse(self) -> List:
         """
