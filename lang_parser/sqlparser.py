@@ -1,6 +1,6 @@
-from tokens import TokenType, KEYWORDS, Token
-from symbols import *
-from utils import pascal_to_snake, ParseError
+from .tokens import TokenType, KEYWORDS, Token
+from .symbols import *
+from .utils import pascal_to_snake, ParseError
 
 
 class Parser:
@@ -8,7 +8,7 @@ class Parser:
     sql parser
 
     Args:
-        raise_error(bool): whether to raise on parse error
+        raise_exception(bool): whether to raise on parse error
 
     grammar :
         program -> (stmnt ";") * EOF
@@ -35,11 +35,11 @@ class Parser:
         -- term should also handle other literals
         term          -> NUMBER | STRING | IDENTIFIER
     """
-    def __init__(self, tokens: List, raise_error=True):
+    def __init__(self, tokens: List, raise_exception=True):
         self.tokens = tokens
         self.current = 0  # pointer to current token
         self.errors = []
-        self.raise_error = raise_error
+        self.raise_exception = raise_exception
 
     def advance(self) -> Token:
         """
@@ -91,8 +91,8 @@ class Parser:
         old_current = self.current
         # check point; we need parser to raise error so
         # we may backtrack
-        old_raise_error_state = self.raise_error
-        self.raise_error = True
+        old_raise_error_state = self.raise_exception
+        self.raise_exception = True
 
         # determine method that will attempt to parse the symbol
         symbol_typename = symbol_type.__name__.__str__()
@@ -106,7 +106,7 @@ class Parser:
             self.current = old_current
             resp = False, None
         # restore raise_error
-        self.raise_error = old_raise_error_state
+        self.raise_exception = old_raise_error_state
         return resp
 
     def check(self, token_type: TokenType):
@@ -122,12 +122,12 @@ class Parser:
         report error and return error sentinel object
         """
         self.errors.append((token, message))
-        if self.raise_error:
+        if self.raise_exception:
             raise ParseError(message, token)
 
     # section: rule handlers
 
-    def program(self) -> Symbol:
+    def program(self) -> Program:
         program = []
         while not self.is_at_end():
             if self.peek().token_type == TokenType.SELECT:
@@ -250,12 +250,9 @@ class Parser:
             return Term(value=self.previous())
         self.report_error("expected a valid term")
 
-    def parse(self) -> List:
+    def parse(self) -> Program:
         """
         parse tokens and return a list of statements
         :return:
         """
-        statements = []
-        while self.is_at_end() is False:
-            statements.append(self.program())
-        return statements
+        return self.program()
