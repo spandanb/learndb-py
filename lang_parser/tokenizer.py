@@ -1,9 +1,10 @@
-from tokens import TokenType, KEYWORDS, Token
+from .tokens import TokenType, KEYWORDS, Token
+from .utils import TokenizeError
 from typing import Any
 
 
 class Tokenizer:
-    def __init__(self, source: str, error_reporter):
+    def __init__(self, source: str, raise_exception=True):
         self.source = source
         self.tokens = []
         # start of token in current line
@@ -12,6 +13,7 @@ class Tokenizer:
         self.current = 0
         self.line = 1
         self.errors = []
+        self.raise_exceptions = raise_exception
 
     def is_at_end(self) -> bool:
         """return true if scanner is at end of the source"""

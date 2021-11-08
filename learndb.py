@@ -11,8 +11,10 @@ from enum import Enum, auto
 from random import randint  # for testing
 import traceback # for testing
 
-from btree import Tree, TreeInsertResult, TreeDeleteResult, NodeType, INTERNAL_NODE_MAX_CELLS
+from lang_parser.sqlhandler import SqlFrontEnd
 
+from btree import Tree, TreeInsertResult, TreeDeleteResult, NodeType, INTERNAL_NODE_MAX_CELLS
+from virtual_machine import VirtualMachine
 # section: constants
 
 EXIT_SUCCESS = 0
@@ -93,7 +95,13 @@ class Response:
     """
     Use as a generic class to encapsulate a response and a body
     """
+    # is success
     success: bool
+    # if fail, why
+    error_message: str = None
+    # an enum encoding state
+    status: Any = None
+    # output of operation
     body: Any = None
 
 
@@ -115,6 +123,11 @@ class Statement:
     statement_type: StatementType
     row_to_insert: Row = None
     key_to_delete: int = None
+
+
+@dataclass
+class Program:
+    program: Any
 
 # section: helpers
 
@@ -349,7 +362,6 @@ class Cursor:
             case TreeInsertResult.DuplicateKey:
                 return Response(False, TreeInsertResult.DuplicateKey)
 
-
     def delete_key(self, key: int) -> Response:
         """
         delete key from table
@@ -521,52 +533,47 @@ def is_meta_command(command: str) -> bool:
     return command[0] == '.'
 
 
-def do_meta_command(command: str, table: Table) -> MetaCommandResult:
+def do_meta_command(command: str, table: Table) -> Response:
     if command == ".quit":
         db_close(table)
+        # reconsider exiting thus
         sys.exit(EXIT_SUCCESS)
     elif command == ".btree":
         print("Printing tree" + "-"*50)
         table.tree.print_tree()
         print("Finished printing tree" + "-"*50)
-        return MetaCommandResult.Success
+        return Response(True, status=MetaCommandResult.Success)
     elif command == ".validate":
         print("Validating tree....")
         table.tree.validate()
         print("Validation succeeded.......")
-        return MetaCommandResult.Success
+        return Response(True, status=MetaCommandResult.Success)
     elif command == ".nuke":
         # NB: doesn't work; the file is in use
         os.remove(DB_FILE)
     elif command == ".help":
         print(USAGE)
-        return MetaCommandResult.Success
-    return MetaCommandResult.UnrecognizedCommand
+        return Response(True, status=MetaCommandResult.Success)
+    return Response(False, status=MetaCommandResult.UnrecognizedCommand)
 
 
-def prepare_statement(command: str, statement: Statement) -> PrepareResult:
+def prepare_statement(command)-> Response:
     """
-    prepare a statement
-    :param command:
-    :param statement: modify in-place to be similar to rust impl
+    prepare statement, i.e. parse statement and
+    return it's AST. For now the AST structure is the prepared
+    statement. This may change, e.g. if frontend changes to output bytecode
 
+    :param command:
     :return:
     """
-    if command.startswith("insert"):
-        statement.statement_type = StatementType.Insert
-        statement.row_to_insert = parse_insert(command)
-        return PrepareResult.Success
-    elif command.startswith("delete"):
-        statement.statement_type = StatementType.Delete
-        statement.key_to_delete = parse_delete(command)
-        return PrepareResult.Success
-    elif command.startswith("select"):
-        statement.statement_type = StatementType.Select
-        return PrepareResult.Success
-    return PrepareResult.UnrecognizedStatement
+    parser = SqlFrontEnd()
+    parser.parse(command)
+    if not parser.is_success():
+        return Response(False, error_message=f"parse failed due to: [{parser.error_summary()}]")
+    return Response(True, body=parser.get_parsed())
 
 
-def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
+def execute_insert(statement: Statement, table: Table) -> Response:
     print("executing insert...")
     cursor = Cursor(table)
 
@@ -575,13 +582,13 @@ def execute_insert(statement: Statement, table: Table) -> ExecuteResult:
     resp = cursor.insert_row(row_to_insert)
     if resp.success:
         print(f"insert [{row_to_insert.identifier}] is successful")
-        return Response(True)
+        return Response(True, status=ExecuteResult.Success)
     else:
         print(f"insert [{row_to_insert.identifier}] failed, due to [{resp.body}]")
         return Response(False, resp.body)
 
 
-def execute_delete(statement: Statement, table: Table) -> ExecuteResult:
+def execute_delete(statement: Statement, table: Table) -> Response:
     print("executing delete...")
     key_to_delete = statement.key_to_delete
 
@@ -592,14 +599,13 @@ def execute_delete(statement: Statement, table: Table) -> ExecuteResult:
     resp = cursor.delete_key(key_to_delete)
     if resp.success:
         print(f"delete [{key_to_delete}] is successful")
-        return Response(True)
+        return Response(True, status=ExecuteResult.Success)
     else:
         print(f"delete [{key_to_delete}] failed")
-        return Response(False, resp.body)
+        return Response(False, error_message=f"delete [{key_to_delete}] failed")
 
 
-
-def execute_select(table: Table) -> list:
+def execute_select(table: Table) -> Response:
     print("executing select...")
 
     rows = []
@@ -607,17 +613,18 @@ def execute_select(table: Table) -> list:
 
     while cursor.end_of_table is False:
         row = cursor.get_row()
-        # print(f"printing row: {row}")
+        print(f"printing row: {row}")
         cursor.advance()
         rows.append(row)
 
-    return Response(True, rows)
+    return Response(True, body=rows)
 
 
-def execute_statement(statement: Statement, table: Table) -> Response:
+def execute_statement(program: Program, table: Table, virtmachine) -> Response:
     """
     execute statement;
     returns return of child-invocation
+    """
     """
     match statement.statement_type:
         case StatementType.Select:
@@ -626,39 +633,50 @@ def execute_statement(statement: Statement, table: Table) -> Response:
             return execute_insert(statement, table)
         case StatementType.Delete:
             return execute_delete(statement, table)
-
-
-def input_handler(input_buffer: str, table: Table) -> Response:
     """
-    handle input buffer; could contain command or meta command
+    print("In execute_statement; ")
+    resp = virtmachine.run(program)
+    # TODO: this is where the vm will sit
+    return Response(True)
 
-    returns: tuple (is_success: bool, result: object)
+
+def input_handler(input_buffer: str, table: Table, virtmachine: VirtualMachine):
+    """
+    handle input
+
+    The API needs to be cleaned up; but the crucially, there
+    are 3 entities- input_buffer (user intention), table (state), vm (stateless compute)
+
+    :param input_buffer:
+    :param table: This should be something like context, or database the entity, i.e. an embodiment of state
+    :return:
     """
     if is_meta_command(input_buffer):
-        match do_meta_command(input_buffer, table):
-            case MetaCommandResult.Success:
-                return Response(True)
-            case MetaCommandResult.UnrecognizedCommand:
-                print("Unrecognized meta command")
-                return Response(False)
+        m_resp = do_meta_command(input_buffer)
+        if m_resp.success == MetaCommandResult.Success:
+            return Response(True, status=MetaCommandResult.Success)
 
-    statement = Statement(StatementType.Uninitialized)
-    match prepare_statement(input_buffer, statement):
-        case PrepareResult.Success:
-            # will execute below
-            pass
-        case PrepareResult.UnrecognizedStatement:
+        elif m_resp == MetaCommandResult.UnrecognizedCommand:
+            print("Unrecognized meta command")
+            return Response(False, status=MetaCommandResult.UnrecognizedCommand)
+
+    p_resp = prepare_statement(input_buffer)
+    if not p_resp.success:
+        if p_resp.status == PrepareResult.UnrecognizedStatement:
             print(f"Unrecognized keyword at start of '{input_buffer}'")
-            return Response(False, PrepareResult.UnrecognizedStatement)
+            return Response(False, status=PrepareResult.UnrecognizedStatement)
 
     # handle non-meta command
-    resp = execute_statement(statement, table)
-    if resp.success:
+    # execute statement can be handled by the interpreter
+    program = p_resp.body
+    e_resp = execute_statement(program, table, virtmachine)
+    if e_resp.success:
         print(f"Execution of command '{input_buffer}' succeeded")
-        return Response(True, resp.body)
+        return Response(True, body=e_resp.body)
     else:
-        return Response(False, resp)
         print(f"Execution of command '{input_buffer}' failed")
+        return Response(False, error_message=e_resp.error_message)
+
 
 
 def repl():
@@ -666,12 +684,22 @@ def repl():
     repl
     """
     table = db_open(DB_FILE)
+    virtmachine = VirtualMachine()
     while True:
         input_buffer = input("db > ")
-        input_handler(input_buffer, table)
+        input_handler(input_buffer, table, virtmachine)
 
 
 def devloop():
+    table = db_open(DB_FILE)
+    virtmachine = VirtualMachine()
+    # input_handler("select foo from bar", table, virtmachine)
+    #input_handler("create table foo (colA text , colB text); select bar from foo", table, virtmachine)
+
+    handler = SqlFrontEnd()
+    handler.parse()
+
+def devloop_old():
     """
     inner dev-loop
     :return:

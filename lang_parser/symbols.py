@@ -3,10 +3,9 @@ from __future__ import annotations
 Contains symbol classes used by parser
 """
 
-from tokens import Token
 from typing import Any, List, Type, Tuple, Union
-from symbols import *
 from dataclasses import dataclass
+from .tokens import Token
 
 
 @dataclass
