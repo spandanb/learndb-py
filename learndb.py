@@ -11,472 +11,20 @@ from enum import Enum, auto
 from random import randint  # for testing
 import traceback # for testing
 
+
+from constants import DB_FILE, USAGE, EXIT_SUCCESS
+from database import Database
+from datatypes import Response, Row, MetaCommandResult, ExecuteResult, PrepareResult
+from pager import Pager
+
 from lang_parser.sqlhandler import SqlFrontEnd
+from lang_parser.symbols import Program
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult, NodeType, INTERNAL_NODE_MAX_CELLS
 from virtual_machine import VirtualMachine
-# section: constants
-
-EXIT_SUCCESS = 0
-EXIT_FAILURE = 1
-
-PAGE_SIZE = 4096
-WORD = 32
-
-TABLE_MAX_PAGES = 100
-
-DB_FILE = 'db.file'
-
-# serialized data layout (row)
-ID_SIZE = 6 # length in bytes
-BODY_SIZE = 58
-ROW_SIZE = ID_SIZE + BODY_SIZE
-ID_OFFSET = 0
-BODY_OFFSET = ID_OFFSET + ID_SIZE
-ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
-
-USAGE = '''
-Supported commands:
--------------------
-insert 3 into tree
-> insert 3
-
-select and output all rows (no filtering support for now)
-> select
-
-delete 3 from tree
-> delete 3
-
-Supported meta-commands:
-------------------------
-print usage
-.help
-
-quit REPl
-> .quit
-
-print btree
-> .btree
-
-performs internal consistentcy checks on tree
-> .validate
-'''
-
-
-# section: enums
-# NOTE: each enum that corresponds to a fail-able operation
-# should be defined with member "Success", and any other failure codes
-
-class MetaCommandResult(Enum):
-    Success = auto()
-    UnrecognizedCommand = auto()
-
-
-class PrepareResult(Enum):
-    Success = auto()
-    UnrecognizedStatement = auto()
-
-
-class ExecuteResult(Enum):
-    Success = auto()
-    TableFull = auto()
-
-
-class StatementType(Enum):
-    Uninitialized = auto()
-    Insert = auto()
-    Select = auto()
-    Delete = auto()
-
-
-# section: classes/structs
-@dataclass
-class Response:
-    """
-    Use as a generic class to encapsulate a response and a body
-    """
-    # is success
-    success: bool
-    # if fail, why
-    error_message: str = None
-    # an enum encoding state
-    status: Any = None
-    # output of operation
-    body: Any = None
-
-
-@dataclass
-class Row:
-    """
-    NOTE: this assumes a fixed table definition. Fixing the
-    table definition, like in the tutorial to bootstrap the
-    (de)serialize logic.
-    Later when I can handle generic schemas this will need to be
-    made generic
-    """
-    identifier : int
-    body: str
-
-
-@dataclass
-class Statement:
-    statement_type: StatementType
-    row_to_insert: Row = None
-    key_to_delete: int = None
-
-
-@dataclass
-class Program:
-    program: Any
-
-# section: helpers
-
-
-# section : helper objects/functions, e.g. table, pager
-
-def db_open(filename: str) -> Table:
-    """
-    opens connection to db, i.e. initializes
-    table and pager.
-
-    The relationships are: `tree` is a abstracts the pages into a tree
-    and maps 1-1 with the logical entity `table`. The table.root_page_num
-    is a reference to first
-
-    """
-    pager = Pager.pager_open(filename)
-    # with one table the root page is hard coded to 0, but
-    # with multiple tables I will need a mapping: table_name -> root_page_num
-    table = Table(pager, root_page_num=0)
-    return table
-
-
-def db_close(table: Table):
-    """
-    this calls the pager `close`
-    """
-    table.pager.close()
-
-
-class Pager:
-    """
-    manager of pages in memory (cache)
-    and on file
-    """
-    def __init__(self, filename):
-        """
-        filename is handled differently from tutorial
-        since it passes a fileptr; here I'll manage the file
-        with the `Pager` class
-        """
-        self.pages = [None for _ in range(TABLE_MAX_PAGES)]
-        self.filename = filename
-        self.fileptr = None
-        self.file_length = 0
-        self.num_pages = 0
-        self.open_file()
-        self.returned_pages = []
-
-    def open_file(self):
-        """
-        open database file
-        """
-        # open binary file such that: it is readable, not truncated(random),
-        # create if not exists, writable(random)
-        # a+b (and more generally any "a") mode can only write to end
-        # of file; seeks only applies to read ops
-        # r+b allows read and write, without truncation, but errors if
-        # the file does not exist
-        # NB: this sets the file ptr location to the end of the file
-        try:
-            self.fileptr = open(self.filename, "r+b")
-        except FileNotFoundError:
-            self.fileptr = open(self.filename, "w+b")
-        self.file_length = os.path.getsize(self.filename)
-
-        if self.file_length % PAGE_SIZE != 0:
-            # avoiding exceptions since I want this to be closer to Rust, i.e panic or enum
-            print("Db file is not a whole number of pages. Corrupt file.")
-            sys.exit(EXIT_FAILURE)
-
-        self.num_pages = self.file_length // PAGE_SIZE
-
-        # warm up page cache, i.e. load data into memory
-        # to load data, seek to beginning of file
-        self.fileptr.seek(0)
-        for page_num in range(self.num_pages):
-            self.get_page(page_num)
-
-    @classmethod
-    def pager_open(cls, filename):
-        """
-        this does nothing - keeping it so code is aligned.
-        C works with fd (ints), so you can
-        open files and pass around an int. For python, I need to
-        pass the file ref around.
-        """
-        return cls(filename)
-
-    def get_unused_page_num(self) -> int:
-        """
-        NOTE: this depends on num_pages being updated when a new page is requested
-        :return:
-        """
-        if len(self.returned_pages):
-            # first check the returned page cache
-            return self.return_pages.pop()
-        return self.num_pages
-
-    def page_exists(self, page_num: int) -> bool:
-        """
-
-        :param page_num: does this page exist/ has been allocated
-        :return:
-        """
-        # num_pages counts whole pages
-        return page_num < self.num_pages
-
-    def get_page(self, page_num: int) -> bytearray:
-        """
-        get `page` given `page_num`
-        """
-        if page_num >= TABLE_MAX_PAGES:
-            print(f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})")
-            sys.exit(EXIT_FAILURE)
-
-        if self.pages[page_num] is None:
-            # cache miss. Allocate memory and load from file.
-            page = bytearray(PAGE_SIZE)
-
-            # determine number of pages in file; there should only be complete pages
-            num_pages = self.file_length // PAGE_SIZE
-            if page_num < num_pages:
-                # this page exists on file, load from file
-                # into `page`
-                self.fileptr.seek(page_num * PAGE_SIZE)
-                read_page = self.fileptr.read(PAGE_SIZE)
-                assert len(read_page) == PAGE_SIZE, "corrupt file: read page returned byte array smaller than page"
-                page[:PAGE_SIZE] = read_page
-            else:
-                pass
-
-            self.pages[page_num] = page
-
-            if page_num >= self.num_pages:
-                self.num_pages += 1
-
-        return self.pages[page_num]
-
-    def return_page(self, page_num: int):
-        """
-
-        :param page_num:
-        :return:
-        """
-        # cleaning it to catch issues with invalid refs
-        # self.get_page(page_num)[:PAGE_SIZE] = bytearray(PAGE_SIZE)
-        self.returned_pages.append(page_num)
-
-
-    def close(self):
-        """
-        close the connection i.e. flush pages to file
-        """
-        # this is 0-based
-        # NOTE: not sure about this +1;
-        for page_num in range(self.num_pages):
-            if self.pages[page_num] is None:
-                continue
-            self.flush_page(page_num)
-        self.fileptr.close()
-
-    def flush_page(self, page_num: int):
-        """
-        flush/write page to file
-        page_num is the page to write
-        size is the number of bytes to write
-        """
-        if self.pages[page_num] is None:
-            print("Tried to flush null page")
-            sys.exit(EXIT_FAILURE)
-
-        byte_offset = page_num * PAGE_SIZE
-        self.fileptr.seek(byte_offset)
-        to_write = self.pages[page_num]
-        self.fileptr.write(to_write)
-
-
-
-class Cursor:
-    """
-    Represents a cursor. A cursor understands
-    how to traverse the table and how to insert, and remove
-    rows from a table.
-    """
-    def __init__(self, table: Table, page_num: int = 0):
-        self.table = table
-        self.tree = table.tree
-        self.page_num = page_num
-        self.cell_num = 0
-        self.end_of_table = False
-        self.first_leaf()
-
-    def first_leaf(self):
-        """
-        set cursor location to left-most/first leaf
-        """
-        # start with root and descend until we hit left most leaf
-        node = self.table.pager.get_page(self.page_num)
-        while Tree.get_node_type(node) == NodeType.NodeInternal:
-            assert Tree.internal_node_has_right_child(node), "invalid tree with no right child"
-            if Tree.internal_node_num_keys(node) == 0:
-                # get right child- unary tree
-                child_page_num = Tree.internal_node_right_child(node)
-            else:
-                child_page_num = Tree.internal_node_child(node, 0)
-            self.page_num = child_page_num
-            node = self.table.pager.get_page(child_page_num)
-
-        self.cell_num = 0
-        # node must be leaf node
-        self.end_of_table = (Tree.leaf_node_num_cells(node) == 0)
-
-    def get_row(self) -> Row:
-        """
-        return row pointed by cursor
-        :return:
-        """
-        node = self.table.pager.get_page(self.page_num)
-        serialized = Tree.leaf_node_value(node, self.cell_num)
-        return Table.deserialize(serialized)
-
-    def insert_row(self, row: Row) -> Response:
-        """
-        insert row
-        :return:
-        """
-        serialized = Table.serialize(row)
-        match self.tree.insert(row.identifier, serialized):
-            case TreeInsertResult.Success:
-                return Response(True)
-            case TreeInsertResult.DuplicateKey:
-                return Response(False, TreeInsertResult.DuplicateKey)
-
-    def delete_key(self, key: int) -> Response:
-        """
-        delete key from table
-
-        :param key:
-        :return:
-        """
-        match self.tree.delete(key):
-            case TreeDeleteResult.Success:
-                return Response(True)
-
-    def next_leaf(self):
-        """
-        move self.page_num and self.cell_num to next leaf and next cell
-        this method requires the self.page_num start at a leaf node.
-
-        NOTE: if starting from an internal node, to get to a leaf use `first_leaf` method
-        :return:
-        """
-        # starting point
-        node = self.table.pager.get_page(self.page_num)
-        if Tree.is_node_root(node) is True:
-            # there is nothing
-            self.end_of_table = True
-            return
-
-        node_max_value = self.tree.get_node_max_key(node)
-        assert node_max_value is not None
-
-        parent_page_num = Tree.get_parent_page_num(node)
-        # check if current page, i.e. self.page_num is right most child of it's parent
-        parent = self.table.pager.get_page(parent_page_num)
-        child_num = self.tree.internal_node_find(parent_page_num, node_max_value)
-        if child_num == INTERNAL_NODE_MAX_CELLS:
-            # this is the right child; thus all children have been consumed
-            # go up another level
-            self.page_num = parent_page_num
-            self.next_leaf()
-        else:
-            # there is at least one child to be consumed
-            # find the next child
-            if child_num == Tree.internal_node_num_keys(parent) - 1:
-                # next child is the right child
-                next_child = Tree.internal_node_right_child(parent)
-            else:
-                next_child = Tree.internal_node_child(parent, child_num + 1)
-            self.page_num = next_child
-            # now find first leaf in next child
-            self.first_leaf()
-
-    def advance(self):
-        """
-        advance the cursor, from left most leaf node to right most leaf node
-        :return:
-        """
-        # advance always start at leaf node and ends at a leaf node;
-        # starting at or ending at an internal node means the cursor is inconsistent
-        node = self.table.pager.get_page(self.page_num)
-        # we are currently on the last cell in the node
-        # go to the next node if it exists
-        if self.cell_num >= Tree.leaf_node_num_cells(node) - 1:
-            self.next_leaf()
-        else:
-            self.cell_num += 1
-
-
-class Table:
-    """
-    Currently `Table` interface is around (de)ser given a row number.
-    Ultimately, the table should
-    represent the logical-relation-entity, and access to the pager, i.e. the storage
-    layer should be done via an Engine, that acts as the storage layer access for
-    all tables.
-    """
-    def __init__(self, pager: Pager, root_page_num: int = 0):
-        self.pager = pager
-        self.root_page_num = root_page_num
-        self.tree = Tree(pager, root_page_num)
-
-    @staticmethod
-    def serialize(row: Row) -> bytearray:
-        """
-        turn row (object) into bytes
-        """
-
-        serialized = bytearray(ROW_SIZE)
-        ser_id = row.identifier.to_bytes(ID_SIZE, sys.byteorder)
-        # strings needs to be encoded
-        ser_body = bytes(str(row.body), "utf-8")
-        if len(ser_body) > BODY_SIZE:
-            raise ValueError("row serialization failed; body too long")
-
-        serialized[ID_OFFSET: ID_OFFSET + ID_SIZE] = ser_id
-        serialized[BODY_OFFSET: BODY_OFFSET + len(ser_body)] = ser_body
-        return serialized
-
-    @staticmethod
-    def deserialize(row_bytes: bytes):
-        """
-
-        :param row_bytes:
-        :return:
-        """
-        # read bytes corresponding to columns
-        id_bstr = row_bytes[ID_OFFSET: ID_OFFSET + ID_SIZE]
-        body_bstr = row_bytes[BODY_OFFSET: BODY_OFFSET + BODY_SIZE]
-
-        # this will need to be revisited when handling other data types
-        id_val = int.from_bytes(id_bstr, sys.byteorder)
-        # not sure if stripping nulls is valid (for other datatypes)
-        body_val = body_bstr.rstrip(b'\x00')
-        body_val = body_val.decode('utf-8')
-        return Row(id_val, body_val)
 
 # section: parsing logic
+
 
 def parse_insert(command: str) -> Row:
     """
@@ -515,7 +63,6 @@ def validate_existence(rows: List[Row], expected_keys: List[int]):
     for row in rows:
         assert row.identifier in expected_keys, f"key [{row.identifier}] not expected"
 
-
     for key in expected_keys:
         found = False
         for row in rows:
@@ -533,19 +80,19 @@ def is_meta_command(command: str) -> bool:
     return command[0] == '.'
 
 
-def do_meta_command(command: str, table: Table) -> Response:
+def do_meta_command(command: str, database: Database) -> Response:
     if command == ".quit":
-        db_close(table)
+        database.db_close()
         # reconsider exiting thus
         sys.exit(EXIT_SUCCESS)
     elif command == ".btree":
         print("Printing tree" + "-"*50)
-        table.tree.print_tree()
+        database.print_tree()
         print("Finished printing tree" + "-"*50)
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".validate":
         print("Validating tree....")
-        table.tree.validate()
+        database.validate_tree()
         print("Validation succeeded.......")
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".nuke":
@@ -573,78 +120,21 @@ def prepare_statement(command)-> Response:
     return Response(True, body=parser.get_parsed())
 
 
-def execute_insert(statement: Statement, table: Table) -> Response:
-    print("executing insert...")
-    cursor = Cursor(table)
-
-    row_to_insert = statement.row_to_insert
-    print(f"inserting row with id: [{row_to_insert.identifier}]")
-    resp = cursor.insert_row(row_to_insert)
-    if resp.success:
-        print(f"insert [{row_to_insert.identifier}] is successful")
-        return Response(True, status=ExecuteResult.Success)
-    else:
-        print(f"insert [{row_to_insert.identifier}] failed, due to [{resp.body}]")
-        return Response(False, resp.body)
-
-
-def execute_delete(statement: Statement, table: Table) -> Response:
-    print("executing delete...")
-    key_to_delete = statement.key_to_delete
-
-    print(f"deleting key: [{key_to_delete}]")
-    # return ExecuteResult.Success
-
-    cursor = Cursor(table)
-    resp = cursor.delete_key(key_to_delete)
-    if resp.success:
-        print(f"delete [{key_to_delete}] is successful")
-        return Response(True, status=ExecuteResult.Success)
-    else:
-        print(f"delete [{key_to_delete}] failed")
-        return Response(False, error_message=f"delete [{key_to_delete}] failed")
-
-
-def execute_select(table: Table) -> Response:
-    print("executing select...")
-
-    rows = []
-    cursor = Cursor(table)
-
-    while cursor.end_of_table is False:
-        row = cursor.get_row()
-        print(f"printing row: {row}")
-        cursor.advance()
-        rows.append(row)
-
-    return Response(True, body=rows)
-
-
-def execute_statement(program: Program, table: Table, virtmachine) -> Response:
+def execute_statement(program: Program, database: Database, virtmachine: VirtualMachine) -> Response:
     """
     execute statement;
-    returns return of child-invocation
-    """
-    """
-    match statement.statement_type:
-        case StatementType.Select:
-            return execute_select(table)
-        case StatementType.Insert:
-            return execute_insert(statement, table)
-        case StatementType.Delete:
-            return execute_delete(statement, table)
+    returns return value of child-invocation
     """
     print("In execute_statement; ")
-    resp = virtmachine.run(program)
-    # TODO: this is where the vm will sit
+    resp = virtmachine.run(program, database)
     return Response(True)
 
 
-def input_handler(input_buffer: str, table: Table, virtmachine: VirtualMachine):
+def input_handler(input_buffer: str, database: Database, virtmachine: VirtualMachine):
     """
     handle input
 
-    The API needs to be cleaned up; but the crucially, there
+    The API needs to be cleaned up; but crucially, there
     are 3 entities- input_buffer (user intention), table (state), vm (stateless compute)
 
     :param input_buffer:
@@ -669,14 +159,13 @@ def input_handler(input_buffer: str, table: Table, virtmachine: VirtualMachine):
     # handle non-meta command
     # execute statement can be handled by the interpreter
     program = p_resp.body
-    e_resp = execute_statement(program, table, virtmachine)
+    e_resp = execute_statement(program, database, virtmachine)
     if e_resp.success:
         print(f"Execution of command '{input_buffer}' succeeded")
         return Response(True, body=e_resp.body)
     else:
         print(f"Execution of command '{input_buffer}' failed")
         return Response(False, error_message=e_resp.error_message)
-
 
 
 def repl():
@@ -691,13 +180,15 @@ def repl():
 
 
 def devloop():
-    table = db_open(DB_FILE)
+    database = Database(DB_FILE)
+    database.db_open()
     virtmachine = VirtualMachine()
-    # input_handler("select foo from bar", table, virtmachine)
-    #input_handler("create table foo (colA text , colB text); select bar from foo", table, virtmachine)
+    input_handler("select foo from bar", database, virtmachine)
+    # input_handler("create table foo (colA text , colB text); select bar from foo", database, virtmachine)
 
-    handler = SqlFrontEnd()
-    handler.parse()
+    # handler = SqlFrontEnd()
+    # handler.parse()
+
 
 def devloop_old():
     """
@@ -782,3 +273,4 @@ python learndb.py devloop
 
 if __name__ == '__main__':
     parse_args_and_start(sys.argv[1:])
+    # devloop()
