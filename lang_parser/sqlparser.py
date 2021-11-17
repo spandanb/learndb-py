@@ -1,5 +1,21 @@
+from typing import Any, List, Type, Tuple, Union
+
 from .tokens import TokenType, KEYWORDS, Token
-from .symbols import *
+from .symbols import (Symbol,
+                      Program,
+                      CreateStmnt,
+                      InsertStmnt,
+                      DeleteStmnt,
+                      DropStmnt,
+                      TruncateStmnt,
+                      UpdateStmnt,
+                      ColumnDef,
+                      SelectExpr,
+                      Selectable,
+                      WhereClause,
+                      AndClause,
+                      Predicate,
+                      Term)
 from .utils import pascal_to_snake, ParseError
 
 
@@ -14,10 +30,12 @@ class Parser:
         program -> (stmnt ";") * EOF
 
         stmnt   -> select_expr
-                | create_table_stmnt
+                | create_stmnt
+                | drop_stmnt
                 | insert_stmnt
                 | update_stmnt
                 | delete_stmnt
+                | truncate_stmnt
 
         select_expr  -> "select" selectable "from" from_item "where" where_clause
         selectable    -> (column_name ",")* (column_name)
@@ -27,10 +45,22 @@ class Parser:
         and_clause    -> (predicate "and")* (predicate)
         predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
 
-        create_table_stmnt -> "create" "table" table_name "(" column_def_list ")"
+        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
         column_def_list -> (column_def ",")* column_def
         column_def -> column_name datatype ("primary key")? ("not null")?
         table_name -> IDENTIFIER
+
+        drop_stmnt -> "drop" "table" table_name
+
+        insert_stmnt -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
+        column_name_list -> (column_name ",")* column_name
+        value_list -> (value ",")* value
+
+        delete_stmnt -> "delete" "from" table_name ("where" where_clause)?
+
+        update_stmnt -> "update" table_name "set" column_name = value ("where" where_clause)?
+
+        truncate_stmnt -> "truncate" table_name
 
         -- term should also handle other literals
         term          -> NUMBER | STRING | IDENTIFIER
@@ -83,7 +113,6 @@ class Parser:
         """
         Analog to `match` that `matches` on symbol instead of tokens.
 
-
         :return: tuple: (is_match, matched_symbol)
         """
         # store token ptr position, so we can reset on non-match
@@ -125,31 +154,139 @@ class Parser:
         if self.raise_exception:
             raise ParseError(message, token)
 
-    # section: rule handlers
+    # section: rule handlers - top level statements/expr
 
     def program(self) -> Program:
         program = []
         while not self.is_at_end():
-            if self.peek().token_type == TokenType.SELECT:
+            peeked = self.peek().token_type
+            if peeked == TokenType.SELECT:
                 # select statement
                 program.append(self.select_expr())
-            elif self.peek().token_type == TokenType.CREATE:
+            elif peeked == TokenType.CREATE:
                 # create
-                program.append(self.create_table_stmnt())
+                program.append(self.create_stmnt())
+            elif peeked == TokenType.INSERT:
+                # insert
+                program.append(self.insert_stmnt())
+            elif peeked == TokenType.DELETE:
+                # delete
+                program.append(self.delete_stmnt())
+            elif peeked == TokenType.DROP:
+                # drop
+                program.append(self.drop_stmnt())
+            elif peeked == TokenType.TRUNCATE:
+                # truncate
+                program.append(self.truncate_stmnt())
+            elif peeked == TokenType.UPDATE:
+                # update
+                program.append(self.update_stmnt())
             elif self.check(TokenType.SEMI_COLON):
                 self.consume(TokenType.SEMI_COLON, "Expected [;]")
             else:
                 self.report_error("Unexpected token", self.peek())
         return Program(program)
 
-    def create_table_stmnt(self) -> CreateTableStmnt:
+    def create_stmnt(self) -> CreateStmnt:
+        """
+        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
+        :return:
+        """
         self.consume(TokenType.CREATE, "Expected keyword [CREATE]")
         self.consume(TokenType.TABLE, "Expected keyword [TABLE]")
         table_name = self.table_name()
         self.consume(TokenType.LEFT_PAREN, "Expected [(]")  # '('
         column_def_list = self.column_def_list()
         self.consume(TokenType.RIGHT_PAREN, "Expected [)]")
-        return CreateTableStmnt(table_name=table_name, column_def_list=column_def_list)
+        return CreateStmnt(table_name=table_name, column_def_list=column_def_list)
+
+    def select_expr(self) -> SelectExpr:
+        """
+        select_expr  -> "select" selectable "from" from_item "where" where_clause
+        :return:
+        """
+        # select and from are required
+        self.consume(TokenType.SELECT, "Expected keyword [SELECT]")
+        selectable = self.selectable()
+        from_location = None
+        where_clause = None
+        # from is optional
+        if self.match(TokenType.FROM):
+            from_location = self.from_location()
+            # where clause is optional
+            if self.match(TokenType.WHERE):
+                where_clause = self.where_clause()
+
+        return SelectExpr(selectable=selectable, from_location=from_location, where_clause=where_clause)
+
+    def insert_stmnt(self) -> InsertStmnt:
+        """
+        insert_stmnt -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
+        :return:
+        """
+        self.consume(TokenType.INSERT, "Expected keyword [INSERT]")
+        self.consume(TokenType.INTO, "Expected keyword [INTO]")
+        table_name = self.table_name()
+        self.consume(TokenType.LEFT_PAREN, "Expected [(]")
+        column_name_list = self.column_name_list()
+        self.consume(TokenType.RIGHT_PAREN, "Expected [)]")
+        self.consume(TokenType.VALUES, "Expected keyword [VALUES]")
+        self.consume(TokenType.LEFT_PAREN, "Expected [(]")
+        value_list = self.value_list()
+        self.consume(TokenType.RIGHT_PAREN, "Expected [)]")
+        return InsertStmnt(table_name, column_name_list, value_list)
+
+    def delete_stmnt(self) -> DeleteStmnt:
+        """
+        delete_stmnt -> "delete" "from" table_name ("where" where_clause)?
+        :return:
+        """
+        self.consume(TokenType.DELETE, "Expected keyword [DELETE]")
+        self.consume(TokenType.FROM, "Expected keyword [FROM]")
+        table_name = self.table_name()
+        # where clause is optional
+        where_clause = None
+        if self.match(TokenType.WHERE):
+            where_clause = self.where_clause()
+        return DeleteStmnt(table_name, where_clause=where_clause)
+
+    def drop_stmnt(self) -> DropStmnt:
+        """
+        drop_stmnt -> "drop" "table" table_name
+        :return:
+        """
+        self.consume(TokenType.DROP, "Expected keyword [DROP]")
+        self.consume(TokenType.TABLE, "Expected keyword [TABLE]")
+        table_name = self.table_name()
+        return DropStmnt(table_name)
+
+    def truncate_stmnt(self) -> TruncateStmnt:
+        """
+        "truncate" table_name
+        :return:
+        """
+        self.consume(TokenType.TRUNCATE, "Expected keyword [TRUNCATE]")
+        table_name = self.table_name()
+        return TruncateStmnt(table_name)
+
+    def update_stmnt(self) -> UpdateStmnt:
+        """
+        update_stmnt -> "update" table_name "set" column_name = value ("where" where_clause)?
+
+        :return:
+        """
+        self.consume(TokenType.UPDATE, "Expected keyword [UPDATE]")
+        table_name = self.table_name()
+        self.consume(TokenType.SET, "Expected keyword [SET]")
+        column_name = self.column_name()
+        self.consume(TokenType.EQUAL, "Expected [=]")
+        value = self.term()
+        where_clause = None
+        if self.match(TokenType.WHERE):
+            where_clause = self.where_clause()
+        return UpdateStmnt(table_name, column_name, value, where_clause=where_clause)
+
+    # section: rule handlers - child statements/expr
 
     def column_def_list(self) -> List[ColumnDef]:
         column_defs = []
@@ -162,6 +299,24 @@ class Parser:
                 break
             self.advance()
         return column_defs
+
+    def column_name_list(self) -> List:
+        """
+        column_name_list -> (column_name ",")* column_name
+        :return:
+        """
+        # there must be at least one column
+        names = [self.column_name()]
+        while self.match(TokenType.COMMA):
+            # keep looping until we see commas
+            names.append(self.column_name())
+        return names
+
+    def value_list(self) -> List:
+        values = [self.term()]
+        while self.match(TokenType.COMMA):
+            values.append(self.term())
+        return values
 
     def table_name(self) -> Token:
         return self.consume(TokenType.IDENTIFIER, "Expected identifier for table name")
@@ -179,27 +334,14 @@ class Parser:
             self.report_error(f"Expected datatype found {self.peek()}", self.peek())
         return ColumnDef(col_name, datatype_token)
 
-    def select_expr(self) -> SelectExpr:
-        # select and from are required
-        self.consume(TokenType.SELECT, "Expected keyword [SELECT]")
-        selectable = self.selectable()
-        # todo: make from clause optional
-        self.consume(TokenType.FROM, "Expected keyword [FROM]")
-        from_location = self.from_location()
-        # where clause is optional
-        where_clause = None
-        if self.match(TokenType.WHERE):
-            where_clause = self.where_clause()
-
-        return SelectExpr(selectable=selectable, from_location=from_location, where_clause=where_clause)
-
     def selectable(self):
-        # there must be at least one column
-        items = [self.column_name()]
-        while self.match(TokenType.COMMA):
-            # keep looping until we see commas
-            items.append(self.column_name())
-        return Selectable(items)
+        """
+        NOTE: currently I'm only checking column names;
+        this should be able to also handle other expressions
+        :return:
+        """
+        # TODO: handle terms
+        return Selectable(self.column_name_list())
 
     def column_name(self) -> Token:
         return self.consume(TokenType.IDENTIFIER, "expected identifier for column name")

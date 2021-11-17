@@ -3,7 +3,7 @@ from database import Database
 from datatypes import Response, ExecuteResult
 
 from lang_parser.visitor import Visitor
-from lang_parser.symbols import Symbol, Program, CreateTableStmnt, SelectExpr
+from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr
 
 
 class VirtualMachine(Visitor):
@@ -33,7 +33,7 @@ class VirtualMachine(Visitor):
         """
         stmnt.accept(self)
 
-    def visit_create_table_stmnt(self, stmnt: CreateTableStmnt):
+    def visit_create_stmnt(self, stmnt: CreateStmnt):
         print(f"In vm: creating table [name={stmnt.table_name}, cols={stmnt.column_def_list}]")
 
     def visit_select_expr(self, expr: SelectExpr):

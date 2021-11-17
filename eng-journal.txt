@@ -134,3 +134,13 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     only exist for in memory object. For on-disk objects, all of that: memory management, resource management, has to
     be one by oneself. And more importantly, it depends on the correctness of other parts of the system.
 
+
+11/17
+    PEGs vs hand-written recursive descent parser
+    Working on extending the database to support a more complex grammar/DDL/DQL/DDM to support more complex functionality,
+    e.g. filtering on search. Initially, I experimented with a PEG (parse expression grammar) library. PEGs are
+    quiet expressive, and easy to use. But PEGs are limited since they generally expect the input to be correctly
+    formatted- and as such aren't very good at reporting errors, and more broadly, doing meaningful things with
+    invalid input.
+
+    Then I created a recursive descent parser using the skeleton from crafting interpreters by Robert Nystrom.
