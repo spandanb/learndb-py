@@ -42,6 +42,7 @@ class SqlFrontEnd:
         """
         parse provided text.
         NOTE: this must be called before any of the other method can be invoked
+        TODO: raise exception if other methods are invoked without first invoking this
         :return:
         """
         self.tokenizer = Tokenizer(text, self.raise_exception)

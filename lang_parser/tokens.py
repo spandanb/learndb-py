@@ -41,7 +41,11 @@ class TokenType(Enum):
     CREATE = auto()
     AND = auto()
     DELETE = auto()
+    DROP = auto()
+    TRUNCATE = auto()
     INSERT = auto()
+    INTO = auto()
+    VALUES = auto()
     JOIN = auto()
     CASE = auto()
     HAVING = auto()
@@ -52,6 +56,7 @@ class TokenType(Enum):
     SELECT = auto()
     NULL = auto()
     TABLE = auto()
+    SET = auto()
 
     INTEGER = auto()
     REAL = auto()
@@ -74,9 +79,14 @@ KEYWORDS = {
     'null',
     'create',
     'delete',
+    'drop',
+    'truncate',
     'update',
     'insert',
+    'into',
     'table',
+    'values',
+    'set',
 
     #  datatypes
     'integer',

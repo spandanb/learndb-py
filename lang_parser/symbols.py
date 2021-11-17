@@ -3,7 +3,7 @@ from __future__ import annotations
 Contains symbol classes used by parser
 """
 
-from typing import Any, List, Type, Tuple, Union
+from typing import Any, List, Union
 from dataclasses import dataclass
 from .tokens import Token
 
@@ -22,13 +22,44 @@ class Symbol:
 
 @dataclass
 class Program(Symbol):
-    statements: List[Union[SelectExpr, CreateTableStmnt]]
+    statements: List[Union[SelectExpr, CreateStmnt, InsertStmnt, DeleteStmnt, DropStmnt, TruncateStmnt]]
 
 
 @dataclass
-class CreateTableStmnt(Symbol):
+class CreateStmnt(Symbol):
     table_name: Token
     column_def_list: List[ColumnDef]
+
+
+@dataclass
+class InsertStmnt(Symbol):
+    table_name: Token
+    column_name_list: List
+    value_list: List
+
+
+@dataclass
+class DeleteStmnt(Symbol):
+    table_name: Token
+    where_clause: Any = None
+
+
+@dataclass
+class DropStmnt(Symbol):
+    table_name: Token
+
+
+@dataclass
+class TruncateStmnt(Symbol):
+    table_name: Token
+
+
+@dataclass
+class UpdateStmnt(Symbol):
+    table_name: Token
+    column_name: Token
+    value: Token
+    where_clause: Any = None
 
 
 @dataclass

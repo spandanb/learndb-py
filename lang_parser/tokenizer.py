@@ -135,8 +135,9 @@ class Tokenizer:
     def tokenize_string(self):
         """
         tokenize string
+        NB: This only support single quoted strings
         """
-        while self.peek() != '"' and self.is_at_end() is False:
+        while self.peek() != "'" and self.is_at_end() is False:
             if self.peek() == '\n':  # supports multiline strings
                 self.line += 1
             self.advance()
@@ -175,7 +176,7 @@ class Tokenizer:
         :return:
         """
         # consume until we see an alphanumeric char
-        while self.peek().isalnum():
+        while self.peek().isidentifier():
             self.advance()
         identifier = self.source[self.start: self.current]
         if identifier in KEYWORDS:
