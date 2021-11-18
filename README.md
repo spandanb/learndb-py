@@ -55,8 +55,14 @@ The following are some parts of a DBMS (In no particular order):
 ## Run
 
 - Requires > python 3.10 and pytest
-- Run tests:
+- Run btree tests:
 `python -m pytest -s tests.py`
+
+- Run language parser tests:
+`python -m pytest -s lang_tests.py`
+
+- Run specific test:
+`python -m pytest tests.py -k test_name`
 
 - Run REPL: `python learndb.py`
 
@@ -88,7 +94,7 @@ quit REPl
 print btree
 > .btree
 
-performs internal consistentcy checks on tree
+performs internal consistency checks on tree
 > .validate
 
 Deleting the `db.file` will effectively drop the entire database.
