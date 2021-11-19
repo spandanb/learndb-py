@@ -144,3 +144,22 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     invalid input.
 
     Then I created a recursive descent parser using the skeleton from crafting interpreters by Robert Nystrom.
+
+11/18
+    Python vs. statically typed language
+    I started with python because it seemed the fastest. But now given the complexity, and need to refactor code- I feel
+    a static language would have been better. Actually, this is more nuanced- python is useful in bootstrapping really
+    quickly- 2 lines for a repl. And a lot of the benefits of statically typed languages can be simulated to
+    a certain level, e.g. mypy + type annotations ~ static type system. But it's certainly less than a industrial grade
+    statically typed language, and this seems to be made worse with the advantage statically typed language in IDEs.
+    Again, there seems to be much advancement in editors- but even things as refactor don't feel as fluid.
+    Will stick with python (or perhaps later migrate some stuff to a diff lang) But something to reflect on.
+
+11/18
+    I'm trying to add support for some DDL/M/Q support. What I have so far can be considered a template. It's functionality
+    is the ability to store integer keys and support efficient  ops (find, insert, delete). Next, I want to support dynamic,
+    multiple tables. This will require a host of changes, across the entire project.
+    The first step of this is the parser, which is complete. The details are in documented in
+    docs/to_multiple_dynamic_tables.txt
+
+
