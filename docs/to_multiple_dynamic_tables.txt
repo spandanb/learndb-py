@@ -1,0 +1,102 @@
+# overview: single, static table -> multiple, dynamic tables
+
+Currently, learndb can support a single global table with a fixed schema (integer-key, fixed length body "hello database").
+Next, I want to support: multiple tables, with a dynamic schema. The following is an exposition of what's needed to
+enable that.
+
+- SQL language frontend, i.e. tokenize and parse minimal DDL, DML, DQL (done)
+- the front end outputs a parsed representation that can be executed by the vm (done)
+- handle DDL (create table)
+-- validate
+--- check if primary key is defined
+--- data types are valid
+-- create entry (tabledef) in metadata catalog
+- handle insert
+-- validate
+--- find table in catalog
+--- check if col names match schema
+--- check values are valid, type checking
+- call tree to insert
+- delete will be similar to insert
+
+---
+
+# metadata catalog
+
+metadata catalog could be one for all objects, e.g. tables.
+the metadata catalog is a special table e.g.
+ create table sqllite_master (
+        type  text,
+        name text,
+        tbl_name text,
+        rootpage integer,
+        sql text
+    )
+
+---
+
+# DDL validations
+
+validation(primary-key): initially, each table must have a single-column primary key
+later I can support more than one or no columns (in which case all the colums in table
+definition order form the key)
+
+validation(column-names): column names must match definition
+
+---
+
+# data types/ typesystem
+
+## data type encoding
+
+datatypes can be fixed or variable length. I will support variable for text type
+sqllite also use variable length (huffman) encoding for ints- but for now focus on fixed length
+encoding.
+
+## data types
+
+name   type
+----   ----
+integer 4bytes
+float   4bytes
+text    variable (upto reasonable upper bound)
+
+---
+
+# btree changes
+
+currently, a page can correspond to internal or leaf nodes. leaf nodes are organized like:
+header,
+key0
+value0
+key1
+value1
+...
+keyN
+valueN
+... where value0 is the byte array corresponding to serialized row
+
+to support dynamic schemas, the data length has to also be encoded.
+consider how sqlite
+
+sqlite stores leaf nodes like:
+header, cell pointers, which point to cells
+a cell -> [data_size, key_size, payload (key, data), overflow ptr]
+
+the cellptr is of fixed size, and points to offset (on page) from where to read cell contents from
+
+---
+
+
+Right now I have on the front end, a parsed representation, and on the backend - an content agnostic data structures/indexes that
+operate on sortable byte arrays. The VM sits in the middle, and must map parsed datatype names, into underlying types.
+Boom, we must implement a type system. Another very exciting area.
+
+
+---
+
+Currently, I've been largely doing direct byte offset manipulation-- hmm is this true?
+But does it make sense to have some more abstractions with updating the cells
+
+---
+
