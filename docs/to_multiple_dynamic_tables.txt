@@ -38,6 +38,7 @@ the metadata catalog is a special table e.g.
 # DDL validations
 
 validation(primary-key): initially, each table must have a single-column primary key
+    - sqlite only supports integer key (if another column is set as primary key it creates a sister integer key (rowid))
 later I can support more than one or no columns (in which case all the colums in table
 definition order form the key)
 
@@ -60,7 +61,8 @@ name   type
 integer 4bytes
 float   4bytes
 text    variable (upto reasonable upper bound)
-
+null
+blob    ?
 ---
 
 # btree changes
@@ -79,14 +81,28 @@ valueN
 to support dynamic schemas, the data length has to also be encoded.
 consider how sqlite
 
-sqlite stores leaf nodes like:
-header, cell pointers, which point to cells
-a cell -> [data_size, key_size, payload (key, data), overflow ptr]
+sqlite stores leaf nodes like (6.4):
+- (low address) header, cell pointer array, unallocated space, cells (high address)
+- cell ptrs are sorted by key (2 bytes); contain page offset to cell
+- cell -> [data_size, key_size, payload (key, data), overflow ptr]
+- cells are arbitrary ordered, with freespace in between (due to deletes)
+- the freespace block is stored in a linked list
+    -- a free block needs 2b (location of next free block) + 2b (size of this free block)
 
-the cellptr is of fixed size, and points to offset (on page) from where to read cell contents from
+- support datatype, i.e. string length upto what can fit in max length
 
 ---
 
+# vm - btree interface
+
+tree operates on byte strings
+vm is responsible for any internal structure of keys, values
+
+vm only interacts with tree (and state more broadly) via cursors
+- so create table -> is a an entry inserted into catalog directly by vm
+- I might want to make this abstracted via statemanager or catalog
+    - the difference is I'm working on an ast, vs. sqllite is working on bytecode
+---
 
 Right now I have on the front end, a parsed representation, and on the backend - an content agnostic data structures/indexes that
 operate on sortable byte arrays. The VM sits in the middle, and must map parsed datatype names, into underlying types.

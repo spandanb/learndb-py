@@ -8,6 +8,10 @@ from constants import ROW_SIZE, ID_SIZE, BODY_SIZE, BODY_OFFSET, ID_OFFSET
 
 class Table:
     """
+    I think this should encapsulate schema aware serde
+    and other table schema utils
+
+
     Currently `Table` interface is around (de)ser given a row number.
     Ultimately, the table should
     represent the logical-relation-entity, and access to the pager, i.e. the storage

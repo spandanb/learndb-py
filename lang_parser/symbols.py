@@ -14,7 +14,6 @@ class Symbol:
     Symbol is the root of parser hierarchy.
     Comparable to how tokens compose the tokenizer's output, i.e. a stream of tokens,
     Symbols compose the parser's output, i.e. the AST
-
     """
     def accept(self, visitor: 'Visitor') -> Any:
         return visitor.visit(self)

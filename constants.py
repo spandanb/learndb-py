@@ -110,6 +110,15 @@ LEAF_NODE_MAX_CELLS = 3
 LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
 LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
 
-
+# this initialize the catalog/metadata table
+INIT_CATALOG_SQL = '''
+create table catalog (
+        type  text,
+        name text,
+        tbl_name text,
+        rootpage integer,
+        sql text
+    )
+'''
 
 

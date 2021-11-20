@@ -59,13 +59,29 @@ class Row:
     Later when I can handle generic schemas this will need to be
     made generic
     """
+    # todo: nuke me
     identifier: int
     body: str
 
 
 @dataclass
 class Statement:
+    # todo: nuke me
     statement_type: StatementType
     row_to_insert: Row = None
     key_to_delete: int = None
+
+
+class Record:
+    """
+    Replacement for `Row` that support dynamic table definition
+    """
+
+
+class TableDefinition:
+    """
+    Represents a table def
+    Not sure if this is needed
+    """
+
 
