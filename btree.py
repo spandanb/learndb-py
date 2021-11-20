@@ -65,7 +65,7 @@ class TreeDeleteResult(Enum):
 
 
 class NodeType(Enum):
-    NodeInternal =1
+    NodeInternal = 1
     NodeLeaf = 2
 
 
@@ -83,13 +83,19 @@ class NodeInfo:
 class Tree:
     """
     Manages read/writes from/to pages corresponding
-    to a specific table. In the future 1) the btree could
-    also be used as a secondary index and 2) other data
-    structures (e.g. SSTable) could replace Tree.
+    to a specific table/index.
 
-    The public facing interface consists of `find`, `insert`
+    NOTE: There is a one btree per table- or more generally,
+    per one materialized index. The root tree, will hold
+    the mapping of table_name -> btree_root_page_num. However,
+    the tree is agnostic to how the data is interpreted, and
+    is only interested in its interface, which operates on sorted
+    bytes strings.
+
+    The public interface consists of `find`, `insert`
     and `delete`, and validators. The remaining methods should not
-    be invoked by external actors.
+    be invoked by external actors. In principle, any other structure,
+    e.g. SSTable, implementing this interface, could replace this.
 
     The tree functionality can be divided into methods that
     operate on page sized `bytes`, e.g. (set_)leaf_node_key. And higher

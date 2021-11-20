@@ -1,6 +1,6 @@
 from constants import INTERNAL_NODE_MAX_CELLS
 from datatypes import Response, Row
-from btree import Tree, NodeType
+from btree import Tree, NodeType, TreeInsertResult, TreeDeleteResult
 from table import Table
 
 
@@ -53,11 +53,12 @@ class Cursor:
         :return:
         """
         serialized = Table.serialize(row)
-        match self.tree.insert(row.identifier, serialized):
-            case TreeInsertResult.Success:
-                return Response(True)
-            case TreeInsertResult.DuplicateKey:
-                return Response(False, TreeInsertResult.DuplicateKey)
+        response = self.tree.insert(row.identifier, serialized)
+        if response == TreeInsertResult.Success:
+            return Response(True)
+        else:
+            assert response == TreeInsertResult.DuplicateKey
+            return Response(False, status=TreeInsertResult.DuplicateKey)
 
     def delete_key(self, key: int) -> Response:
         """
@@ -66,9 +67,9 @@ class Cursor:
         :param key:
         :return:
         """
-        match self.tree.delete(key):
-            case TreeDeleteResult.Success:
-                return Response(True)
+        response = self.tree.delete(key)
+        if response == TreeDeleteResult.Success:
+            return Response(True)
 
     def next_leaf(self):
         """
