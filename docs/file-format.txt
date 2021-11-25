@@ -1,0 +1,27 @@
+I want to explicate the file format details for learndb. It's similar to sqlite but with many simplifications.
+
+The current internal nodes may need to have their keys changed
+
+Leaf nodes will be formatted like:
+
+- (low address) header, cell pointer array, unallocated space, cells (high address)
+- cell ptrs are sorted by key (2 bytes); contain page offset to cell
+- cell -> [key_size, data_size, payload (key, data)]
+    -- data can be divided into header and body
+    -- data header -> [size of header, serial types (size of variable length value)?
+    -- data body -> concatenated bytes of serialized values (in definition order)
+    -- all data must fit in a cell, i.e. no overflow- this limits the max content size to what can fit in a single cell
+
+serial types:
+    sqlite for inspiration (https://www.sqlite.org/fileformat2.html#record_format)
+
+        serial-type  byte-length  datatype
+        0            0            Null
+        1            4            Integer
+        2            4            Float
+        3            var          Text
+        4            var          Blob
+
+    Types with a fixed-value, e.g. null will not be encoded in the data payload.
+
+

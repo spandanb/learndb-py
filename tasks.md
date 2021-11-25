@@ -1,9 +1,14 @@
 # Tasks
 
+## VM
+- parser with primary key
+- schema construction from parser symbol
+- validate schema
+
 ## Storage (btree)
 - refactor btree to support arbitrary schema
-- refactor btree into a storage layer API
-    - allow constants to be settable
+    - btree must understand how to read a cell(bytes) and extract the key
+
 
 ## document/refactoring/cleanliness
 - update commits ref email

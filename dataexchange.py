@@ -1,7 +1,6 @@
 """
 Contains classes used for data exchange, i.e.
 do not have any "compute" methods.
-
 """
 from typing import Any
 from dataclasses import dataclass

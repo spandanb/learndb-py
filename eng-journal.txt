@@ -163,3 +163,63 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     docs/to_multiple_dynamic_tables.txt
 
 
+11/23
+    In trying to support arbitrary schemas, one must consider how a logical schema is represented; and how are
+    ops on schemas supported. This includes validation and generation of schema.
+    One must also consider the type system and how datatypes are implemented and manipulated
+    at runtime and stored on disk. This also is a can of worms, because they're are many tradeoffs around
+    how the data is serialized (e.g. fixed length vs. variable length encodings). Another concern is, whether
+    null values are explicitly stored, i.e. sparse vs non-sparse representations.
+
+    Actually, we need to store the schema anyways, since any type can be null'ed. See (docs/storing-diff-datatypes.txt)
+    for more details.
+
+    Further deep, there may be tradeoffs around consistency/validity/expressivity of the type system.
+
+11/24
+    The serialized bytes (persisted to disk) need to encoding many details, e.g. column data type etc. This information
+    goes in the header. The btree module was doing header read/write by referring to an implicit header defined via
+    constants. This was quite manual.
+
+    I am considering a higher level interface for reading, writing the header. This would also make it easier to do
+    validations and change constants. Ideally the interface is also self documenting.
+
+    e.g.
+
+    Header has many fields.
+    Each field has:
+        - a name (e.g. is_root_node), and
+        - value (which can be optionally mapped to an enum type)
+        - repeat count [0, inf]
+
+    header = Header()
+    # add a new field, with a given size
+    header.append_field('header_size', type=int, size=4)
+    # add a new field that's repeated
+    header.append_field('serial_type', type=SerialType, size=4)
+
+    # alt. syntax
+    header_size = Field(name='header_size', type=int, size=4)
+    stype = Field(name='serial_type', type=SerialType, size=4)
+    var_len = OptionalField(name='length', type=int, size=4, read_if=lambda st: st.value.type = Text)
+
+    if stype.value
+    header.append(header_size)
+
+    stype_len_pair = Field(Field(name='serial_type', type=SerialType, size=4),
+                            Field(name='length', type=int, size=4, repeater=ZeroOrOne), repeater='', repeat_until='end')
+    header.append(stype_len_pair)
+
+    # the header should return a parser
+    parser = header.get_parser()
+
+    => {header_size: 4, columns: [{serial_type: 4, length: 32}] }
+
+    Actually, after experimenting a bit, I'm not sure if auto generating a parser is easy enough to do.
+
+    I will use fixed width ints (as opposed to variable len ints).
+
+    What's peculiar here is that we end up with another implicit parser/language. This is distinct from the sql parser, i.e.
+    the front end. This is a parser for the contents of the on-disk node. What's common between the 2 languages is that structure
+    of the tokens encodes the meanings of the tokens. I suppose any time we have this- we need a parser.
+

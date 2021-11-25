@@ -1,0 +1,24 @@
+how does a record get stored?
+If I want to support nulls and variable length strings, seems like I'll need to store something like
+the schema in the cells themselves.
+
+sqlite handles this via Record Format.
+Basically, the record, i.e. body of a leaf entry, has a header and a body.
+the header is like:
+- size of header (4b)
+- one int per column (called serial types)-
+    - the serial type encodes the datatype
+    e.g.
+    serial-type  byte-length  datatype
+    0            0            Null
+    1            4            Integer
+    2            4            Float
+    2            var          Text
+    3            var          Blob
+
+I'll also need to encode length for variable types. This could be a set of ints after the serial types, one for
+each variable length value, e.g.
+
+[size of header, serial types, integer length of each value that is variable encoded]
+
+Thus, since we have to store record details- I should also rethink what's the best place to handle serde.

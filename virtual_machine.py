@@ -1,7 +1,8 @@
 from cursor import Cursor
 from table import Table
 from database import Database, StateManager
-from datatypes import Response, ExecuteResult, Statement, Row
+from schema import Record
+from dataexchange import Response, ExecuteResult, Statement, Row
 
 from lang_parser.visitor import Visitor
 from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr, InsertStmnt, DeleteStmnt
@@ -36,7 +37,6 @@ class VirtualMachine(Visitor):
         :return:
         """
 
-
     def execute(self, stmnt: Symbol):
         """
         execute statement
@@ -51,17 +51,25 @@ class VirtualMachine(Visitor):
         """
         How does the DDL get handled?
 
-
-
         :param stmnt:
         :return:
         """
         # print(f"In vm: creating table [name={stmnt.table_name}, cols={stmnt.column_def_list}]")
-        if self.state is None:
-            # handle initialize db
-            self.initialize_catalog(stmnt)
-        else:
-            self.catalog.create_table(stmnt.table_name)
+
+        # 1.1 generate/validate schema from stmnt
+        # generate_schema has to be
+        schema = generate_schema(stmnt)
+        # 1.2. check whether table name is unique
+
+        # 2. allocate tree for new table
+        page_num = self.state.create_tree(schema.name)
+
+        # 3. construct record for table
+
+
+        # 4.1. create cursor on catalog
+        # 4.2. insert entry into catalog
+
 
 
     def visit_select_expr(self, expr: SelectExpr):

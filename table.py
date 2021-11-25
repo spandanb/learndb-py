@@ -8,6 +8,14 @@ from constants import ROW_SIZE, ID_SIZE, BODY_SIZE, BODY_OFFSET, ID_OFFSET
 
 class Table:
     """
+    This encapsulates access to the serde and logical schema
+    """
+    def __init__(self):
+        pass
+
+
+class TableOld:
+    """
     I think this should encapsulate schema aware serde
     and other table schema utils
 

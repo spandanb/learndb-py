@@ -17,6 +17,7 @@ def test_select_stmnt():
 
 def test_create_stmnt():
     cmd = "create table foo ( colA integer, colB text)"
+    cmd = "create table foo ( colA integer primary key, colB text)"
     handler = SqlFrontEnd()
     handler.parse(cmd)
     assert handler.is_success()

@@ -65,6 +65,8 @@ class UpdateStmnt(Symbol):
 class ColumnDef(Symbol):
     column_name: Token
     datatype: Token
+    is_primary_key: bool = False
+    is_nullable: bool = False
 
 
 @dataclass

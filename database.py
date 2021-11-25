@@ -3,53 +3,74 @@ class representing a logical-database
 support API to read/write data via Table
 and creating tables etc.
 """
+import os.path
 
 from table import Table
 from btree import Tree
 from pager import Pager
+from schema import Schema
+
+
+class SchemaManager:
+    """
+    Manage access to schema and utils
+    """
+    def __init__(self):
+        pass
+
+    def generate_schema(self) -> Schema:
+        pass
+
+
+
+
+class SerdeManager:
+    pass
 
 
 class StateManager:
     """
-    This manages access to all state of the database. This includes
+    This manages access to all state of the database (contained a single
+    file). This includes
     data (i.e. tables and indices) and metadata (serde, schema).
 
-    The
+    All state for user-defined tables/indices are contained in Tree
+    (provides read/write access to storage) and Table (logical schema,
+    physical layout, deser, i.e. read/write )
 
-    contains the state of the database (corresponding to a single file)
-    and exposes interface for manipulating it.
+    This class is responsible for creating Tree and Table objects.
 
-    sqllite structure (btshared) contains:
-    - pager
-    - pagesize (int)
-    - cursors (list of open cursors on db)
+    This is responsible for creating/managing the catalog (a special table).
 
-
-    This will replace: Database
+    The class is intimately tied to catalog definition, i.e. has magic
+    constants for manipulating catalog.
     """
     def __init__(self, filename: str):
-        self.filename = filename
+        self.db_filename = filename
         self.pager = None
-
-        self.page_size = 0
-        # catalog contains root page num of tables and indices
+        # the catalog root is hardcoded to page 0
         self.catalog_root_page_num = 0
-        self.catalog = None
+        self.catalog_tree = None
+        self.catalog_table = None
+        # mapping from table_name to object
+        # todo: do I need tables or schemas
+        self.tables = {}
+        self.trees = {}
 
-    def open(self):
+    def init(self):
         """
-        opens connection to db, i.e. initializes
-        pager.
 
-        The relationships are: `tree` abstracts the pages into a tree
-        and maps 1-1 with the logical entity `table`. The table.root_page_num
-        is a reference to first
+        NOTE: no special handling is needed if this is a new db. This method
+        will create the catalog tree- which will allocate the root page num.
+
+        :return:
         """
-        self.pager = Pager.pager_open(self.filename)
 
-        # create catalog
-        # catalog holds mapping from table_name -> root_page_num
-        # self.catalog = Table(self.pager, root_page_num=self.catalog_root_page_num)
+        # initialize pager; this will create the file
+        # file create functionality can be moved elsewhere if better suited
+        self.pager = Pager.pager_open(self.db_filename)
+
+        self.catalog_tree = Tree(self.pager, self.catalog_root_page_num)
 
     def close(self):
         """
@@ -57,16 +78,17 @@ class StateManager:
         """
         self.pager.close()
 
-    def create_catalog_table(self):
-        pass
+    def generate_schema(self):
+        """
+        NOTE: this should just invoke schema.py::construct_schema and perhaps cache it
+        :return:
+        """
 
     def create_table(self, table_def):
         """
         this should create an entry in the catalog table.
         catalog is a metadata table. there may be a in-memory class
         to simply ops
-
-        this should w
 
         :return:
         """
