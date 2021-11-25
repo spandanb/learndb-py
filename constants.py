@@ -9,7 +9,7 @@ TABLE_MAX_PAGES = 100
 DB_FILE = 'db.file'
 
 # serialized data layout (row)
-ID_SIZE = 6 # length in bytes
+ID_SIZE = 6  # length in bytes
 BODY_SIZE = 58
 ROW_SIZE = ID_SIZE + BODY_SIZE
 ID_OFFSET = 0
@@ -111,6 +111,7 @@ LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
 LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
 
 # this initialize the catalog/metadata table
+# todo: nuke if unused
 INIT_CATALOG_SQL = '''
 create table catalog (
         type  text,

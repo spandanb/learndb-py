@@ -62,6 +62,13 @@ class TokenType(Enum):
     REAL = auto()
     TEXT = auto()
 
+    # NOTE: "primary key" is the key word- either token "primary", "key"
+    # by itself is invalid. But this is hard to do at tokenizer level-
+    # so I will handle it at the parser level.
+    PRIMARY = auto()
+    KEY = auto()
+    NOT = auto()
+
 
 KEYWORDS = {
     'select',
@@ -92,6 +99,10 @@ KEYWORDS = {
     'integer',
     'real',  # floating point number
     'text',  # variable length text
+
+    'primary',
+    'key',
+    'not'
 
 }
 

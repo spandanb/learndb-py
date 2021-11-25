@@ -50,7 +50,9 @@ The following are some parts of a DBMS (In no particular order):
 
 - Later I was primarily referencing: [SQLite Database System: Design and Implementation (1st ed)](https://books.google.com/books?id=9Z6IQQnX1JEC&source=gbs_similarbooks)
 
-- Also consulted MIT's 6-830 Notes: [6-830 Course Notes](https://ocw.mit.edu/courses/electrical-engineering-and-computer-science/6-830-database-systems-fall-2010)
+- Also consulted:
+    - Sqllite file format: [docs](https://www.sqlite.org/fileformat2.html) 
+    - MIT's 6-830 Notes: [6-830 Course Notes](https://ocw.mit.edu/courses/electrical-engineering-and-computer-science/6-830-database-systems-fall-2010)
 
 ## Run
 

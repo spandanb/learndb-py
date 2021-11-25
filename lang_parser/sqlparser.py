@@ -1,4 +1,4 @@
-from typing import Any, List, Type, Tuple, Union
+from typing import Any, List, Type, Tuple, Optional, Union
 
 from .tokens import TokenType, KEYWORDS, Token
 from .symbols import (Symbol,
@@ -92,6 +92,11 @@ class Parser:
 
     def peek(self) -> Token:
         return self.tokens[self.current]
+
+    def peekpeek(self) -> Optional[Token]:
+        if self.current + 1 > len(self.tokens):
+            return None
+        return self.tokens[self.current + 1]
 
     def previous(self) -> Token:
         return self.tokens[self.current - 1]
@@ -326,13 +331,24 @@ class Parser:
         column_def -> column_name datatype ("primary key")? ("not null")?
         :return:
         """
+        # todo: implement primary key and not null
         col_name = self.column_name()
         datatype_token = None
+        is_primary_key = False
+        is_nullable = True
+        # attempt to read data type
         if self.match(TokenType.REAL, TokenType.INTEGER, TokenType.TEXT):
             datatype_token = self.previous()
+        elif self.peek() == TokenType.PRIMARY and self.peekpeek() == TokenType.KEY:
+            is_primary_key = True
+        elif self.peek() == TokenType.NOT and self.peekpeek() == TokenType.NULL:
+            is_nullable = False
         else:
-            self.report_error(f"Expected datatype found {self.peek()}", self.peek())
-        return ColumnDef(col_name, datatype_token)
+            self.report_error(f"Expected datatype or column constraint; found {self.peek()}", self.peek())
+
+        # NOTE: there is a another representation of the column that models the columns
+        # and it's physical representations; this models a language symbol
+        return ColumnDef(col_name, datatype_token, is_primary_key=is_primary_key, is_nullable=is_nullable)
 
     def selectable(self):
         """

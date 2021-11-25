@@ -85,6 +85,11 @@ sqlite stores leaf nodes like (6.4):
 - (low address) header, cell pointer array, unallocated space, cells (high address)
 - cell ptrs are sorted by key (2 bytes); contain page offset to cell
 - cell -> [data_size, key_size, payload (key, data), overflow ptr]
+    -- data can be divided into header and body
+    -- data header -> [size of header, serial types, integer length of each value that is variable encoded]
+    -- alt. data header -> [size of header, serial types (size of variable length value)?
+    -- data body -> concatenated bytes of serialized values (in definition order)
+
 - cells are arbitrary ordered, with freespace in between (due to deletes)
 - the freespace block is stored in a linked list
     -- a free block needs 2b (location of next free block) + 2b (size of this free block)
