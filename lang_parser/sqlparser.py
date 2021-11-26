@@ -331,21 +331,28 @@ class Parser:
         column_def -> column_name datatype ("primary key")? ("not null")?
         :return:
         """
-        # todo: implement primary key and not null
         col_name = self.column_name()
         datatype_token = None
-        is_primary_key = False
-        is_nullable = True
         # attempt to read data type
         if self.match(TokenType.REAL, TokenType.INTEGER, TokenType.TEXT):
             datatype_token = self.previous()
-        elif self.peek() == TokenType.PRIMARY and self.peekpeek() == TokenType.KEY:
-            is_primary_key = True
-        elif self.peek() == TokenType.NOT and self.peekpeek() == TokenType.NULL:
-            is_nullable = False
-        else:
-            self.report_error(f"Expected datatype or column constraint; found {self.peek()}", self.peek())
 
+        is_primary_key = False
+        is_nullable = True
+        # optional modifiers - break when we reach end of column definition
+        while self.peek().token_type not in [TokenType.COMMA, TokenType.RIGHT_PAREN]:
+            if self.peek().token_type == TokenType.PRIMARY and self.peekpeek().token_type == TokenType.KEY:
+                is_primary_key = True
+                is_nullable = False
+                self.advance()
+                self.advance()
+            elif self.peek().token_type == TokenType.NOT and self.peekpeek().token_type == TokenType.NULL:
+                is_nullable = False
+                self.advance()
+                self.advance()
+            else:
+                self.report_error(f"Expected datatype or column constraint; found {self.peek()}", self.peek())
+                break
         # NOTE: there is a another representation of the column that models the columns
         # and it's physical representations; this models a language symbol
         return ColumnDef(col_name, datatype_token, is_primary_key=is_primary_key, is_nullable=is_nullable)

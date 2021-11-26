@@ -61,6 +61,7 @@ class TokenType(Enum):
     INTEGER = auto()
     REAL = auto()
     TEXT = auto()
+    BLOB = auto()
 
     # NOTE: "primary key" is the key word- either token "primary", "key"
     # by itself is invalid. But this is hard to do at tokenizer level-
@@ -99,6 +100,7 @@ KEYWORDS = {
     'integer',
     'real',  # floating point number
     'text',  # variable length text
+    'blob',  # variable length binary literal
 
     'primary',
     'key',
