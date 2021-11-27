@@ -123,3 +123,6 @@ create table catalog (
 '''
 
 
+# serde constants
+# length of encoded bytes
+INTEGER_SIZE = 4

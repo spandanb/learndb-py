@@ -16,11 +16,14 @@ def test_select_stmnt():
 
 
 def test_create_stmnt():
-    cmd = "create table foo ( colA integer, colB text)"
-    cmd = "create table foo ( colA integer primary key, colB text)"
-    handler = SqlFrontEnd()
-    handler.parse(cmd)
-    assert handler.is_success()
+    cmds = [
+        "create table foo ( colA integer, colB text)",
+        "create table foo ( colA integer primary key, colB text)"
+    ]
+    for cmd in cmds:
+        handler = SqlFrontEnd()
+        handler.parse(cmd)
+        assert handler.is_success()
 
 
 def test_delete_stmnt():

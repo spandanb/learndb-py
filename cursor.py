@@ -1,19 +1,19 @@
 from constants import INTERNAL_NODE_MAX_CELLS
-from datatypes import Response, Row
+from dataexchange import Response, Row
 from btree import Tree, NodeType, TreeInsertResult, TreeDeleteResult
 from table import Table
 
 
 class Cursor:
     """
-    Represents a cursor. A cursor understands
-    how to traverse the table and how to insert, and remove
-    rows from a table.
+    Represents a cursor. A cursor understands how to navigate
+    a database (on-disk) page, i.e. reading and understanding header values.
+    A cursor exposes an interface to read, insert and delete rows.
     """
-    def __init__(self, table: 'Table', page_num: int = 0):
-        self.table = table
-        self.tree = table.tree
-        self.page_num = page_num
+    def __init__(self, pager: 'Pager', tree: 'Tree'):
+        self.tree = tree
+        self.pager = pager
+        self.page_num = tree.root_page_num
         self.cell_num = 0
         self.end_of_table = False
         self.first_leaf()
@@ -23,7 +23,7 @@ class Cursor:
         set cursor location to left-most/first leaf
         """
         # start with root and descend until we hit left most leaf
-        node = self.table.pager.get_page(self.page_num)
+        node = self.pager.get_page(self.page_num)
         while Tree.get_node_type(node) == NodeType.NodeInternal:
             assert Tree.internal_node_has_right_child(node), "invalid tree with no right child"
             if Tree.internal_node_num_keys(node) == 0:
@@ -43,8 +43,9 @@ class Cursor:
         return row pointed by cursor
         :return:
         """
-        node = self.table.pager.get_page(self.page_num)
+        node = self.pager.get_page(self.page_num)
         serialized = Tree.leaf_node_value(node, self.cell_num)
+        # todo: fix deserialization call
         return Table.deserialize(serialized)
 
     def insert_row(self, row: Row) -> Response:
@@ -80,7 +81,7 @@ class Cursor:
         :return:
         """
         # starting point
-        node = self.table.pager.get_page(self.page_num)
+        node = self.pager.get_page(self.page_num)
         if Tree.is_node_root(node) is True:
             # there is nothing
             self.end_of_table = True
@@ -91,7 +92,7 @@ class Cursor:
 
         parent_page_num = Tree.get_parent_page_num(node)
         # check if current page, i.e. self.page_num is right most child of it's parent
-        parent = self.table.pager.get_page(parent_page_num)
+        parent = self.pager.get_page(parent_page_num)
         child_num = self.tree.internal_node_find(parent_page_num, node_max_value)
         if child_num == INTERNAL_NODE_MAX_CELLS:
             # this is the right child; thus all children have been consumed
@@ -117,7 +118,7 @@ class Cursor:
         """
         # advance always start at leaf node and ends at a leaf node;
         # starting at or ending at an internal node means the cursor is inconsistent
-        node = self.table.pager.get_page(self.page_num)
+        node = self.pager.get_page(self.page_num)
         # we are currently on the last cell in the node
         # go to the next node if it exists
         if self.cell_num >= Tree.leaf_node_num_cells(node) - 1:

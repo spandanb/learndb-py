@@ -6,21 +6,18 @@ from constants import TABLE_MAX_PAGES, PAGE_SIZE, EXIT_FAILURE
 
 class Pager:
     """
-    manager of pages in memory (cache)
-    and on file
+    Manages pages in memory (cache) and on file
     """
     def __init__(self, filename):
-        """
-        filename is handled differently from tutorial
-        since it passes a fileptr; here I'll manage the file
-        with the `Pager` class
-        """
         self.pages = [None for _ in range(TABLE_MAX_PAGES)]
         self.filename = filename
         self.fileptr = None
         self.file_length = 0
         self.num_pages = 0
         self.open_file()
+        # NOTE: returned pages are lost when the db program is terminated
+        # To avoid this, these pages should be kept on an on-disk data structure, e.g.
+        # linked-list
         self.returned_pages = []
 
     def open_file(self):
@@ -56,10 +53,7 @@ class Pager:
     @classmethod
     def pager_open(cls, filename):
         """
-        this does nothing - keeping it so code is aligned.
-        C works with fd (ints), so you can
-        open files and pass around an int. For python, I need to
-        pass the file ref around.
+        Create pager on argument file
         """
         return cls(filename)
 
@@ -70,7 +64,7 @@ class Pager:
         """
         if len(self.returned_pages):
             # first check the returned page cache
-            return self.return_pages.pop()
+            return self.returned_pages.pop()
         return self.num_pages
 
     def page_exists(self, page_num: int) -> bool:
@@ -126,6 +120,7 @@ class Pager:
     def close(self):
         """
         close the connection i.e. flush pages to file
+        TODO: unused pages should be persisted, e.g. to on-disk linked list.
         """
         # this is 0-based
         # NOTE: not sure about this +1;

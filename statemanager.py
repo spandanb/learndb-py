@@ -8,24 +8,9 @@ import os.path
 from table import Table
 from btree import Tree
 from pager import Pager
-from schema import Schema
+from schema import Schema, CatalogSchema, generate_schema, Record
 
-
-class SchemaManager:
-    """
-    Manage access to schema and utils
-    """
-    def __init__(self):
-        pass
-
-    def generate_schema(self) -> Schema:
-        pass
-
-
-
-
-class SerdeManager:
-    pass
+from dataexchange import Response
 
 
 class StateManager:
@@ -44,17 +29,20 @@ class StateManager:
 
     The class is intimately tied to catalog definition, i.e. has magic
     constants for manipulating catalog.
+
+    This class is a catch-all. I should refactor it if needed.
     """
     def __init__(self, filename: str):
         self.db_filename = filename
         self.pager = None
         # the catalog root is hardcoded to page 0
         self.catalog_root_page_num = 0
+        self.catalog_schema = None
         self.catalog_tree = None
-        self.catalog_table = None
-        # mapping from table_name to object
-        # todo: do I need tables or schemas
-        self.tables = {}
+
+        # mapping from table_name to schema object
+        # schema should be singletons
+        self.schemas = {}
         self.trees = {}
 
     def init(self):
@@ -69,7 +57,10 @@ class StateManager:
         # initialize pager; this will create the file
         # file create functionality can be moved elsewhere if better suited
         self.pager = Pager.pager_open(self.db_filename)
-
+        # keep ref to catalog schema
+        # schema are treated as standalone read-only data
+        self.catalog_schema = CatalogSchema()
+        # create catalog tree
         self.catalog_tree = Tree(self.pager, self.catalog_root_page_num)
 
     def close(self):
@@ -78,29 +69,45 @@ class StateManager:
         """
         self.pager.close()
 
-    def generate_schema(self):
+    def get_pager(self):
+        return self.pager
+
+    def get_catalog_schema(self):
+        return self.catalog_schema
+
+    def get_catalog_tree(self):
+        return self.catalog_tree
+
+    def register_tree(self, table_name: str, tree: Tree):
+        self.trees[table_name] = tree
+
+    def register_schema(self, table_name: str, schema: Schema):
+        self.schemas[table_name] = schema
+
+    def generate_schema(self, create_stmnt: 'CreateStmnt') -> Response:
         """
         NOTE: this should just invoke schema.py::construct_schema and perhaps cache it
         :return:
         """
+        return generate_schema(create_stmnt)
 
-    def create_table(self, table_def):
+    def allocate_tree(self) -> int:
         """
-        this should create an entry in the catalog table.
-        catalog is a metadata table. there may be a in-memory class
-        to simply ops
-
+        Create tree for new table
+        :param table_name:
         :return:
         """
-        # write new table to catalog table
-        # create a btree corresponding to new table
+        # to allocate , request a new page from the pager
+        return self.pager.get_unused_page_num()
 
-        # create a table (logical schema + serde)
+    def create_record(self, insert_stmnt: 'InsertStmnt') -> Response:
+        """
 
-    def get_table(self):
+        :param insert_stmnt:
+        :return:
         """
-        this would return a reference to tree for table
-        """
+        # create record
+        # validate record
 
 
 class Database:
@@ -142,7 +149,7 @@ class Database:
         # this mapping itself could be placed on the root_page like sqlite
         self.table = Table(self.pager, root_page_num=0)
 
-    def db_close(self, table: Table):
+    def db_close(self, table: 'Table'):
         """
         this calls the pager `close`
         """
