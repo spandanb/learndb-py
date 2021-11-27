@@ -1,7 +1,7 @@
 """
 Tests various aspects of schema
 """
-from schema import Integer, Float, Text, Null, Blob
+from datatypes import Integer, Float, Text, Null, Blob
 
 
 def test_integer_serde():

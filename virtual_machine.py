@@ -1,7 +1,9 @@
+# from __future__ import annotations
 from cursor import Cursor
 from table import Table
-from database import Database, StateManager
+from statemanager import StateManager
 from schema import Record
+from serde import serialize_record
 from dataexchange import Response, ExecuteResult, Statement, Row
 
 from lang_parser.visitor import Visitor
@@ -18,26 +20,18 @@ class VirtualMachine(Visitor):
     def __init__(self):
         self.state_manager = None
 
-    def run(self, program: Program, state):
+    def run(self, program, state_manager):
         """
         run the virtual machine with program on state
         :param program:
         :return:
         """
-        self.state = state
+
+        self.state_manager = state_manager
         for stmt in program.statements:
             self.execute(stmt)
 
-    def run_no_state(self, program: Program):
-        """
-        creating this to handle the special case
-        of initializing the database. In all other cases run should be used.
-        however, any stateful change will require
-        :param program:
-        :return:
-        """
-
-    def execute(self, stmnt: Symbol):
+    def execute(self, stmnt: 'Symbol'):
         """
         execute statement
         :param stmnt:
@@ -47,51 +41,76 @@ class VirtualMachine(Visitor):
 
     # section : top-level handlers
 
-    def visit_create_stmnt(self, stmnt: CreateStmnt):
+    def visit_program(self, program: Program) -> Response:
+        for stmt in program.statements:
+            # note sure how to collect result
+            self.execute(stmt)
+        return Response(True)
+
+    def visit_create_stmnt(self, stmnt: CreateStmnt) -> Response:
         """
-        How does the DDL get handled?
 
         :param stmnt:
         :return:
         """
         # print(f"In vm: creating table [name={stmnt.table_name}, cols={stmnt.column_def_list}]")
 
-        # 1.1 generate/validate schema from stmnt
-        # generate_schema has to be
-        schema = generate_schema(stmnt)
-        # 1.2. check whether table name is unique
+        # 1. generate schema from stmnt
+        response = self.state_manager.generate_schema(stmnt)
+        if response.success is False:
+            # schema generation failed
+            return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
 
-        # 2. allocate tree for new table
-        page_num = self.state.create_tree(schema.name)
+        # if generation succeeded, then schema is valid
+        schema = response.body
+        table_name = schema.name
 
-        # 3. construct record for table
+        # 2. check whether table name is unique
+        # create cursor on catalog table
+        pager = self.state_manager.get_pager()
+        catalog_tree = self.state_manager.get_catalog_tree()
+        cursor = Cursor(pager, catalog_tree)
+        # todo: iterate over all records to get all table names
 
+        # 3. allocate tree for new table
+        page_num = self.state_manager.allocate_tree()
 
-        # 4.1. create cursor on catalog
-        # 4.2. insert entry into catalog
+        # 4. construct record for table
+        # NOTE: for now using page_num as unique int key
+        pkey = page_num
+        record = self.state_manager.create_catalog_record(pkey, table_name, page_num)
 
+        # 5. serialize record
+        cell = serialize_record(record)
 
+        # 6. insert entry into catalog
+        catalog_tree.insert(cell)
 
     def visit_select_expr(self, expr: SelectExpr):
         print(f"In vm: select expr")
         self.execute_select()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
-        # statement = Statement(Row(stmnt))
-        pass
+        table_name = stmnt.table_name
+
+        # get schema
+        schema = self.state_manager.get_schema(table_name)
+
+        # extract values from stmnt and construct record
+        record = self.state_manager.create_record(stmnt, schema)
+
+        # get table's tree
+        tree = self.state_manager.get_tree(table_name)
+
+        cell = serialize_record(record)
+
+        tree.insert(cell)
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
         pass
 
     # section : handler helpers
     # special helpers for catalog
-
-    def initialize_catalog(self, stmnt):
-        """
-        initialize the catalog
-        this is needed so state objects can be created
-        :return:
-        """
 
     def create_table(self):
         """
@@ -103,6 +122,9 @@ class VirtualMachine(Visitor):
         catalog = Table("CATALOG")
 
     def delete_row(self, table_name, key):
+        pass
+
+    def insert_cell(self, cell: bytes):
         pass
 
     def insert_row(self, table_name, row):

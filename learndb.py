@@ -9,14 +9,12 @@ from typing import Union, List, Any
 from dataclasses import dataclass
 from enum import Enum, auto
 from random import randint  # for testing
-import traceback # for testing
 
 
 from constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
-from database import Database
-from datatypes import Response, Row, MetaCommandResult, ExecuteResult, PrepareResult
+from dataexchange import Response, Row, MetaCommandResult, ExecuteResult, PrepareResult
 from pager import Pager
-from database import StateManager
+from statemanager import StateManager
 
 from lang_parser.sqlhandler import SqlFrontEnd
 from lang_parser.symbols import Program
@@ -186,61 +184,21 @@ def devloop():
     :return:
     """
 
-    # check if database file exists
-    is_new_file = not os.path.exists(DB_FILE)
-
-    sman = StateManager()
-
-    if is_new_file:
-        # initialize db
-        # right now most vm ops will require a catalog
-        # so I can either create a vm
-
-        # there is a fundamental tradeoff here- since
-        # if I an initialize the catalog here, by directly serializing
-        # the schema and writing through, i.e. without vm- this
-        # duplicates read/write logic.
-        # on the other hand, writing to a table, would
-        # require a catalog to look up table.
-        # so, to bootstrap the catalog, I would need to add
-        # special methods to the vm, which intimately understand catalogs
-        # which has the issue- of making the vm very fat.
-        sman.create_catalog_table()
-
-
-
+    # create state manager
+    state_manager = StateManager(DB_FILE)
 
     # create virtual machine
     virtmachine = VirtualMachine()
 
     # doing this to bootstrap this initialize logic
     # maybe this needs to be somewhere else
-    p_resp = prepare_statement(INIT_CATALOG_SQL)
+    p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
     if not p_resp.success:
         return EXIT_FAILURE
-    virtmachine.run_no_state(p_resp.body)
 
-    if is_new_file:
-        from constants import INIT_CATALOG_SQL
-        # should vm be responsible for this?
-        virtmachine.initialize_catalog()
+    virtmachine.run(p_resp.body, state_manager)
 
-    # does virtual machine create catalog?
-    # yes, since I want reading/writing to underlying store
-    # to be only handled by vm ? because reading/writing logic
-    # is non-trivial.
-    catalog = virtmachine.read_catalog()
-
-
-
-
-
-
-
-    database = Database(DB_FILE)
-    database.db_open()
-
-    input_handler("select foo from bar", database, virtmachine)
+    # input_handler("select foo from bar", database, virtmachine)
     # input_handler("create table foo (colA text , colB text); select bar from foo", database, virtmachine)
 
     # handler = SqlFrontEnd()
