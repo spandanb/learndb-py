@@ -2,7 +2,7 @@
 from cursor import Cursor
 from table import Table
 from statemanager import StateManager
-from schema import Record
+from schema import Record, create_record, create_catalog_record, generate_schema
 from serde import serialize_record
 from dataexchange import Response, ExecuteResult, Statement, Row
 
@@ -56,7 +56,7 @@ class VirtualMachine(Visitor):
         # print(f"In vm: creating table [name={stmnt.table_name}, cols={stmnt.column_def_list}]")
 
         # 1. generate schema from stmnt
-        response = self.state_manager.generate_schema(stmnt)
+        response = generate_schema(stmnt)
         if response.success is False:
             # schema generation failed
             return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
@@ -78,10 +78,11 @@ class VirtualMachine(Visitor):
         # 4. construct record for table
         # NOTE: for now using page_num as unique int key
         pkey = page_num
-        record = self.state_manager.create_catalog_record(pkey, table_name, page_num)
+        catalog_schema = self.state_manager.get_catalog_schema()
+        schema_record = create_catalog_record(pkey, table_name, page_num, catalog_schema)
 
         # 5. serialize record
-        cell = serialize_record(record)
+        cell = serialize_record(schema_record)
 
         # 6. insert entry into catalog
         catalog_tree.insert(cell)
@@ -97,7 +98,7 @@ class VirtualMachine(Visitor):
         schema = self.state_manager.get_schema(table_name)
 
         # extract values from stmnt and construct record
-        record = self.state_manager.create_record(stmnt, schema)
+        record = create_record(stmnt.column_name_list, stmnt.value_list, schema)
 
         # get table's tree
         tree = self.state_manager.get_tree(table_name)

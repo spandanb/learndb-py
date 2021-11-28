@@ -215,11 +215,23 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
     => {header_size: 4, columns: [{serial_type: 4, length: 32}] }
 
-    Actually, after experimenting a bit, I'm not sure if auto generating a parser is easy enough to do.
-
-    I will use fixed width ints (as opposed to variable len ints).
+    ---
 
     What's peculiar here is that we end up with another implicit parser/language. This is distinct from the sql parser, i.e.
     the front end. This is a parser for the contents of the on-disk node. What's common between the 2 languages is that structure
     of the tokens encodes the meanings of the tokens. I suppose any time we have this- we need a parser.
 
+    ---
+
+    Actually, after experimenting a bit, it seems this header handler that can simultaneously be a self-documenting header
+    definition as well as provide an auto-generated parser- will be quiet difficult to implement.
+
+11/26
+    Logically segmenting components is tricky. The first level division is between stateless and stateful
+    ops. This is broadly, the split between virtual machine and state manager. But there are a lot of boundary concerns, e.g.
+    how a record should be created. Further, there is a fundamental tradeoffs between encapsulating state (object-oriented
+    perspective and clearly expressing compute on some data (functional perspective).
+
+    One case in point is who should be responsible for initializing the catalog. At one level, I want the VM
+    to handle all reads/writes since logic will be tricky and best contained in one object. However, then the
+    VM would have to intimately understand the catalog format, and this would make the VM fatter.

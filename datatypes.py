@@ -33,7 +33,7 @@ class DataType:
         :param value:
         :return:
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     @staticmethod
     def deserialize(bstring) -> Any:
@@ -42,7 +42,7 @@ class DataType:
         :param bstring:
         :return:
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     @staticmethod
     def is_valid_term(term) -> bool:
@@ -52,7 +52,7 @@ class DataType:
         :param term:
         :return:
         """
-        raise NotImplemented
+        raise NotImplementedError
 
 
 class Integer(DataType):
@@ -75,9 +75,8 @@ class Integer(DataType):
 
     @staticmethod
     def is_valid_term(term) -> bool:
-        print(f"Checking if term [{term}] is valid")
-        # TODO: check whether literal is a valid term
-        return True
+        # print(f"Checking if term [{term}] is valid")
+        return isinstance(term, int)
 
 
 class Float(DataType):
@@ -125,6 +124,13 @@ class Text(DataType):
     @staticmethod
     def deserialize(bstring: bytes):
         return bstring.decode("utf-8")
+
+    @staticmethod
+    def is_valid_term(term) -> bool:
+        print(f"Checking if term [{term}] is valid")
+        # TODO: check whether literal is a valid term
+        return True
+
 
 
 class Null(DataType):

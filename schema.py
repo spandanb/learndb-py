@@ -34,6 +34,14 @@ class Schema:
         # list of column objects ordered by definition order
         self.columns: List[Column] = []
 
+    def __str__(self):
+        # body = ' '.join([col.name for col in self.columns])
+        #return f'Schema({str(self.name)}, {str(body)})'
+        return 'Schema()'
+
+    def __repr__(self):
+        return str(self)
+
 
 class CatalogSchema(Schema):
     """
@@ -85,6 +93,15 @@ class Record:
         # unordered mapping from: column-name -> column-value
         self.values = values
         self.schema = schema
+
+    def __str__(self):
+        if self.values is None:
+            return "Record(-)"
+        body = ", ".join(["{k}: {v}" for k, v in self.values.items()])
+        return f"Record({body})"
+
+    def __repr__(self):
+        return str(self)
 
 
 def validate_schema(schema: Schema) -> Response:
@@ -147,12 +164,13 @@ def token_to_datatype(datatype_token: 'Token') -> Response:
 
 def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
     """
-    construct schema corresponding to schema object
+    construct schema corresponding to schema object.
+    Note if the operation is successful, a valid schema was read.
     :param create_stmnt:
     :return:
     """
     # construct schema
-    schema = Schema()
+    schema = Schema(name=create_stmnt.table_name)
     columns = []
     for coldef in create_stmnt.column_def_list:
         resp = token_to_datatype(coldef.datatype)
@@ -197,16 +215,40 @@ def validate_record(record) -> Response:
     return Response(True)
 
 
-def create_record(insert_stmnt: 'InsertStmnt') -> Response:
+def create_record(column_name_list: List, value_list: List, schema: Schema) -> Response:
     """
-    Create record
+    Create record. Note if the operation is successful, a valid record was read.
+    :return:
+    """
+    if len(column_name_list) != len(value_list):
+        return Response(False, error_message=f'Number of column names [{len(column_name_list)}] '
+                                             f'does not equal number of values[{len(value_list)}]')
+
+    # create record
+    values = {}
+    for idx, col_name in enumerate(column_name_list):
+        values[col_name] = value_list[idx]
+
+    record = Record(values, schema)
+
+    # validate record
+    resp = validate_record(record)
+    if not resp.success:
+        return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
+
+    return Response(True, body=record)
+
+
+def create_catalog_record(pkey: int, table_name: str, root_page_num: int, catalog_schema: CatalogSchema):
+    """
+    Create a catalog record
+    :param pkey:
+    :param table_name:
+    :param root_page_num:
+    :param catalog_schema:
     :return:
     """
 
-
-def create_catalog_record():
-    pass
+    return create_record(['pkey', 'name', 'root_pagenum'], [pkey, table_name, root_page_num], catalog_schema)
 
 
-if __name__ == '__main__':
-    myint = Integer()
