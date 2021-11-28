@@ -32,7 +32,7 @@ class Cursor:
             else:
                 child_page_num = Tree.internal_node_child(node, 0)
             self.page_num = child_page_num
-            node = self.table.pager.get_page(child_page_num)
+            node = self.pager.get_page(child_page_num)
 
         self.cell_num = 0
         # node must be leaf node

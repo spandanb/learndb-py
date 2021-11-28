@@ -8,7 +8,7 @@ import os.path
 from table import Table
 from btree import Tree
 from pager import Pager
-from schema import Schema, CatalogSchema, generate_schema, Record
+from schema import Schema, CatalogSchema, generate_schema, Record, create_record
 
 from dataexchange import Response
 
@@ -44,6 +44,8 @@ class StateManager:
         # schema should be singletons
         self.schemas = {}
         self.trees = {}
+        # initialize
+        self.init()
 
     def init(self):
         """
@@ -72,11 +74,13 @@ class StateManager:
     def get_pager(self):
         return self.pager
 
-    def get_catalog_schema(self):
-        return self.catalog_schema
-
-    def get_catalog_tree(self):
-        return self.catalog_tree
+    def allocate_tree(self):
+        """
+        Allocate tree, by requesting an unused from pager, i.e.
+        as a root page for new tree.
+        :return:
+        """
+        return self.pager.get_unused_page_num()
 
     def register_tree(self, table_name: str, tree: Tree):
         self.trees[table_name] = tree
@@ -84,30 +88,18 @@ class StateManager:
     def register_schema(self, table_name: str, schema: Schema):
         self.schemas[table_name] = schema
 
-    def generate_schema(self, create_stmnt: 'CreateStmnt') -> Response:
-        """
-        NOTE: this should just invoke schema.py::construct_schema and perhaps cache it
-        :return:
-        """
-        return generate_schema(create_stmnt)
+    def get_catalog_schema(self):
+        return self.catalog_schema
 
-    def allocate_tree(self) -> int:
-        """
-        Create tree for new table
-        :param table_name:
-        :return:
-        """
-        # to allocate , request a new page from the pager
-        return self.pager.get_unused_page_num()
+    def get_schema(self, table_name: str):
+        return self.schemas.get(table_name)
 
-    def create_record(self, insert_stmnt: 'InsertStmnt') -> Response:
-        """
+    def get_catalog_tree(self):
+        return self.catalog_tree
 
-        :param insert_stmnt:
-        :return:
-        """
-        # create record
-        # validate record
+    def get_tree(self, table_name):
+        return self.trees.get(table_name)
+
 
 
 class Database:
