@@ -11,6 +11,7 @@ from enum import Enum, auto
 from typing import Optional
 from itertools import chain
 
+from serde import get_cell_key
 from utils import debug
 
 from constants import (WORD,

@@ -38,18 +38,18 @@ class Cursor:
         # node must be leaf node
         self.end_of_table = (Tree.leaf_node_num_cells(node) == 0)
 
-    def get_row(self) -> Row:
+    def get_cell(self) -> bytes:
         """
-        return row pointed by cursor
+        return cell pointed by cursor
         :return:
         """
         node = self.pager.get_page(self.page_num)
-        serialized = Tree.leaf_node_value(node, self.cell_num)
-        # todo: fix deserialization call
-        return Table.deserialize(serialized)
+        cell = Tree.leaf_node_value(node, self.cell_num)
+        return cell
 
     def insert_row(self, row: Row) -> Response:
         """
+        # TODO: nuke me; do this op by directly invoking tree method
         insert row
         :return:
         """
@@ -63,6 +63,7 @@ class Cursor:
 
     def delete_key(self, key: int) -> Response:
         """
+        # TODO: nuke me; do this op by directly invoking tree method
         delete key from table
 
         :param key:
@@ -113,7 +114,9 @@ class Cursor:
 
     def advance(self):
         """
-        advance the cursor, from left most leaf node to right most leaf node
+        advance the cursor
+         1) from left most leaf node to right most leaf node
+         2) from leftmost cell to right most cell
         :return:
         """
         # advance always start at leaf node and ends at a leaf node;
