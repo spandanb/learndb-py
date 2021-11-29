@@ -5,6 +5,16 @@ The current internal nodes may need to have their keys changed
 Leaf nodes will be formatted like:
 
 - (low address) header, cell pointer array, unallocated space, cells (high address)
+- header:
+    nodetype .. is_root .. parent_pointer
+    num_cell .. free_block_ptr .. alloc_ptr
+    ...
+    cellptr_0, cellptr_1,... cellptr_N
+    ...
+    unallocated-space
+    ...
+    cells
+
 - cell ptrs are sorted by key (2 bytes); contain page offset to cell
 - cell -> [key_size, data_size, payload (key, data)]
     -- data can be divided into header and body
@@ -24,4 +34,10 @@ serial types:
 
     Types with a fixed-value, e.g. null will not be encoded in the data payload.
 
+---
 
+Internal nodes will be formatted like:
+
+    nodetype .. is_root .. parent_pointer
+    num_keys .. right-child-ptr
+    ptr 0 .. key 0 .. ptr N-1 key N-1

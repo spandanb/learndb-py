@@ -1,0 +1,69 @@
+Currently, the btree supports fixed length cells.
+To support variable length cells, the pages will be organized like:
+ - (low address) header, cell pointer array, unallocated space, cells (high address)
+
+The current leaf node header layout is:
+
+nodetype .. is_root .. parent_pointer
+num_keys .. key 0 .. val 0 .. key N-1 val N-1
+
+---
+
+To support variable length cells, the leaf must be
+formatted like:
+
+nodetype .. is_root .. parent_pointer
+num_cell .. free_block_ptr .. alloc_ptr
+...
+cellptr_0, cellptr_1,... cellptr_N
+...
+unallocated-space
+...
+cells
+
+---
+Header field description
+
+NOTE: free space is managed in two ways:
+- first is the allocation block. On an empty page, this starts at the high address and grows towards low addresses,
+  until it reaches the cell ptrs.
+- second is the free list. When records are deleted, there will be free spaces between allocated cells
+    - these are managed through a free-list
+        - each node needs to store: 1) size of current block, 2) offset to next block
+        - I'm sticking with a whole word (for ease) for both of these, i.e. 8Bytes.
+        - That means blocks below 8B cannot be allocated
+
+- we will need to defragement the space
+    - either periodically or lazily as needed
+
+alloc_ptr
+    - this is the beginning of unallocated space
+    - the free space grows towards lower addresses
+    - the free space ends (implicit) at the end of cell ptr area
+
+free_block_ptr
+    - offset to first free block, i.e. head of free list
+    - free blocks are randomly interspersed between cells
+
+cell_ptr
+    - absolute (?) offset to cell location
+
+
+NOTE: sqlite uses an "offset to first byte of cell content area". This seems to be only needed if cellptr is not big enough to provide a
+direct offset. For a page of size 4096, I need 12 bits to index anywhere. A word sized (32 bits) ptr can index into a page
+of size 4B. One reason sqlite may do so is because they use variable-length integer encoding, which would save much space.
+
+
+- here the cell ptr is a fixed size value representing an offset on page
+
+
+- how should free space be managed?
+- one approach is to keep a massive blob of free space, and then allocate chunks as needed
+    - this requires periodic defragmentation
+- second approach is to keep multiple lists of different fix sizes. Then space allocation is just about looking
+  in the closest sized list
+  - this leads to faster allocation, but wasted space
+  - another challenge here is that I need to have a sense of what sizes list to create
+- there will always be a space/time tradeoffs between these and countless variations:
+    - e.g. I can store more control info, e.g. keep more granular size lists but this has
+    a direct space cost, but leads to faster allocation
