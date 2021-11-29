@@ -171,11 +171,16 @@ def repl():
     """
     repl
     """
-    table = db_open(DB_FILE)
+
+    # create state manager
+    state_manager = StateManager(DB_FILE)
+
+    # create virtual machine
     virtmachine = VirtualMachine()
+
     while True:
         input_buffer = input("db > ")
-        input_handler(input_buffer, table, virtmachine)
+        input_handler(input_buffer, state_manager, virtmachine)
 
 
 def devloop():
@@ -190,8 +195,6 @@ def devloop():
     # create virtual machine
     virtmachine = VirtualMachine()
 
-    # doing this to bootstrap this initialize logic
-    # maybe this needs to be somewhere else
     p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
     if not p_resp.success:
         return EXIT_FAILURE

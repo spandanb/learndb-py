@@ -127,10 +127,8 @@ class Text(DataType):
 
     @staticmethod
     def is_valid_term(term) -> bool:
-        print(f"Checking if term [{term}] is valid")
-        # TODO: check whether literal is a valid term
-        return True
-
+        # print(f"Checking if term [{term}] is valid")
+        return isinstance(term, str)
 
 
 class Null(DataType):

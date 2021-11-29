@@ -4,6 +4,12 @@ from schema import Integer
 from dataexchange import Record, Response
 
 
+class InvalidCell(Exception):
+    """
+    A invalid formatted cell
+    """
+
+
 class SerialType(Enum):
     """
     serial-type of encoded data
@@ -109,5 +115,21 @@ def serialize_record(record: Record) -> Response:
     return Response(True, body=cell)
 
 
-def deserialize_cell() -> Response:
-    pass
+def deserialize_cell(cell: bytes, schema: 'Schema') -> Response:
+    """
+    deserialize cell corresponding to schema
+    :param cell:
+    :param schema:
+    :return: Response[Record]
+    """
+
+
+
+def get_cell_key(cell: bytes) -> Response:
+    """
+    return key given cell.
+    NOTE: this does not require schema, since key is agnostic
+    :param cell:
+    :param schema:
+    :return: Response[int]
+    """

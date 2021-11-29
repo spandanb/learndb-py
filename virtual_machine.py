@@ -3,7 +3,7 @@ from cursor import Cursor
 from table import Table
 from statemanager import StateManager
 from schema import Record, create_record, create_catalog_record, generate_schema
-from serde import serialize_record
+from serde import serialize_record, deserialize_cell
 from dataexchange import Response, ExecuteResult, Statement, Row
 
 from lang_parser.visitor import Visitor
@@ -64,13 +64,20 @@ class VirtualMachine(Visitor):
         # if generation succeeded, then schema is valid
         schema = response.body
         table_name = schema.name
+        assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
         # create cursor on catalog table
         pager = self.state_manager.get_pager()
         catalog_tree = self.state_manager.get_catalog_tree()
         cursor = Cursor(pager, catalog_tree)
+
         # todo: iterate over all records to get all table names
+        # while cursor.end_of_table is False:
+        #    cell = cursor.get_cell()
+        #    record = deserialize_cell(cell, schema)
+        #    print(f"printing record: {record}")
+        #    cursor.advance()
 
         # 3. allocate tree for new table
         page_num = self.state_manager.allocate_tree()
@@ -79,17 +86,42 @@ class VirtualMachine(Visitor):
         # NOTE: for now using page_num as unique int key
         pkey = page_num
         catalog_schema = self.state_manager.get_catalog_schema()
-        schema_record = create_catalog_record(pkey, table_name, page_num, catalog_schema)
+        response = create_catalog_record(pkey, table_name, page_num, catalog_schema)
+        if not response.success:
+            return Response(False, error_message=f'Failure due to {response.error_message}')
 
         # 5. serialize record
+        schema_record = response.body
         cell = serialize_record(schema_record)
 
         # 6. insert entry into catalog
         catalog_tree.insert(cell)
 
     def visit_select_expr(self, expr: SelectExpr):
+        """
+        Handle select expr
+        For now prints rows; should
+        :param expr:
+        :return:
+        """
         print(f"In vm: select expr")
-        self.execute_select()
+
+        table_name = expr.from_location.literal
+        if table_name.lower() == 'catalog':
+            tree = self.state_manager.get_catalog_tree()
+            schema = self.state_manager.get_catalog_schema()
+        else:
+            tree = self.state_manager.get_tree(table_name)
+            schema = self.state_manager.get_schema(table_name)
+
+        cursor = Cursor(self.state_manager.get_pager(), tree)
+
+        # iterate cursor
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
+            record = deserialize_cell(cell, schema)
+            print(f"printing record: {record}")
+            cursor.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
         table_name = stmnt.table_name
@@ -98,6 +130,7 @@ class VirtualMachine(Visitor):
         schema = self.state_manager.get_schema(table_name)
 
         # extract values from stmnt and construct record
+        # todo: extract literal from tokens
         record = create_record(stmnt.column_name_list, stmnt.value_list, schema)
 
         # get table's tree

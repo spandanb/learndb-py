@@ -170,7 +170,8 @@ def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
     :return:
     """
     # construct schema
-    schema = Schema(name=create_stmnt.table_name)
+    table_name = create_stmnt.table_name.literal
+    schema = Schema(name=table_name)
     columns = []
     for coldef in create_stmnt.column_def_list:
         resp = token_to_datatype(coldef.datatype)
@@ -227,7 +228,8 @@ def create_record(column_name_list: List, value_list: List, schema: Schema) -> R
     # create record
     values = {}
     for idx, col_name in enumerate(column_name_list):
-        values[col_name] = value_list[idx]
+        value = value_list[idx]
+        values[col_name] = value.literal
 
     record = Record(values, schema)
 
