@@ -235,3 +235,6 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     One case in point is who should be responsible for initializing the catalog. At one level, I want the VM
     to handle all reads/writes since logic will be tricky and best contained in one object. However, then the
     VM would have to intimately understand the catalog format, and this would make the VM fatter.
+
+11/28
+    See discussion on updating btree to support variable length cells in docs/btree-variable-length-cells.txt
