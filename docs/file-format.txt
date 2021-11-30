@@ -1,13 +1,27 @@
-I want to explicate the file format details for learndb. It's similar to sqlite but with many simplifications.
+Overview
+--------
+I want to explicate the file format details for learndb. It's largely inspired by sqlite- with many simplifications.
+NOTE: the details of the file format may be contained in other docs; but this doc is standalone and authoritative.
 
-The current internal nodes may need to have their keys changed
+Internal Node
+-------------
+The current internal nodes will largely be unchanged i.e.
 
+    nodetype .. is_root .. parent_pointer
+    num_keys .. right-child-ptr
+    ptr 0 .. key 0 .. ptr N-1 key N-1
+
+Internal nodes require keys to be word-sized integers
+
+
+Leaf Node Layout
+-----------------
 Leaf nodes will be formatted like:
 
 - (low address) header, cell pointer array, unallocated space, cells (high address)
 - header:
     nodetype .. is_root .. parent_pointer
-    num_cell .. free_block_ptr .. alloc_ptr
+    num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
     ...
     cellptr_0, cellptr_1,... cellptr_N
     ...
@@ -15,14 +29,25 @@ Leaf nodes will be formatted like:
     ...
     cells
 
-- cell ptrs are sorted by key (2 bytes); contain page offset to cell
-- cell -> [key_size, data_size, payload (key, data)]
-    -- data can be divided into header and body
-    -- data header -> [size of header, serial types (size of variable length value)?
+Leaf Node Cell Ptrs
+-------------------
+- cell ptrs are sorted by key (word size);
+- contain absolute page offset to cell
+
+Leaf Node Cell
+--------------
+- cell -> [key-size, data-size, key-payload, data-payload)]
+    -- data payload will be divided into header and body
+    -- data header -> [size of header, serial types (size of variable length value)]
     -- data body -> concatenated bytes of serialized values (in definition order)
     -- all data must fit in a cell, i.e. no overflow- this limits the max content size to what can fit in a single cell
+    -- NOTE: the key size is fixed to word size for now
+        -- encoding key size will make supporting variable length keys easier
+        -- variable sized keys would also require updating internal node logic
 
-serial types:
+
+Serial Types
+------------
     sqlite for inspiration (https://www.sqlite.org/fileformat2.html#record_format)
 
         serial-type  byte-length  datatype
@@ -34,10 +59,19 @@ serial types:
 
     Types with a fixed-value, e.g. null will not be encoded in the data payload.
 
----
 
-Internal nodes will be formatted like:
+Free Space on Leaf Nodes
+------------------------
+Free space is managed via:
+1) Allocation block -
+    - bounded by the right most (maximal address) of a cell ptr
+    - bounded by first allocation cell
+    - Allocation ptr moves towards smaller addresses
+2) Free list - singly-linked list
+    - each free nodes stores: 1) size of current block, 2) location (abs offset) of next block
+    - also store total number of free bytes
 
-    nodetype .. is_root .. parent_pointer
-    num_keys .. right-child-ptr
-    ptr 0 .. key 0 .. ptr N-1 key N-1
+
+Storage
+-------
+Most fields will be a word length, unless otherwise noted.
