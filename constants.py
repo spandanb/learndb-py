@@ -85,16 +85,51 @@ INTERNAL_NODE_RIGHT_SPLIT_CHILD_COUNT = (INTERNAL_NODE_MAX_CHILDREN + 1) // 2
 INTERNAL_NODE_LEFT_SPLIT_CHILD_COUNT = (INTERNAL_NODE_MAX_CHILDREN + 1) - INTERNAL_NODE_RIGHT_SPLIT_CHILD_COUNT
 
 # leaf node header layout
-# layout:
+# old layout:
 # nodetype .. is_root .. parent_pointer
 # num_keys .. key 0 .. val 0 .. key N-1 val N-1
+# key 0 .. val 0 .. key N-1 val N-1
+
+# new layout
+# nodetype .. is_root .. parent_pointer
+# num_cells .. alloc_ptr .. free_list_head_ptr .. total_free_bytes
+# cellptr_0 .. cellptr_1 ... cellptr_N-1
 LEAF_NODE_NUM_CELLS_SIZE = WORD
 LEAF_NODE_NUM_CELLS_OFFSET = COMMON_NODE_HEADER_SIZE
-LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE
+LEAF_NODE_ALLOC_POINTER_SIZE = WORD
+LEAF_NODE_ALLOC_POINTER_OFFSET = LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_ALLOC_POINTER_SIZE
+LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE = WORD
+LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET = LEAF_NODE_ALLOC_POINTER_OFFSET + LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE
+LEAF_NODE_TOTAL_FREE_BYTES_SIZE = WORD
+LEAF_NODE_TOTAL_FREE_BYTES_OFFSET = LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET + LEAF_NODE_TOTAL_FREE_BYTES_SIZE
 
+LEAF_NODE_HEADER_SIZE = COMMON_NODE_HEADER_SIZE + LEAF_NODE_NUM_CELLS_SIZE + LEAF_NODE_ALLOC_POINTER_SIZE + \
+    LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE + LEAF_NODE_TOTAL_FREE_BYTES_SIZE
+
+# location where cell point start
+LEAF_NODE_CELL_POINTER_START = LEAF_NODE_HEADER_SIZE
+LEAF_NODE_CELL_POINTER_SIZE = WORD
+
+# cell constants
+# NOTE: this is intended to support APIs that expect fixed size key
+LEAF_NODE_KEY_SIZE = WORD
+# NOTE: these are relative to beginning of cell
+LEAF_NODE_KEY_SIZE_OFFSET = 0
+# the size of the key-size field
+LEAF_NODE_KEY_SIZE_SIZE = WORD
+LEAF_NODE_DATA_SIZE_OFFSET = LEAF_NODE_KEY_SIZE_OFFSET + LEAF_NODE_KEY_SIZE_SIZE
+LEAF_NODE_DATA_SIZE_SIZE = WORD
+
+LEAF_NODE_KEY_PAYLOAD_OFFSET = LEAF_NODE_DATA_SIZE_OFFSET + LEAF_NODE_DATA_SIZE_SIZE
+# NOTE: key-size is stored at LEAF_NODE_KEY_SIZE_OFFSET
+
+# TODO: most of the leaf_node constants below are unused and should be removed
+# commenting out below
+"""
 # Leaf node body layout
 LEAF_NODE_KEY_SIZE = WORD
 LEAF_NODE_KEY_OFFSET = 0
+
 # NOTE: nodes should not cross the page boundary; thus ROW_SIZE is upper
 # bounded by remaining space in page
 # NOTE: ROW_SIZE includes the key
@@ -109,6 +144,8 @@ LEAF_NODE_MAX_CELLS = 3
 # when a node is split, off number of cells, left will get one more
 LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
 LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
+"""
+
 
 # this initialize the catalog/metadata table
 # todo: nuke if unused

@@ -13,7 +13,7 @@ To support variable length cells, the leaf must be
 formatted like:
 
 nodetype .. is_root .. parent_pointer
-num_cell .. free_block_ptr .. alloc_ptr
+num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
 ...
 cellptr_0, cellptr_1,... cellptr_N
 ...
@@ -27,7 +27,8 @@ Header field description
 NOTE: free space is managed in two ways:
 - first is the allocation block. On an empty page, this starts at the high address and grows towards low addresses,
   until it reaches the cell ptrs.
-- second is the free list. When records are deleted, there will be free spaces between allocated cells
+- second is converting the fixed single block into multiple fixed-sized free lists.
+    - When records are deleted, there will be free spaces between allocated cells
     - these are managed through a free-list
         - each node needs to store: 1) size of current block, 2) offset to next block
         - I'm sticking with a whole word (for ease) for both of these, i.e. 8Bytes.
@@ -49,9 +50,10 @@ cell_ptr
     - absolute (?) offset to cell location
 
 
-NOTE: sqlite uses an "offset to first byte of cell content area". This seems to be only needed if cellptr is not big enough to provide a
-direct offset. For a page of size 4096, I need 12 bits to index anywhere. A word sized (32 bits) ptr can index into a page
-of size 4B. One reason sqlite may do so is because they use variable-length integer encoding, which would save much space.
+NOTE: sqlite uses an "offset to first byte of cell content area". This seems to be only needed if cellptr is not big enough
+to provide a direct/absolute offset. For a page of size 4096, I need 12 bits to index anywhere. A word sized (32 bits) ptr
+can index into a page of size 4B. One reason sqlite may do so is because they use variable-length integer encoding,
+which would save much space.
 
 
 - here the cell ptr is a fixed size value representing an offset on page

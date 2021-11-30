@@ -238,3 +238,21 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
 11/28
     See discussion on updating btree to support variable length cells in docs/btree-variable-length-cells.txt
+
+11/29
+    Incrementally evolving software
+
+    One issue I'm running into is whether the API around leaf nodes should expect a key of type integer or bytes.
+    The reason is, for now I'm doing word-sized integer keys. But eventually I will want to support variable length integer
+    keys (any byte string can be interpreted as a multi-bytes int). So there is some api (new, forward looking for leaf nodes)
+    which expects byte strings as keys. And older api (which I'm trying to reuse for internal nodes).
+    But mixing the old and new apis can make the code confusing. But the alternative is either:
+    a much bigger one-shot change, i.e. update old reuseable api to expect bytes, or a slower two step update, i.e.
+    support new file format with fixed sized ints. Then update to support variable sized ints.
+
+    But this is just a place where competing objectives collide- time, code clarity/correctness. These two are not necessarily
+    in conflict. Higher code clarity, makes it less like to have bugs, and easier to debug, and you need a minimum level of code
+    beauty (i.e. everything that's not raw functional, i.e. the difference between a turing machine and a slick interface). But
+    beyond a certain level- the gain in productivity is limited.
+
+
