@@ -46,6 +46,7 @@ from constants import (WORD,
                        LEAF_NODE_NUM_CELLS_OFFSET,
                        LEAF_NODE_HEADER_SIZE,
                        LEAF_NODE_KEY_SIZE,
+
                        LEAF_NODE_KEY_OFFSET,
                        LEAF_NODE_VALUE_SIZE,
                        LEAF_NODE_VALUE_OFFSET,
@@ -59,9 +60,11 @@ from constants import (WORD,
                        LEAF_NODE_CELL_POINTER_START,
                        LEAF_NODE_CELL_POINTER_SIZE,
 
-                        LEAF_NODE_KEY_SIZE_OFFSET,
-                        LEAF_NODE_KEY_SIZE_SIZE,
-                        LEAF_NODE_KEY_PAYLOAD_OFFSET
+                       LEAF_NODE_KEY_SIZE_OFFSET,
+                       LEAF_NODE_KEY_SIZE_SIZE,
+                       LEAF_NODE_KEY_PAYLOAD_OFFSET,
+LEAF_NODE_ALLOC_POINTER_OFFSET,
+LEAF_NODE_ALLOC_POINTER_SIZE
                        )
 
 
@@ -575,10 +578,24 @@ class Tree:
         return key.to_bytes(LEAF_NODE_KEY_SIZE, byteorder=sys.byteorder)
 
     @staticmethod
-    def cell_ptr_array_size(node):
-        # do I want size or offset
+    def leaf_node_alloc_ptr(node: bytes) -> int:
+        """
+        :param node:
+        :return: the value of the alloc ptr, i.e. the abs offset of the first byte that can be allocated
+        """
+        bstring = node[LEAF_NODE_ALLOC_POINTER_OFFSET: LEAF_NODE_ALLOC_POINTER_OFFSET + LEAF_NODE_ALLOC_POINTER_SIZE]
+        return int.from_bytes(bstring, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_unallocated_offset(node: bytes) -> int:
+        """
+        return first bytes of unallocated space- i.e. first byte past the cell ptr array
+        :param node:
+        :return:
+        """
         array_size = Tree.leaf_node_num_cells(node) * LEAF_NODE_CELL_POINTER_SIZE
-        return array_size
+        offset = LEAF_NODE_HEADER_SIZE + array_size
+        return offset
 
     def leaf_node_insert(self, page_num: int, cell_num: int, key: int, cell: bytes):
         """
@@ -588,15 +605,29 @@ class Tree:
 
         NOTE: for now ignoring free-list- allocating from allocation block
 
-        - header:
-            nodetype .. is_root .. parent_pointer
-            num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
-            ...
-            cellptr_0, cellptr_1,... cellptr_N
-            ...
-            unallocated-space
-            ...
-            cells
+        nodetype .. is_root .. parent_pointer
+        num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
+        ...
+        cellptr_0, cellptr_1,... cellptr_N
+        ...
+        unallocated-space
+        ...
+        cells
+
+        e.g.
+
+        consider a page of size 32, word: 8
+        the indexable bytes are [0, 31]
+        the alloc_ptr starts at value 32
+        if the header takes 8 bytes, then the cellptr would start at 8
+        and say that takes a word, then the allocated space starts at 16,
+        so the total space available is 2 words, i.e. 32 - 16 i.e. alloc_ptr - len(cell)
+        next, alloc_ptr is updated to 16, i.e.
+
+        0
+        8
+        16
+        24....31
 
 
         :param page_num:
@@ -611,26 +642,43 @@ class Tree:
 
         # calculate space needed
         space_needed = len(cell)
-        # get size of cell ptr array
-        count = Tree.leaf_node_num_cells(node)
-        Tree.cell_ptr_array_size(node)
-        space_available = None
-
-        # todo: check whether there is enough space on page
-        # max-cells is useful for debugging, developing
-        if num_cells >= LEAF_NODE_MAX_CELLS:
+        # todo: if space_needed > max-cell-that-can-fit-on-empty-page: raise exception
+        # space available is from tail of cell ptr array to alloc_ptr
+        unalloc_head = Tree.leaf_node_unallocated_offset(node)
+        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
+        space_available = alloc_ptr - unalloc_head
+        # note: having a max number of cells is only needed for debugging
+        if space_available >= space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
             # node full - split node and insert
-            self.leaf_node_split_and_insert(page_num, cell_num, key, value)
+            # todo: fix leaf_node_split_and_insert
+            self.leaf_node_split_and_insert(page_num, cell_num, key, cell)
             return
 
         if cell_num < num_cells:
-            # the new cell is left of some an cells
-            # move all those cells right by 1 unit
-            cells = self.leaf_node_cells_starting_at(node, cell_num)
-            self.set_leaf_node_cells_starting_at(node, cell_num + 1, cells)
+            # the new cell is left of some existing cell(s)
+            # move these cell ptrs right by 1 unit
+            # NB: cells never move except during defragmentation or splitting
+            cellptrs = self.leaf_node_cellptrs_starting_at(node, cell_num)
+            self.set_leaf_node_cellptrs_starting_at(node, cell_num + 1, cellptrs)
 
-        Tree.set_leaf_node_key(node, cell_num, key)
-        Tree.set_leaf_node_value(node, cell_num, value)
+        # determine the new value of alloc ptr
+        # alloc_ptr points past the first allocatable byte
+        # alloc pointer grows up, i.e. towards lower addresses
+        # new alloc ptr is also the location of the new cell
+        new_alloc_ptr = alloc_ptr - len(cell)
+
+        # write cellptr
+        # ensure cellptr value is in the right type
+        Tree.set_leaf_node_cellptr(node, cell_num, new_alloc_ptr)
+
+        # copy cell contents onto node
+        # the cell will be copied starting at the new alloc_ptr location
+        Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
+
+        # update the alloc ptr
+        Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
+
+        # update cell count
         Tree.set_leaf_node_num_cells(node, num_cells + 1)
 
         # new key was inserted at largest index, i.e. new max-key - update parent
@@ -1402,11 +1450,10 @@ class Tree:
         """
         return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE
 
-
     @staticmethod
     def leaf_node_cell_offset(node: bytes, cell_num: int):
         """
-        Get absolute position of cell
+        Get offset (absolute position) to cell at `cell_num`
         :param node:
         :param cell_num:
         :return:
@@ -1417,6 +1464,18 @@ class Tree:
         # cell_offset is the absolute offset on the page
         cell_offset = int.from_bytes(cellptr, sys.byteorder)
         return cell_offset
+
+    @staticmethod
+    def leaf_node_cell_ptr_offset(cell_num: int):
+        """
+        offset to cell ptr at `cell_num`
+
+        :param cell_num: 0-based position
+        :return:
+        """
+        offset = LEAF_NODE_CELL_POINTER_START + (cell_num * LEAF_NODE_CELL_POINTER_SIZE)
+        return offset
+
 
     @staticmethod
     def leaf_node_key_offset(cell_num: int) -> int:
@@ -1762,8 +1821,27 @@ class Tree:
         return key
 
     @staticmethod
+    def leaf_node_cellptrs_starting_at(node: bytes, cell_num: int) -> bytes:
+        """
+        return bytes corresponding to all cell ptrs including at position `cell_num`
+
+        :param node:
+        :param cell_num: 0-based relative position
+        :return:
+        """
+        assert cell_num <= Tree.leaf_node_num_cells(node) - 1, \
+            f"out of bounds cell [{cell_num}] lookup [total: {Tree.leaf_node_num_cells(node)}]"
+        offset = Tree.leaf_node_cell_offset(cell_num)
+        num_cells = Tree.leaf_node_num_cells(node)
+        num_cellptrs_after_cell_num = num_cells - cell_num
+        return node[offset: offset + num_cellptrs_after_cell_num * LEAF_NODE_CELL_POINTER_SIZE]
+
+    @staticmethod
     def leaf_node_cells_starting_at(node: bytes, cell_num: int) -> bytes:
         """
+        TODO: nuke me; replaced by leaf_node_cellptrs_starting_at
+
+
         return bytes corresponding to all children including at `child_num`
 
         :param node:
@@ -1865,7 +1943,45 @@ class Tree:
         node[offset: offset + LEAF_NODE_KEY_SIZE] = value
 
     @staticmethod
+    def set_leaf_node_alloc_ptr(node: bytes, alloc_ptr: int):
+        """
+
+        :param node:
+        :param alloc_ptr:
+        :return:
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def set_leaf_node_cellptr(node: bytes, cell_num: int, cellptr: bytes/int):
+        """
+        This should set the actual cellptr value, i.e. the offset.
+        :param node:
+        :param cell_num:
+        :param cellptr: should this be an int or bytes?
+        :return:
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def set_leaf_node_cellptrs_starting_at(node: bytes, cell_num: int, cellptrs: bytes):
+        """
+        set a sub-array of cellptrs at position cell_num
+
+        :return:
+        """
+        offset = Tree.leaf_node_cell_ptr_offset(cell_num)
+        node[offset: offset + len(cellptrs)] = cellptrs
+
+    @staticmethod
     def set_leaf_node_cells_starting_at(node: bytes, cell_num: int, cells: bytes):
+        """
+        todo: nuke me; replaced by set_leaf_node_cellptrs_starting_at
+        :param node:
+        :param cell_num:
+        :param cells:
+        :return:
+        """
         offset = Tree.leaf_node_cell_offset_old(cell_num)
         node[offset: offset + len(cells)] = cells
 
