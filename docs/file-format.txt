@@ -66,7 +66,10 @@ Free space is managed via:
 1) Allocation block -
     - bounded by the right most (maximal address) of a cell ptr
     - bounded by first allocation cell
-    - Allocation ptr moves towards smaller addresses
+    - Allocation ptr (alloc_ptr) moves towards smaller addresses
+    - alloc_ptr points past the first allocatable byte, i.e. on page of size 4096 it is initialized to 4096.
+        - the last indexable byte is 4095
+
 2) Free list - singly-linked list
     - each free nodes stores: 1) size of current block, 2) location (abs offset) of next block
     - also store total number of free bytes

@@ -124,12 +124,10 @@ def deserialize_cell(cell: bytes, schema: 'Schema') -> Response:
     """
 
 
-
 def get_cell_key(cell: bytes) -> Response:
     """
     return key given cell.
     NOTE: this does not require schema, since key is agnostic
     :param cell:
-    :param schema:
     :return: Response[int]
     """
