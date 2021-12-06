@@ -1,7 +1,10 @@
 """
-Tests various aspects of schema
+Tests serde of individual datatypes and of schemas/records
+composed of columns of many different datatype
 """
 from datatypes import Integer, Float, Text, Null, Blob
+from schema import Schema, Column, Record
+from serde import deserialize_cell, serialize_record
 
 
 def test_integer_serde():
@@ -32,3 +35,34 @@ def test_float_serde():
         # not sure if it's valid to compare the diff of values
         # be less than threshold- since the threshold may vary depending on magnitude?
         assert abs(deser_val - value) < 0.001
+
+
+def test_schema_serde():
+    """
+    Attempt to serialize and deserialize a schema
+    :return:
+    """
+    schema = Schema('dummy', [
+            Column('pkey', Integer, is_primary_key=True),
+            Column('name', Text),
+            Column('root_pagenum', Integer),
+            Column('sql', Text)
+        ])
+    # create a record that matches above schema
+    record = Record({"pkey": 1, "name": "some_table_nane", "root_pagenum": 2}, schema)
+
+    # serialize
+    resp = serialize_record(record)
+    assert resp.success, "serialize failed"
+    serialized = resp.body
+    # deserialize
+    resp = deserialize_cell(serialized, schema)
+    assert resp.success, "deserialize failed"
+    deserialized = resp.body
+
+    # validate original and deserialized record have the same value
+    for col in schema.columns:
+        assert record.values[col.name] == deserialized.values[col.name]
+
+
+

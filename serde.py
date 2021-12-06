@@ -1,7 +1,15 @@
+import sys
 from enum import Enum
 
-from schema import Integer
-from dataexchange import Record, Response
+from constants import (LEAF_NODE_KEY_SIZE_SIZE,
+                       LEAF_NODE_DATA_SIZE_SIZE,
+                       INTEGER_SIZE,
+                       FLOAT_SIZE
+                       )
+
+from datatypes import DataType, Null, Integer, Text, Blob, Float
+from dataexchange import Response
+from schema import Integer, Record, Schema
 
 
 class InvalidCell(Exception):
@@ -19,6 +27,44 @@ class SerialType(Enum):
     Float = 2
     Text = 3
     Blob = 4
+
+
+def serialtype_to_datatype(serial_type: SerialType) -> DataType:
+    """
+    Convert serial type enum to datatype
+    :param serial_type:
+    :return:
+    """
+    if serial_type == SerialType.Null:
+        return Null
+    elif serial_type == SerialType.Integer:
+        return Integer
+    elif serial_type == SerialType.Float:
+        return Float
+    elif serial_type == SerialType.Text:
+        return Text
+    else:
+        assert serial_type == SerialType.Blob
+        return Blob
+
+
+def datatype_to_serialtype(datatype: DataType) -> SerialType:
+    """
+    Convert datatype to serialtype
+    :param datatype:
+    :return:
+    """
+    if datatype == Null:
+        return SerialType.Null
+    elif datatype == Integer:
+        return SerialType.Integer
+    elif datatype == Float:
+        return SerialType.Float
+    elif datatype == Text:
+        return SerialType.Text
+    else:
+        assert datatype == Blob
+        return SerialType.Blob
 
 
 def serialize_record(record: Record) -> Response:
@@ -81,7 +127,7 @@ def serialize_record(record: Record) -> Response:
                 serialized_serial_type = Integer.serialize(serial_type.value)
                 data_header += serialized_serial_type
             else:
-                serial_type = SerialType(column.datatype.__class__.__name__)
+                serial_type = datatype_to_serialtype(column.datatype)
                 # all columns except null can be serialized;
                 # in the future, there may be non-null unserializable types, e.g. bool
                 assert column.datatype.is_serializable, f"non-null unserializable column [{column.name}]"
@@ -111,23 +157,89 @@ def serialize_record(record: Record) -> Response:
     key_size = Integer.serialize(len(key))
     data_payload = data_header + data
     data_size = Integer.serialize(len(data_payload))
-    cell = key_size + data_size + key + data_header
+    cell = key_size + data_size + key + data_payload
     return Response(True, body=cell)
 
 
-def deserialize_cell(cell: bytes, schema: 'Schema') -> Response:
+def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     """
     deserialize cell corresponding to schema
     :param cell:
     :param schema:
     :return: Response[Record]
     """
+    values = {}  # colname -> value
+    # read the columns in the cell
+    offset = 0
+    key_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_KEY_SIZE_SIZE])
+    offset += LEAF_NODE_KEY_SIZE_SIZE
+    data_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_DATA_SIZE_SIZE])
+    offset += LEAF_NODE_DATA_SIZE_SIZE
+
+    # read key column
+    # bytes corresponding to key
+    key_bytes = cell[offset: offset + key_size]
+    key = Integer.deserialize(key_bytes)
+    key_columns = [col.name for col in schema.columns if col.is_primary_key]
+    assert len(key_columns) == 1, "More than 1 key column"
+    key_column_name = key_columns[0]
+    values[key_column_name] = key
+    # after this, offset points past the key data
+    offset += len(key_bytes)
+
+    # keep track of which column (position) we have read from
+    col_pos = 0
+
+    # read non-key columns
+    header_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    # process column metadata
+    # header size includes size field - skip it at start at first column metadata
+    header_offset = INTEGER_SIZE
+    # first address where data resides
+    data_offset = offset + header_size
+    while header_offset <= header_size:
+        # read until all column metadata has been run
+        serial_type_value = Integer.deserialize(cell[header_offset: header_offset + INTEGER_SIZE])
+        serial_type = SerialType(serial_type_value)
+        # resolve datatype
+        datatype = serialtype_to_datatype(serial_type)
+        # increment header ptr
+        header_offset += INTEGER_SIZE
+
+        # check whether column type is variable length
+        varlen = 0
+        if not datatype.is_fixed_length:
+            varlen = Integer.deserialize(cell[header_offset: header_offset + INTEGER_SIZE])
+            header_offset += INTEGER_SIZE
+
+        # resolve column name
+        column = schema.columns[col_pos]
+        col_pos += 1
+        if column.is_primary_key:
+            # we've already handled the key column above; consider next column
+            column = schema.columns[col_pos]
+            col_pos += 1
+
+        # read body
+        if datatype.is_fixed_length and not datatype.is_serializable:
+            # handle fixed-value type, i.e. only null for now, boolean's would be similar
+            assert datatype == Null
+            values[column.name] = None
+        elif not datatype.is_fixed_length:
+            # handle fixed-length type
+            # increment body by a fixed amount
+            values[column.name] = datatype.deserialize(cell[data_offset: data_offset + datatype.fixed_length])
+            data_offset += datatype.fixed_length
+        else:
+            assert datatype.is_fixed_length is False
+            assert varlen > 0
+            # handle variable length type
+            # increment body by a variable amount
+            data_bstring = cell[data_offset: data_offset + varlen]
+            values[column.name] = datatype.deserialize(data_bstring)
+            data_offset += varlen
+
+    record = Record(values, schema)
+    return Response(True, body=record)
 
 
-def get_cell_key(cell: bytes) -> Response:
-    """
-    return key given cell.
-    NOTE: this does not require schema, since key is agnostic
-    :param cell:
-    :return: Response[int]
-    """

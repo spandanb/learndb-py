@@ -162,4 +162,5 @@ create table catalog (
 
 # serde constants
 # length of encoded bytes
-INTEGER_SIZE = 4
+INTEGER_SIZE = WORD
+FLOAT_SIZE = WORD

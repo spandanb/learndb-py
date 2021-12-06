@@ -80,16 +80,4 @@ class Statement:
     key_to_delete: int = None
 
 
-class Record:
-    """
-    Replacement for `Row` that support dynamic table definition
-    """
-
-
-class TableDefinition:
-    """
-    Represents a table def
-    Not sure if this is needed
-    """
-
 
