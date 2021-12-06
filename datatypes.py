@@ -4,7 +4,7 @@ from abc import ABCMeta
 from typing import Any
 
 
-from constants import INTEGER_SIZE
+from constants import INTEGER_SIZE, FLOAT_SIZE
 
 
 class DataType:
@@ -87,7 +87,7 @@ class Float(DataType):
     """
 
     is_fixed_length = True
-    fixed_length = 4
+    fixed_length = FLOAT_SIZE
     is_serializable = True
 
     @staticmethod
@@ -148,7 +148,7 @@ class Null(DataType):
 
     """
     is_fixed_length = True
-    fixed_length = INTEGER_SIZE
+    fixed_length = 0
     is_serializable = False
 
 

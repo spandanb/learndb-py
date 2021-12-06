@@ -17,6 +17,23 @@ from lang_parser.tokens import TokenType
 from dataexchange import Response
 
 
+class Column:
+    """
+    Represents a column in a schema
+    """
+    def __init__(self, name: str, datatype, is_primary_key: bool = False, is_nullable: bool = True):
+        self.name = name
+        self.datatype = datatype
+        self.is_primary_key = is_primary_key
+        self.is_nullable = is_nullable
+
+    def __str__(self):
+        return f'Column[{self.name}, {self.datatype}, is_primary: {self.is_primary_key}, is_nullable: {self.is_nullable}]'
+
+    def __repr__(self):
+        return self.__str__()
+
+
 class Schema:
     """
     Represents a schema. This includes
@@ -28,16 +45,17 @@ class Schema:
 
     NOTE: once constructed a schema should be treated as read-only
     """
-    def __init__(self, name: str = None):
+    def __init__(self, name: str = None, columns: List[Column] = []):
         # name of object/entity defined
         self.name = name
         # list of column objects ordered by definition order
-        self.columns: List[Column] = []
+        self.columns = columns
 
     def __str__(self):
-        # body = ' '.join([col.name for col in self.columns])
-        #return f'Schema({str(self.name)}, {str(body)})'
-        return 'Schema()'
+        # return 'Schema()'
+        body = ' '.join([col.name for col in self.columns])
+        return f'Schema({str(self.name)}, {str(body)})'
+
 
     def __repr__(self):
         return str(self)
@@ -71,17 +89,6 @@ class CatalogSchema(Schema):
             Column('root_pagenum', Integer),
             Column('sql', Text)
         ]
-
-
-class Column:
-    """
-    Represents a column in a schema
-    """
-    def __init__(self, name: str, datatype, is_primary_key: bool = False, is_nullable: bool = False):
-        self.name = name
-        self.datatype = datatype
-        self.is_primary_key = is_primary_key
-        self.is_nullable = is_nullable
 
 
 class Record:
