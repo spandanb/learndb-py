@@ -1,13 +1,13 @@
 # Tasks
 
+
 ## Storage (btree)
-- btree
-  - refactor btree to support arbitrary schema
+- update btree to support variable len cells
     - update btree to support new leaf node format
+       - update insert leaf_node and leaf_node_and_split
     - allocate from allocation block
-    - support free-list  
-      - support fragmentation of unallocated space
-    - complete serde.py::get_cell_key, deserialize_cell 
+    - support deletion/free-list  
+      - support defragmentation of unallocated space
 
 ## VM
 - iterating over rows
