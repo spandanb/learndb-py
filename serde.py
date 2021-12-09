@@ -157,6 +157,8 @@ def serialize_record(record: Record) -> Response:
     key_size = Integer.serialize(len(key))
     data_payload = data_header + data
     data_size = Integer.serialize(len(data_payload))
+    print(f'In serialize; key-size: {key_size}, data-header-len: {data_header_len}, data_size: {data_size}')
+    #print(cell)
     cell = key_size + data_size + key + data_payload
     return Response(True, body=cell)
 
@@ -171,6 +173,7 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     values = {}  # colname -> value
     # read the columns in the cell
     offset = 0
+    # TODO: seems LEAF_NODE_KEY_SIZE_SIZE is same as INTEGER_SIZE; replace former with latter
     key_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_KEY_SIZE_SIZE])
     offset += LEAF_NODE_KEY_SIZE_SIZE
     data_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_DATA_SIZE_SIZE])
@@ -184,20 +187,26 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     assert len(key_columns) == 1, "More than 1 key column"
     key_column_name = key_columns[0]
     values[key_column_name] = key
-    # after this, offset points past the key data
+    # after this, offset points past the key bytes, i.e. to the first
+    # byte of data payload
     offset += len(key_bytes)
 
-    # keep track of which column (position) we have read from
+    # keep track of which column (relative position) we have read from
     col_pos = 0
 
     # read non-key columns
     header_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    # this is the abs addr value
+    header_abs_ubound = offset + header_size
+    print(f'In deserialize; key-size: {key_size}, data-header-len: {header_size}, data_size: {data_size}')
+    print(cell)
     # process column metadata
-    # header size includes size field - skip it at start at first column metadata
-    header_offset = INTEGER_SIZE
+    # initialize data header ptr
+    # points to first column metadata
+    header_offset = offset + INTEGER_SIZE
     # first address where data resides
     data_offset = offset + header_size
-    while header_offset <= header_size:
+    while header_offset < header_abs_ubound:
         # read until all column metadata has been run
         serial_type_value = Integer.deserialize(cell[header_offset: header_offset + INTEGER_SIZE])
         serial_type = SerialType(serial_type_value)
@@ -225,7 +234,7 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
             # handle fixed-value type, i.e. only null for now, boolean's would be similar
             assert datatype == Null
             values[column.name] = None
-        elif not datatype.is_fixed_length:
+        elif datatype.is_fixed_length:
             # handle fixed-length type
             # increment body by a fixed amount
             values[column.name] = datatype.deserialize(cell[data_offset: data_offset + datatype.fixed_length])
@@ -238,6 +247,11 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
             data_bstring = cell[data_offset: data_offset + varlen]
             values[column.name] = datatype.deserialize(data_bstring)
             data_offset += varlen
+
+    # add non-existent columns with null values
+    for column in schema.columns:
+        if column.name not in values:
+            values[column.name] = None
 
     record = Record(values, schema)
     return Response(True, body=record)

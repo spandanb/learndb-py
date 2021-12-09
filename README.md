@@ -57,11 +57,15 @@ The following are some parts of a DBMS (In no particular order):
 ## Run
 
 - Requires > python 3.10 and pytest
+
 - Run btree tests:
-`python -m pytest -s tests.py`
+`python -m pytest -s btree_tests.py`
+  
+- Run serde tests:
+`... serde_tests.py`
 
 - Run language parser tests:
-`python -m pytest -s lang_tests.py`
+`... lang_tests.py`
 
 - Run specific test:
 `python -m pytest tests.py -k test_name`
