@@ -37,7 +37,32 @@ def test_float_serde():
         assert abs(deser_val - value) < 0.001
 
 
-def test_schema_serde():
+def test_key_only_schema_serde():
+    """
+    Attempt to serialize and deserialize a schema
+    :return:
+    """
+    schema = Schema('dummy', [
+            Column('pkey', Integer, is_primary_key=True)
+        ])
+    # create a record that matches above schema
+    record = Record({"pkey": 1}, schema)
+
+    # serialize
+    resp = serialize_record(record)
+    assert resp.success, "serialize failed"
+    serialized = resp.body
+    # deserialize
+    resp = deserialize_cell(serialized, schema)
+    assert resp.success, "deserialize failed"
+    deserialized = resp.body
+
+    # validate original and deserialized record have the same value
+    for col in schema.columns:
+        assert record.values[col.name] == deserialized.values[col.name]
+
+
+def test_multi_column_fixed_len_type_serde():
     """
     Attempt to serialize and deserialize a schema
     :return:
@@ -45,8 +70,7 @@ def test_schema_serde():
     schema = Schema('dummy', [
             Column('pkey', Integer, is_primary_key=True),
             Column('name', Text),
-            Column('root_pagenum', Integer),
-            Column('sql', Text)
+            Column('root_pagenum', Integer)
         ])
     # create a record that matches above schema
     record = Record({"pkey": 1, "name": "some_table_nane", "root_pagenum": 2}, schema)
@@ -64,5 +88,32 @@ def test_schema_serde():
     for col in schema.columns:
         assert record.values[col.name] == deserialized.values[col.name]
 
+
+def test_nullable_serde():
+    """
+    Attempt to serialize and deserialize a schema
+    :return:
+    """
+    schema = Schema('dummy', [
+            Column('pkey', Integer, is_primary_key=True),
+            Column('name', Text),
+            Column('root_pagenum', Integer),
+            Column('sql', Text)
+        ])
+    # create a record that matches above schema
+    record = Record({"pkey": 1, "name": "some_table_nane", "root_pagenum": 2, "sql": None}, schema)
+
+    # serialize
+    resp = serialize_record(record)
+    assert resp.success, "serialize failed"
+    serialized = resp.body
+    # deserialize
+    resp = deserialize_cell(serialized, schema)
+    assert resp.success, "deserialize failed"
+    deserialized = resp.body
+
+    # validate original and deserialized record have the same value
+    for col in schema.columns:
+        assert record.values[col.name] == deserialized.values[col.name]
 
 

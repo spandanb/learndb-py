@@ -2,12 +2,13 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 
 PAGE_SIZE = 4096
-WORD = 32
+WORD = 4
 
 TABLE_MAX_PAGES = 100
 
 DB_FILE = 'db.file'
 
+# TODO: nuke consts for a fixed schema
 # serialized data layout (row)
 ID_SIZE = 6  # length in bytes
 BODY_SIZE = 58
@@ -47,9 +48,9 @@ performs internal consistency checks on tree
 
 # serialized data layout (tree nodes)
 # common node header layout
-NODE_TYPE_SIZE = 8
+NODE_TYPE_SIZE = WORD
 NODE_TYPE_OFFSET = 0
-IS_ROOT_SIZE = 8
+IS_ROOT_SIZE = WORD
 IS_ROOT_OFFSET = NODE_TYPE_SIZE
 # NOTE: this should be defined based on width of system register
 PARENT_POINTER_SIZE = WORD
