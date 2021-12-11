@@ -267,7 +267,7 @@ def get_cell_key(cell: bytes) -> int:
     return get_cell_key_in_page(cell, 0)
 
 
-def get_cell_key_in_page(page: bytes, cell_offset: int) -> int:
+def get_cell_key_in_page(node: bytes, cell_offset: int) -> int:
     """
     get key from cell given page num, cell_offset
 
@@ -278,14 +278,25 @@ def get_cell_key_in_page(page: bytes, cell_offset: int) -> int:
     :return:
     """
     offset = cell_offset
-    key_size = Integer.deserialize(page[offset: offset + INTEGER_SIZE])
+    key_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
     offset += CELL_KEY_SIZE_SIZE
     # skip over data size field
     offset += CELL_DATA_SIZE_SIZE
 
     # read key column
     # bytes corresponding to key
-    key_bytes = page[offset: offset + key_size]
+    key_bytes = node[offset: offset + key_size]
     key = Integer.deserialize(key_bytes)
     return key
+
+
+def get_cell_size(node: bytes, cell_offset: int) -> int:
+    offset = cell_offset
+    key_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
+    offset += CELL_KEY_SIZE_SIZE
+    # skip over data size field
+    data_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
+    offset += CELL_DATA_SIZE_SIZE
+    return INTEGER_SIZE + INTEGER_SIZE + key_size + data_size
+
 

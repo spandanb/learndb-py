@@ -11,7 +11,7 @@ from enum import Enum, auto
 from typing import Optional
 from itertools import chain
 
-from serde import get_cell_key
+from serde import get_cell_key, get_cell_size
 from utils import debug
 
 from constants import (WORD,
@@ -1454,6 +1454,8 @@ class Tree:
         """
         helper to calculate cell offset; this is the
         offset to the key for the given cell
+
+        TODO: nuke me - this is the unsupported; old API
         """
         return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_POINTER_SIZE
 
@@ -1770,14 +1772,17 @@ class Tree:
     @staticmethod
     def leaf_node_cell(node: bytes, cell_num: int) -> bytes:
         """
-        returns entire cell consisting of key and value
+        returns entire cell
         :param node:
         :param bytes:
         :param cell_num:
         :return:
         """
-        offset = Tree.leaf_node_cell_offset_old(cell_num)
-        return node[offset: offset + LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE]
+        # get cellptr from cell num
+        cellptr = Tree.leaf_node_cellptr(node, cell_num)
+        # get cell size
+        cell_size = get_cell_size(node, cellptr)
+        return node[cellptr: cellptr + cell_size]
 
     @staticmethod
     def leaf_node_num_cells(node: bytes) -> int:
@@ -1826,6 +1831,18 @@ class Tree:
         key_bytes = node[CELL_KEY_PAYLOAD_OFFSET: CELL_KEY_PAYLOAD_OFFSET + key_size]
         key = int.from_bytes(key_bytes, sys.byteorder)
         return key
+
+    @staticmethod
+    def leaf_node_cellptr(node: bytes, cell_num: int) -> int:
+        """
+        returns cellptr, i.e. offset to cell
+        :param node:
+        :param cell_num:
+        :return:
+        """
+        offset = LEAF_NODE_CELL_POINTER_START + cell_num * LEAF_NODE_CELL_POINTER_SIZE
+        binstr = node[offset: offset + LEAF_NODE_CELL_POINTER_SIZE]
+        return int.from_bytes(binstr, sys.byteorder)
 
     @staticmethod
     def leaf_node_cellptrs_starting_at(node: bytes, cell_num: int) -> bytes:

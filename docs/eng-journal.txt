@@ -265,9 +265,14 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 12/11
     Another issue is that of centralizing the serialization, e.g. of ints. This happens in 2 place, serialization in the
     context of records to be inserted. And in serialization of header field values for the btree. Right now, my inclination
-    is to keep them seperate, since int serialization is one line. but, the argument is not about the amount of code, but
+    is to keep them separate, since int serialization is one line. but, the argument is not about the amount of code, but
     about the level of abstraction that is exposed. and I think the btree as a manager of bytes, should control- at least
     in its headers- how these bytes are interpreted.
     And in some cases, the btree may want to opt for non-standard int impls e.g. smaller or larger than the default- types
     which may not make sense in the user accessible type system- since that type system will have a broader surface area, e.g.
     associated serial-types.
+
+12/11
+    Now consider select statements- how should results be piped. I like the idea of having a separate pipe like object that can
+    be used read the results as needed. The other option is just return a materialized list of results. Will do the latter for
+    the speed, and can consider the former latter.

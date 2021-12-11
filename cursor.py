@@ -44,7 +44,7 @@ class Cursor:
         :return:
         """
         node = self.pager.get_page(self.page_num)
-        cell = Tree.leaf_node_value(node, self.cell_num)
+        cell = Tree.leaf_node_cell(node, self.cell_num)
         return cell
 
     def insert_row(self, row: Row) -> Response:

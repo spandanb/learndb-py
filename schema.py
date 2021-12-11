@@ -104,7 +104,7 @@ class Record:
     def __str__(self):
         if self.values is None:
             return "Record(-)"
-        body = ", ".join(["{k}: {v}" for k, v in self.values.items()])
+        body = ", ".join([f"{k}: {v}" for k, v in self.values.items()])
         return f"Record({body})"
 
     def __repr__(self):
