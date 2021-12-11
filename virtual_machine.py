@@ -26,10 +26,11 @@ class VirtualMachine(Visitor):
         :param program:
         :return:
         """
-
+        result = []
         self.state_manager = state_manager
         for stmt in program.statements:
-            self.execute(stmt)
+            result.append(self.execute(stmt))
+
 
     def execute(self, stmnt: 'Symbol'):
         """
@@ -37,7 +38,7 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        stmnt.accept(self)
+        return stmnt.accept(self)
 
     # section : top-level handlers
 
@@ -103,7 +104,9 @@ class VirtualMachine(Visitor):
     def visit_select_expr(self, expr: SelectExpr):
         """
         Handle select expr
-        For now prints rows; should
+        For now prints rows/ or return entire result set
+        Later I can consider some fancier/performant mechanism like pipes
+
         :param expr:
         :return:
         """

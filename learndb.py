@@ -202,7 +202,8 @@ def devloop():
     virtmachine.run(p_resp.body, state_manager)
 
     # this should print the catalog
-    p_resp = prepare_statement("select * from catalog")
+    # what is the mechanism for print rows
+    p_resp = prepare_statement("select pkey, root_pagenum from catalog")
     if not p_resp.success:
         return EXIT_FAILURE
 
