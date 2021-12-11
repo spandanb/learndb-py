@@ -25,6 +25,7 @@ class DataType:
     is_serializable = False
     is_fixed_length = False
     fixed_length = 0
+    typename = "Untyped"
 
     @staticmethod
     def serialize(value) -> bytes:
@@ -63,6 +64,7 @@ class Integer(DataType):
     is_fixed_length = True
     fixed_length = INTEGER_SIZE
     is_serializable = True
+    typename = "Integer"
 
     @staticmethod
     def serialize(value: int) -> bytes:
@@ -89,6 +91,7 @@ class Float(DataType):
     is_fixed_length = True
     fixed_length = FLOAT_SIZE
     is_serializable = True
+    typename = "Float"
 
     @staticmethod
     def serialize(value: float) -> bytes:
@@ -116,6 +119,7 @@ class Text(DataType):
     is_fixed_length = False
     fixed_length = 0
     is_serializable = True
+    typename = "Text"
 
     @staticmethod
     def serialize(value: str):
@@ -150,6 +154,7 @@ class Null(DataType):
     is_fixed_length = True
     fixed_length = 0
     is_serializable = False
+    typename = "Null"
 
 
 class Blob(DataType):
@@ -159,6 +164,7 @@ class Blob(DataType):
     is_fixed_length = False
     fixed_length = 0
     is_serializable = True
+    typename = "Blob"
 
     @staticmethod
     def serialize(value: bytes) -> bytes:
