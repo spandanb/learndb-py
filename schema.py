@@ -236,7 +236,9 @@ def create_record(column_name_list: List, value_list: List, schema: Schema) -> R
     values = {}
     for idx, col_name in enumerate(column_name_list):
         value = value_list[idx]
-        values[col_name] = value.literal
+        # todo: verify this
+        extracted = getattr(value, 'literal', value)
+        values[col_name] = extracted
 
     record = Record(values, schema)
 

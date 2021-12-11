@@ -47,24 +47,26 @@ from constants import (WORD,
                        LEAF_NODE_HEADER_SIZE,
                        LEAF_NODE_KEY_SIZE,
 
-                       LEAF_NODE_KEY_OFFSET,
-                       LEAF_NODE_VALUE_SIZE,
-                       LEAF_NODE_VALUE_OFFSET,
-                       LEAF_NODE_CELL_SIZE,
-                       LEAF_NODE_SPACE_FOR_CELLS,
-                       LEAF_NODE_MAX_CELLS,
-                       LEAF_NODE_RIGHT_SPLIT_COUNT,
-                       LEAF_NODE_LEFT_SPLIT_COUNT,
+                       LEAF_NODE_MAX_CELL_SIZE,
+                       LEAF_NODE_MAX_CELLS,  # for debugging
+                       # todo: nuke these
+                       #LEAF_NODE_KEY_OFFSET,
+                       #LEAF_NODE_VALUE_SIZE,
+                       #LEAF_NODE_VALUE_OFFSET,
+                       #LEAF_NODE_CELL_SIZE,
+                       #LEAF_NODE_SPACE_FOR_CELLS,
+                       #LEAF_NODE_RIGHT_SPLIT_COUNT,
+                       #LEAF_NODE_LEFT_SPLIT_COUNT,
 
                        # below are newly defined consts
                        LEAF_NODE_CELL_POINTER_START,
                        LEAF_NODE_CELL_POINTER_SIZE,
 
-                       LEAF_NODE_KEY_SIZE_OFFSET,
-                       LEAF_NODE_KEY_SIZE_SIZE,
-                       LEAF_NODE_KEY_PAYLOAD_OFFSET,
-LEAF_NODE_ALLOC_POINTER_OFFSET,
-LEAF_NODE_ALLOC_POINTER_SIZE
+                       CELL_KEY_SIZE_OFFSET,
+                       CELL_KEY_SIZE_SIZE,
+                       CELL_KEY_PAYLOAD_OFFSET,
+                       LEAF_NODE_ALLOC_POINTER_OFFSET,
+                       LEAF_NODE_ALLOC_POINTER_SIZE
                        )
 
 
@@ -153,7 +155,7 @@ class Tree:
             cell_num = self.leaf_node_find(page_num, key)
             return page_num, cell_num
 
-    def insert(self, key: int, value: bytes) -> TreeInsertResult:
+    def insert(self, cell: bytes) -> TreeInsertResult:
         """
         insert a `key` into the tree
 
@@ -180,16 +182,16 @@ class Tree:
             Finally, if a the right(-most) child is updated, then it's ancestors
             keys for the children may need to be updated.
 
-        :param key: key to insert
-        :param value: value associated with key
+        :param cell: cell to insert (contains key)
         :return:
         """
+        key = get_cell_key(cell)
         page_num, cell_num = self.find(key)
         node = self.pager.get_page(page_num)
         if self.leaf_node_key(node, cell_num) == key:
             return TreeInsertResult.DuplicateKey
 
-        self.leaf_node_insert(page_num, cell_num, key, value)
+        self.leaf_node_insert(page_num, cell_num, key, cell)
         return TreeInsertResult.Success
 
     def delete(self, key: int):
@@ -642,15 +644,18 @@ class Tree:
 
         # calculate space needed
         space_needed = len(cell)
+        assert space_needed <= LEAF_NODE_MAX_CELL_SIZE, "cell exceeds max size"
+
         # todo: if space_needed > max-cell-that-can-fit-on-empty-page: raise exception
         # space available is from tail of cell ptr array to alloc_ptr
         unalloc_head = Tree.leaf_node_unallocated_offset(node)
         alloc_ptr = Tree.leaf_node_alloc_ptr(node)
         space_available = alloc_ptr - unalloc_head
         # note: having a max number of cells is only needed for debugging
-        if space_available >= space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
+        if space_available <= space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
             # node full - split node and insert
             # todo: fix leaf_node_split_and_insert
+            raise Exception("no way leaf is full")
             self.leaf_node_split_and_insert(page_num, cell_num, key, cell)
             return
 
@@ -673,6 +678,7 @@ class Tree:
 
         # copy cell contents onto node
         # the cell will be copied starting at the new alloc_ptr location
+        print(f'writing cell to {new_alloc_ptr}')
         Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
 
         # update the alloc ptr
@@ -1427,6 +1433,7 @@ class Tree:
     def initialize_leaf_node(node: bytes):
         Tree.set_node_type(node, NodeType.NodeLeaf)
         Tree.set_leaf_node_num_cells(node, 0)
+        Tree.set_leaf_node_alloc_ptr(node, PAGE_SIZE)
 
     # section: utility methods
 
@@ -1448,7 +1455,7 @@ class Tree:
         helper to calculate cell offset; this is the
         offset to the key for the given cell
         """
-        return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_SIZE
+        return LEAF_NODE_HEADER_SIZE + cell_num * LEAF_NODE_CELL_POINTER_SIZE
 
     @staticmethod
     def leaf_node_cell_offset(node: bytes, cell_num: int):
@@ -1812,11 +1819,11 @@ class Tree:
         cell_offset = Tree.leaf_node_cell_offset(node, cell_num)
         # the cell is formatted like: key-size, data-size, key-payload, data-payload
         # NOTE: the key-size is fixed size, but this indirection will allow variable length keys in the future
-        key_size_offset = cell_offset + LEAF_NODE_KEY_SIZE_OFFSET
-        key_size_bytes = node[key_size_offset: key_size_offset + LEAF_NODE_KEY_SIZE_SIZE]
+        key_size_offset = cell_offset + CELL_KEY_SIZE_OFFSET
+        key_size_bytes = node[key_size_offset: key_size_offset + CELL_KEY_SIZE_SIZE]
         key_size = int.from_bytes(key_size_bytes, sys.byteorder)
 
-        key_bytes = node[LEAF_NODE_KEY_PAYLOAD_OFFSET: LEAF_NODE_KEY_PAYLOAD_OFFSET + key_size]
+        key_bytes = node[CELL_KEY_PAYLOAD_OFFSET: CELL_KEY_PAYLOAD_OFFSET + key_size]
         key = int.from_bytes(key_bytes, sys.byteorder)
         return key
 
@@ -1950,18 +1957,21 @@ class Tree:
         :param alloc_ptr:
         :return:
         """
-        raise NotImplementedError
+        value = alloc_ptr.to_bytes(LEAF_NODE_ALLOC_POINTER_SIZE, sys.byteorder)
+        node[LEAF_NODE_ALLOC_POINTER_OFFSET: LEAF_NODE_ALLOC_POINTER_OFFSET + LEAF_NODE_ALLOC_POINTER_SIZE] = value
 
     @staticmethod
-    def set_leaf_node_cellptr(node: bytes, cell_num: int, cellptr: bytes/int):
+    def set_leaf_node_cellptr(node: bytes, cell_num: int, cellptr: int):
         """
         This should set the actual cellptr value, i.e. the offset.
         :param node:
-        :param cell_num:
-        :param cellptr: should this be an int or bytes?
+        :param cell_num: 0-based position
+        :param cellptr: int corresponding to offset value
         :return:
         """
-        raise NotImplementedError
+        offset = LEAF_NODE_CELL_POINTER_START + LEAF_NODE_CELL_POINTER_SIZE * cell_num
+        cbytes = cellptr.to_bytes(LEAF_NODE_CELL_POINTER_SIZE, sys.byteorder)
+        node[offset: offset + len(cbytes)] = cbytes
 
     @staticmethod
     def set_leaf_node_cellptrs_starting_at(node: bytes, cell_num: int, cellptrs: bytes):
@@ -2005,14 +2015,14 @@ class Tree:
         node[offset: offset + LEAF_NODE_VALUE_SIZE] = value
 
     @staticmethod
-    def set_leaf_node_cell(node: bytes, cell_num: int, cell: bytes):
+    def set_leaf_node_cell(node: bytes, cell_offset: int, cell: bytes):
         """
-        write both key and value for a given cell
+        write cell to given offset
+
+        :param cell_offset: abs offset on node
+        :param cell: cell to write
         """
-        offset = Tree.leaf_node_cell_offset_old(cell_num)
-        assert len(cell) == LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE, \
-            f"cell length [{len(cell)}] not equal to key len {LEAF_NODE_KEY_SIZE} plus value length {LEAF_NODE_VALUE_SIZE}"
-        node[offset: offset + LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE] = cell
+        node[cell_offset: cell_offset + len(cell)] = cell
 
     @staticmethod
     def set_leaf_node_key_value(node: bytes, cell_num: int, key: int, value: bytes):
