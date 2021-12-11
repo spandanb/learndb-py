@@ -2,7 +2,7 @@
 from cursor import Cursor
 from table import Table
 from statemanager import StateManager
-from schema import Record, create_record, create_catalog_record, generate_schema
+from schema import Record, create_record, create_catalog_record, generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 from dataexchange import Response, ExecuteResult, Statement, Row
 
@@ -17,8 +17,16 @@ class VirtualMachine(Visitor):
     containing information of all objects (tables + indices).
 
     """
-    def __init__(self):
-        self.state_manager = None
+    def __init__(self, state_manager):
+        self.state_manager = state_manager
+        self.parser = None
+
+    def init(self):
+        """
+        handle init, e.g. create
+        :return:
+        """
+        self.parser = None
 
     def run(self, program, state_manager):
         """
@@ -86,8 +94,10 @@ class VirtualMachine(Visitor):
         # 4. construct record for table
         # NOTE: for now using page_num as unique int key
         pkey = page_num
+        sql_text = schema_to_ddl(schema)
+        print(f'generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
-        response = create_catalog_record(pkey, table_name, page_num, catalog_schema)
+        response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
         if not response.success:
             return Response(False, error_message=f'Failure due to {response.error_message}')
 

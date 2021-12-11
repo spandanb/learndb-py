@@ -56,7 +56,6 @@ class Schema:
         body = ' '.join([col.name for col in self.columns])
         return f'Schema({str(self.name)}, {str(body)})'
 
-
     def __repr__(self):
         return str(self)
 
@@ -87,8 +86,40 @@ class CatalogSchema(Schema):
             Column('pkey', Integer, is_primary_key=True),
             Column('name', Text),
             Column('root_pagenum', Integer),
-            Column('sql', Text)
+            Column('sql_text', Text)
         ]
+
+
+def schema_to_ddl(schema: Schema) -> str:
+    """
+    convert a schema to canonical ddl
+
+    parser rule:
+        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
+
+    e.g. ddl
+    create table catalog (
+        pkey int primary key
+        type  text,
+        name text,
+        tbl_name text,
+        rootpage integer,
+        sql text
+    )
+
+    :return:
+    """
+    column_defs = []
+    for column in schema.columns:
+        if column.is_primary_key:
+            # key is the first column in ddl
+            # primary key implies not null
+            column_defs.insert(0, f'{column.name} {column.datatype.typename} PRIMARY KEY')
+        else:
+            null_cond = "" if column.is_nullable else "NOT NULL"
+            column_defs.append(f'{column.name} {column.datatype.typename} {null_cond}')
+    column_def_body = ", ".join(column_defs)
+    return f'CREATE TABLE {schema.name} ( {column_def_body} )'
 
 
 class Record:
@@ -185,7 +216,8 @@ def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
         if not resp.success:
             return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
         datatype = resp.body
-        column = Column(coldef.column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
+        column_name = coldef.column_name.literal.lower()
+        column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
     schema.columns = columns
 
@@ -250,7 +282,7 @@ def create_record(column_name_list: List, value_list: List, schema: Schema) -> R
     return Response(True, body=record)
 
 
-def create_catalog_record(pkey: int, table_name: str, root_page_num: int, catalog_schema: CatalogSchema):
+def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):
     """
     Create a catalog record
     :param pkey:
@@ -260,6 +292,8 @@ def create_catalog_record(pkey: int, table_name: str, root_page_num: int, catalo
     :return:
     """
 
-    return create_record(['pkey', 'name', 'root_pagenum'], [pkey, table_name, root_page_num], catalog_schema)
+    return create_record(['pkey', 'name', 'root_pagenum', 'sql_text'],
+                         [pkey, table_name, root_page_num, sql_text],
+                         catalog_schema)
 
 
