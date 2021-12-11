@@ -256,3 +256,18 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     beyond a certain level- the gain in productivity is limited.
 
 
+12/11
+    serde.py::get_cell_key(page, ) vs. btree knowing how to read key from a cell
+    the latter diffuses the logic for reading cells and leads to multiple reader implementations.
+    the former, requires passing the entire page, since I can't create a referential slice on a subset of the page.
+    this is problematic because there is a higher risk of corrupting a page due to errors.
+
+12/11
+    Another issue is that of centralizing the serialization, e.g. of ints. This happens in 2 place, serialization in the
+    context of records to be inserted. And in serialization of header field values for the btree. Right now, my inclination
+    is to keep them seperate, since int serialization is one line. but, the argument is not about the amount of code, but
+    about the level of abstraction that is exposed. and I think the btree as a manager of bytes, should control- at least
+    in its headers- how these bytes are interpreted.
+    And in some cases, the btree may want to opt for non-standard int impls e.g. smaller or larger than the default- types
+    which may not make sense in the user accessible type system- since that type system will have a broader surface area, e.g.
+    associated serial-types.

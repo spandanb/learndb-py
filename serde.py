@@ -1,8 +1,8 @@
 import sys
 from enum import Enum
 
-from constants import (LEAF_NODE_KEY_SIZE_SIZE,
-                       LEAF_NODE_DATA_SIZE_SIZE,
+from constants import (CELL_KEY_SIZE_SIZE,
+                       CELL_DATA_SIZE_SIZE,
                        INTEGER_SIZE,
                        FLOAT_SIZE
                        )
@@ -157,8 +157,8 @@ def serialize_record(record: Record) -> Response:
     key_size = Integer.serialize(len(key))
     data_payload = data_header + data
     data_size = Integer.serialize(len(data_payload))
-    print(f'In serialize; key-size: {key_size}, data-header-len: {data_header_len}, data_size: {data_size}')
-    #print(cell)
+    # print(f'In serialize; key-size: {key_size}, data-header-len: {data_header_len}, data_size: {data_size}')
+    # print(cell)
     cell = key_size + data_size + key + data_payload
     return Response(True, body=cell)
 
@@ -173,11 +173,10 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     values = {}  # colname -> value
     # read the columns in the cell
     offset = 0
-    # TODO: seems LEAF_NODE_KEY_SIZE_SIZE is same as INTEGER_SIZE; replace former with latter
-    key_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_KEY_SIZE_SIZE])
-    offset += LEAF_NODE_KEY_SIZE_SIZE
-    data_size = Integer.deserialize(cell[offset: offset + LEAF_NODE_DATA_SIZE_SIZE])
-    offset += LEAF_NODE_DATA_SIZE_SIZE
+    key_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    offset += CELL_KEY_SIZE_SIZE
+    data_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    offset += CELL_DATA_SIZE_SIZE
 
     # read key column
     # bytes corresponding to key
@@ -198,8 +197,10 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     header_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
     # this is the abs addr value
     header_abs_ubound = offset + header_size
-    print(f'In deserialize; key-size: {key_size}, data-header-len: {header_size}, data_size: {data_size}')
-    print(cell)
+
+    # print(f'In deserialize; key-size: {key_size}, data-header-len: {header_size}, data_size: {data_size}')
+    # print(cell)
+
     # process column metadata
     # initialize data header ptr
     # points to first column metadata
@@ -256,4 +257,35 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     record = Record(values, schema)
     return Response(True, body=record)
 
+
+def get_cell_key(cell: bytes) -> int:
+    """
+
+    :param cell:
+    :return:
+    """
+    return get_cell_key_in_page(cell, 0)
+
+
+def get_cell_key_in_page(page: bytes, cell_offset: int) -> int:
+    """
+    get key from cell given page num, cell_offset
+
+    rename to: _in_node
+
+    :param page:
+    :param cell_offset:
+    :return:
+    """
+    offset = cell_offset
+    key_size = Integer.deserialize(page[offset: offset + INTEGER_SIZE])
+    offset += CELL_KEY_SIZE_SIZE
+    # skip over data size field
+    offset += CELL_DATA_SIZE_SIZE
+
+    # read key column
+    # bytes corresponding to key
+    key_bytes = page[offset: offset + key_size]
+    key = Integer.deserialize(key_bytes)
+    return key
 

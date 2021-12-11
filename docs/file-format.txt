@@ -37,7 +37,7 @@ Leaf Node Cell Ptrs
 Leaf Node Cell
 --------------
 - cell -> [key-size, data-size, key-payload, data-payload)]
-    -- data payload will be divided into header and body
+    -- data payload -> [header, body]
     -- data header -> [size of header, serial types (size of variable length value)]
     -- data body -> concatenated bytes of serialized values (in definition order)
     -- all data must fit in a cell, i.e. no overflow- this limits the max content size to what can fit in a single cell
@@ -69,6 +69,7 @@ Free space is managed via:
     - Allocation ptr (alloc_ptr) moves towards smaller addresses
     - alloc_ptr points past the first allocatable byte, i.e. on page of size 4096 it is initialized to 4096.
         - the last indexable byte is 4095
+        - to insert a blob of size N, e.g. 8, we write to address: [alloc_ptr - N: alloc_ptr]
 
 2) Free list - singly-linked list
     - each free nodes stores: 1) size of current block, 2) location (abs offset) of next block

@@ -92,9 +92,12 @@ class VirtualMachine(Visitor):
 
         # 5. serialize record
         schema_record = response.body
-        cell = serialize_record(schema_record)
+        response = serialize_record(schema_record)
+        if not response.success:
+            return Response(False, error_message=f'Serialization failed: [{response.error_message}]')
 
         # 6. insert entry into catalog
+        cell = response.body
         catalog_tree.insert(cell)
 
     def visit_select_expr(self, expr: SelectExpr):

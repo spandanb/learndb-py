@@ -201,6 +201,13 @@ def devloop():
 
     virtmachine.run(p_resp.body, state_manager)
 
+    # this should print the catalog
+    p_resp = prepare_statement("select * from catalog")
+    if not p_resp.success:
+        return EXIT_FAILURE
+
+    virtmachine.run(p_resp.body, state_manager)
+
     # input_handler("select foo from bar", database, virtmachine)
     # input_handler("create table foo (colA text , colB text); select bar from foo", database, virtmachine)
 
