@@ -178,7 +178,10 @@ class Tokenizer:
         # consume until we see an alphanumeric char
         while self.peek().isidentifier():
             self.advance()
-        identifier = self.source[self.start: self.current]
+
+        # NOTE: keywords are case-insensitive; internally we'll
+        # use the lower-cased token
+        identifier = self.source[self.start: self.current].lower()
         if identifier in KEYWORDS:
             # reserved keyword
             token_type = TokenType[identifier.upper()]

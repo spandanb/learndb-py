@@ -44,7 +44,9 @@ class VirtualMachine(Visitor):
             table_record = resp.body
 
             # get schema by parsing sql_text
-            parser.parse(table_record.get("sql_text"))
+            sql_text = table_record.get("sql_text")
+            print(f"bootstrapping schema from [{sql_text}]")
+            parser.parse(sql_text)
             assert parser.is_success(), "catalog sql parse failed"
             program = parser.get_parsed()
             assert len(program.statements) == 1
@@ -59,8 +61,8 @@ class VirtualMachine(Visitor):
             tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
 
             # register schema
-            self.state_manager.register_schema(table_record.name, table_schema)
-            self.state_manager.register_tree(table_record.name, tree)
+            self.state_manager.register_schema(table_record.get("name"), table_schema)
+            self.state_manager.register_tree(table_record.get("name"), tree)
 
             cursor.advance()
 
@@ -110,7 +112,7 @@ class VirtualMachine(Visitor):
         assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
-        assert self.state_manager.table_exists(table_name), f"table {table_name} exists"
+        assert self.state_manager.table_exists(table_name) is False, f"table {table_name} exists"
 
         # 3. allocate tree for new table
         page_num = self.state_manager.allocate_tree()
@@ -133,6 +135,7 @@ class VirtualMachine(Visitor):
 
         # 6. insert entry into catalog
         cell = response.body
+        catalog_tree = self.state_manager.get_catalog_tree()
         catalog_tree.insert(cell)
 
     def visit_select_expr(self, expr: SelectExpr):

@@ -190,6 +190,7 @@ class Parser:
                 self.consume(TokenType.SEMI_COLON, "Expected [;]")
             else:
                 self.report_error("Unexpected token", self.peek())
+                break
         return Program(program)
 
     def create_stmnt(self) -> CreateStmnt:
