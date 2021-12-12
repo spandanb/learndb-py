@@ -141,6 +141,9 @@ class Record:
     def __repr__(self):
         return str(self)
 
+    def get(self, key: str):
+        return self.values[key]
+
 
 def validate_schema(schema: Schema) -> Response:
     """
