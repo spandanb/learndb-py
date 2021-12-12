@@ -193,13 +193,13 @@ def devloop():
     state_manager = StateManager(DB_FILE)
 
     # create virtual machine
-    virtmachine = VirtualMachine()
+    virtmachine = VirtualMachine(state_manager)
 
     p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
     if not p_resp.success:
         return EXIT_FAILURE
 
-    virtmachine.run(p_resp.body, state_manager)
+    virtmachine.run(p_resp.body)
 
     # this should print the catalog
     # what is the mechanism for print rows
@@ -207,13 +207,14 @@ def devloop():
     if not p_resp.success:
         return EXIT_FAILURE
 
-    virtmachine.run(p_resp.body, state_manager)
+    virtmachine.run(p_resp.body)
 
     # input_handler("select foo from bar", database, virtmachine)
     # input_handler("create table foo (colA text , colB text); select bar from foo", database, virtmachine)
 
-    # handler = SqlFrontEnd()
-    # handler.parse()
+    # close statemanager to push changed state to disk
+    state_manager.close()
+
 
 
 def parse_args_and_start(args: list):

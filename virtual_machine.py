@@ -1,5 +1,6 @@
 # from __future__ import annotations
 from cursor import Cursor
+from btree import Tree
 from table import Table
 from statemanager import StateManager
 from schema import Record, create_record, create_catalog_record, generate_schema, schema_to_ddl
@@ -8,6 +9,7 @@ from dataexchange import Response, ExecuteResult, Statement, Row
 
 from lang_parser.visitor import Visitor
 from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr, InsertStmnt, DeleteStmnt
+from lang_parser.sqlhandler import SqlFrontEnd
 
 
 class VirtualMachine(Visitor):
@@ -17,28 +19,60 @@ class VirtualMachine(Visitor):
     containing information of all objects (tables + indices).
 
     """
-    def __init__(self, state_manager):
+    def __init__(self, state_manager: StateManager):
         self.state_manager = state_manager
-        self.parser = None
+        self.init()
 
     def init(self):
         """
-        handle init, e.g. create
+        read the catalog, materialize table metadata and register with the statemanager
         :return:
         """
-        self.parser = None
+        # get/register all tables' metadata from catalog
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_schema = self.state_manager.get_catalog_schema()
+        pager = self.state_manager.get_pager()
+        cursor = Cursor(pager, catalog_tree)
 
-    def run(self, program, state_manager):
+        parser = SqlFrontEnd()
+
+        # iterate over table entries
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
+            resp = deserialize_cell(cell, catalog_schema)
+            assert resp.success, "deserialize failed while bootstrapping catalog"
+            table_record = resp.body
+
+            # get schema by parsing sql_text
+            parser.parse(table_record.get("sql_text"))
+            assert parser.is_success(), "catalog sql parse failed"
+            program = parser.get_parsed()
+            assert len(program.statements) == 1
+            stmnt = program.statements[0]
+            assert isinstance(stmnt, CreateStmnt)
+            resp = generate_schema(stmnt)
+            assert resp.success, "schema generation failed"
+            table_schema = resp.body
+
+            # get tree
+            # should vm be responsible for this
+            tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
+
+            # register schema
+            self.state_manager.register_schema(table_record.name, table_schema)
+            self.state_manager.register_tree(table_record.name, tree)
+
+            cursor.advance()
+
+    def run(self, program):
         """
         run the virtual machine with program on state
         :param program:
         :return:
         """
         result = []
-        self.state_manager = state_manager
         for stmt in program.statements:
             result.append(self.execute(stmt))
-
 
     def execute(self, stmnt: 'Symbol'):
         """
@@ -76,17 +110,7 @@ class VirtualMachine(Visitor):
         assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
-        # create cursor on catalog table
-        pager = self.state_manager.get_pager()
-        catalog_tree = self.state_manager.get_catalog_tree()
-        cursor = Cursor(pager, catalog_tree)
-
-        # todo: iterate over all records to get all table names
-        # while cursor.end_of_table is False:
-        #    cell = cursor.get_cell()
-        #    record = deserialize_cell(cell, schema)
-        #    print(f"printing record: {record}")
-        #    cursor.advance()
+        assert self.state_manager.table_exists(table_name), f"table {table_name} exists"
 
         # 3. allocate tree for new table
         page_num = self.state_manager.allocate_tree()

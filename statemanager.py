@@ -82,6 +82,9 @@ class StateManager:
         """
         return self.pager.get_unused_page_num()
 
+    def table_exists(self, table_name: str) -> bool:
+        return table_name in self.trees
+
     def register_tree(self, table_name: str, tree: Tree):
         self.trees[table_name] = tree
 
