@@ -188,6 +188,8 @@ def devloop():
     this works through the entire intialize process
     :return:
     """
+    #if os.path.exists(DB_FILE):
+    #    os.remove(DB_FILE)
 
     # create state manager
     state_manager = StateManager(DB_FILE)
@@ -195,11 +197,11 @@ def devloop():
     # create virtual machine
     virtmachine = VirtualMachine(state_manager)
 
-    p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
-    if not p_resp.success:
-        return EXIT_FAILURE
-
-    virtmachine.run(p_resp.body)
+    #p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
+    #if not p_resp.success:
+    #    print(f"failure due to {p_resp.error_message}")
+    #    return EXIT_FAILURE
+    #virtmachine.run(p_resp.body)
 
     # this should print the catalog
     # what is the mechanism for print rows
