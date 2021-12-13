@@ -271,6 +271,7 @@ def create_record(column_name_list: List, value_list: List, schema: Schema) -> R
     values = {}
     for idx, col_name in enumerate(column_name_list):
         value = value_list[idx]
+
         # todo: verify this
         extracted = getattr(value, 'literal', value)
         values[col_name] = extracted
