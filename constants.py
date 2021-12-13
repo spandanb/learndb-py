@@ -7,6 +7,7 @@ WORD = 4
 TABLE_MAX_PAGES = 100
 
 DB_FILE = 'db.file'
+TEST_DB_FILE = 'testdb.file'
 
 # TODO: nuke consts for a fixed schema
 # serialized data layout (row)

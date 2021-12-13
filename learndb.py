@@ -79,19 +79,21 @@ def is_meta_command(command: str) -> bool:
     return command[0] == '.'
 
 
-def do_meta_command(command: str, database: Database) -> Response:
+def do_meta_command(command: str, virtual_machine) -> Response:
+    state_manager = virtual_machine.state_manager
     if command == ".quit":
-        database.db_close()
+        state_manager.close()
         # reconsider exiting thus
         sys.exit(EXIT_SUCCESS)
     elif command == ".btree":
         print("Printing tree" + "-"*50)
-        database.print_tree()
+        state_manager.print_tree()
         print("Finished printing tree" + "-"*50)
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".validate":
+        # TODO: get table name
         print("Validating tree....")
-        database.validate_tree()
+        state_manager.validate_tree()
         print("Validation succeeded.......")
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".nuke":
@@ -103,7 +105,7 @@ def do_meta_command(command: str, database: Database) -> Response:
     return Response(False, status=MetaCommandResult.UnrecognizedCommand)
 
 
-def prepare_statement(command)-> Response:
+def prepare_statement(command) -> Response:
     """
     prepare statement, i.e. parse statement and
     return it's AST. For now the AST structure is the prepared
@@ -119,17 +121,17 @@ def prepare_statement(command)-> Response:
     return Response(True, body=parser.get_parsed())
 
 
-def execute_statement(program: Program, database: Database, virtmachine: VirtualMachine) -> Response:
+def execute_statement(program: Program, virtmachine: VirtualMachine) -> Response:
     """
     execute statement;
     returns return value of child-invocation
     """
     print("In execute_statement; ")
-    resp = virtmachine.run(program, database)
+    resp = virtmachine.run(program)
     return Response(True)
 
 
-def input_handler(input_buffer: str, database: Database, virtmachine: VirtualMachine):
+def input_handler(input_buffer: str, virtmachine: VirtualMachine):
     """
     handle input
 
@@ -141,7 +143,7 @@ def input_handler(input_buffer: str, database: Database, virtmachine: VirtualMac
     :return:
     """
     if is_meta_command(input_buffer):
-        m_resp = do_meta_command(input_buffer)
+        m_resp = do_meta_command(input_buffer, virtmachine)
         if m_resp.success == MetaCommandResult.Success:
             return Response(True, status=MetaCommandResult.Success)
 
@@ -158,7 +160,7 @@ def input_handler(input_buffer: str, database: Database, virtmachine: VirtualMac
     # handle non-meta command
     # execute statement can be handled by the interpreter
     program = p_resp.body
-    e_resp = execute_statement(program, database, virtmachine)
+    e_resp = execute_statement(program, virtmachine)
     if e_resp.success:
         print(f"Execution of command '{input_buffer}' succeeded")
         return Response(True, body=e_resp.body)
@@ -176,11 +178,15 @@ def repl():
     state_manager = StateManager(DB_FILE)
 
     # create virtual machine
-    virtmachine = VirtualMachine()
+    # output pipe
+    pipe = Pipe()
+    virtmachine = VirtualMachine(state_manager, pipe)
 
     while True:
         input_buffer = input("db > ")
-        input_handler(input_buffer, state_manager, virtmachine)
+        input_handler(input_buffer, virtmachine)
+        if pipe.has_msgs():
+            print(pipe.read())
 
 
 def devloop():
@@ -225,7 +231,6 @@ def devloop():
     state_manager.close()
 
 
-
 def parse_args_and_start(args: list):
     """
     parse args and starts
@@ -236,6 +241,8 @@ python learndb.py repl
     // start repl
 python learndb.py devloop
     // start a dev-loop function
+python learndb.py file <filepath>
+    // read file at <filepath>
     """
     if len(args) < 1:
         print(f"Error: run-mode not specified")
@@ -247,6 +254,8 @@ python learndb.py devloop
         repl()
     elif runmode == 'devloop':
         devloop()
+    elif runmode == 'file':
+        pass
     else:
         print(f"Error: Invalid run mode [{runmode}]")
         print(args_description)
