@@ -9,7 +9,7 @@ from typing import Union, List, Any
 from dataclasses import dataclass
 from enum import Enum, auto
 from random import randint  # for testing
-
+from pipe import Pipe
 
 from constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
 from dataexchange import Response, Row, MetaCommandResult, ExecuteResult, PrepareResult
@@ -188,31 +188,38 @@ def devloop():
     this works through the entire intialize process
     :return:
     """
-    #if os.path.exists(DB_FILE):
+    # if os.path.exists(DB_FILE):
     #    os.remove(DB_FILE)
 
     # create state manager
     state_manager = StateManager(DB_FILE)
 
+    # output pipe
+    pipe = Pipe()
+
     # create virtual machine
-    virtmachine = VirtualMachine(state_manager)
+    virtmachine = VirtualMachine(state_manager, pipe)
 
-    #p_resp = prepare_statement("create table foo ( colA integer primary key, colB text)")
-    #if not p_resp.success:
-    #    print(f"failure due to {p_resp.error_message}")
-    #    return EXIT_FAILURE
-    #virtmachine.run(p_resp.body)
+    # create table
+    cmds = [
+        # "create table foo ( colA integer primary key, colB text)",
+        "select pkey, root_pagenum from catalog",
+        "insert into foo (colA, colB) values (4, 'hellew words')",
+        "select colA, colB  from foo"
+    ]
 
-    # this should print the catalog
-    # what is the mechanism for print rows
-    p_resp = prepare_statement("select pkey, root_pagenum from catalog")
-    if not p_resp.success:
-        return EXIT_FAILURE
+    for cmd in cmds:
+        print(f"handling [{cmd}]")
+        p_resp = prepare_statement(cmd)
+        if not p_resp.success:
+            print(f"failure due to {p_resp.error_message}")
+            return EXIT_FAILURE
 
-    virtmachine.run(p_resp.body)
+        virtmachine.run(p_resp.body)
 
-    # input_handler("select foo from bar", database, virtmachine)
-    # input_handler("create table foo (colA text , colB text); select bar from foo", database, virtmachine)
+        # print anything in the output buffer
+        while pipe.has_msgs():
+            pipe.read()
 
     # close statemanager to push changed state to disk
     state_manager.close()
