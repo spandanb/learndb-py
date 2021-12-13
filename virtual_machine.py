@@ -167,15 +167,21 @@ class VirtualMachine(Visitor):
             cursor.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
-        table_name = stmnt.table_name
+        # identifier are case sensitive, so don't convert
+        table_name = stmnt.table_name.literal
 
         # get schema
         schema = self.state_manager.get_schema(table_name)
 
         # extract values from stmnt and construct record
-        # todo: extract literal from tokens
-        record = create_record(stmnt.column_name_list, stmnt.value_list, schema)
-
+        # extract literal from tokens
+        column_names = [col_token.literal for col_token in stmnt.column_name_list]
+        # cast value literals into the correct type
+        # vm is responsible for glue between parser and execution
+        value_list = [value_token.value.literal for value_token in stmnt.value_list]
+        resp = create_record(column_names, value_list, schema)
+        assert resp.success, f"create record failed due to {resp.error_message}"
+        record = resp.body
         # get table's tree
         tree = self.state_manager.get_tree(table_name)
 

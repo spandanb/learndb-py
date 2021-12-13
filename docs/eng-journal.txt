@@ -276,3 +276,8 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     Now consider select statements- how should results be piped. I like the idea of having a separate pipe like object that can
     be used read the results as needed. The other option is just return a materialized list of results. Will do the latter for
     the speed, and can consider the former latter.
+
+12/12
+    How strict should the type system be? Right now the tokenizer reads all numbers as floats. But this causes
+    problems downstream in the vm- since the type system is rigid and reading a integer valued float
+    raises a value validation error. For now will update the tokenizer to distinguish floats and ints.

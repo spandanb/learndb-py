@@ -62,8 +62,12 @@ class Parser:
 
         truncate_stmnt -> "truncate" table_name
 
-        -- term should also handle other literals
         term          -> NUMBER | STRING | IDENTIFIER
+
+        INTEGER_NUMBER        -> {0-9}+
+        FLOAT_NUMBER          -> {0-9}+(.{0-9}+)?
+        STRING        -> '.*'
+        IDENTIFIER    -> {_a-zA-z0-9}+
     """
     def __init__(self, tokens: List, raise_exception=True):
         self.tokens = tokens
@@ -412,7 +416,7 @@ class Parser:
 
         :return:
         """
-        if self.match(TokenType.NUMBER, TokenType.STRING, TokenType.IDENTIFIER):
+        if self.match(TokenType.INTEGER_NUMBER, TokenType.FLOAT_NUMBER, TokenType.STRING, TokenType.IDENTIFIER):
             return Term(value=self.previous())
         self.report_error("expected a valid term")
 

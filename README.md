@@ -104,3 +104,50 @@ performs internal consistency checks on tree
 > .validate
 
 Deleting the `db.file` will effectively drop the entire database.
+
+### Supported Grammar
+
+Reproduced from `lang_parser/sqlparser.py`
+
+```
+    grammar :
+        program -> (stmnt ";") * EOF
+
+        stmnt   -> select_expr
+                | create_stmnt
+                | drop_stmnt
+                | insert_stmnt
+                | update_stmnt
+                | delete_stmnt
+                | truncate_stmnt
+
+        select_expr  -> "select" selectable "from" from_item "where" where_clause
+        selectable    -> (column_name ",")* (column_name)
+        column_name   -> IDENTIFIER
+        from_location -> IDENTIFIER
+        where_clause  -> (and_clause "or")* (and_clause)
+        and_clause    -> (predicate "and")* (predicate)
+        predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
+
+        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
+        column_def_list -> (column_def ",")* column_def
+        column_def -> column_name datatype ("primary key")? ("not null")?
+        table_name -> IDENTIFIER
+
+        drop_stmnt -> "drop" "table" table_name
+
+        insert_stmnt -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
+        column_name_list -> (column_name ",")* column_name
+        value_list -> (value ",")* value
+
+        delete_stmnt -> "delete" "from" table_name ("where" where_clause)?
+
+        update_stmnt -> "update" table_name "set" column_name = value ("where" where_clause)?
+
+        truncate_stmnt -> "truncate" table_name
+
+        NUMBER        -> {0-9}+(.{0-9}+)?
+        STRING        -> '.*'
+        IDENTIFIER    -> {_a-zA-z0-9}+
+
+```

@@ -95,13 +95,13 @@ class StateManager:
         return self.catalog_schema
 
     def get_schema(self, table_name: str):
-        return self.schemas.get(table_name)
+        return self.schemas[table_name]
 
     def get_catalog_tree(self):
         return self.catalog_tree
 
     def get_tree(self, table_name):
-        return self.trees.get(table_name)
+        return self.trees[table_name]
 
     def print_tree(self, table_name: str):
         """

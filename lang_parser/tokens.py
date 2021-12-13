@@ -30,7 +30,10 @@ class TokenType(Enum):
     # misc
     EOF = auto()
     IDENTIFIER = auto()
-    NUMBER = auto()
+    # a literal representing an integer number
+    INTEGER_NUMBER = auto()
+    # a literal representing a floating point number
+    FLOAT_NUMBER = auto()
     STRING = auto()
 
     # keywords

@@ -159,7 +159,7 @@ class Tokenizer:
         while self.peek().isdigit():
             self.advance()
 
-        # fractional part
+        # number is a float if has fractional part
         if self.peek() == '.' and self.peek_next().isdigit():
             # consume the "."
             self.advance()
@@ -167,8 +167,12 @@ class Tokenizer:
             while self.peek().isdigit():
                 self.advance()
 
-        value = float(self.source[self.start: self.current])
-        self.add_token(TokenType.NUMBER, value)
+            value = float(self.source[self.start: self.current])
+            self.add_token(TokenType.FLOAT_NUMBER, value)
+        else:
+            # number is an integer
+            value = int(self.source[self.start: self.current])
+            self.add_token(TokenType.INTEGER_NUMBER, value)
 
     def tokenize_identifier(self):
         """
