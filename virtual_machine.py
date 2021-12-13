@@ -19,8 +19,9 @@ class VirtualMachine(Visitor):
     containing information of all objects (tables + indices).
 
     """
-    def __init__(self, state_manager: StateManager):
+    def __init__(self, state_manager: StateManager, output_pipe: 'Pipe'):
         self.state_manager = state_manager
+        self.output_pipe = output_pipe
         self.init_catalog()
 
     def init_catalog(self):
@@ -155,6 +156,7 @@ class VirtualMachine(Visitor):
         :return:
         """
         print(f"In vm: select expr")
+        self.output_pipe.reset()
 
         table_name = expr.from_location.literal
         if table_name.lower() == 'catalog':
@@ -171,6 +173,7 @@ class VirtualMachine(Visitor):
             cell = cursor.get_cell()
             record = deserialize_cell(cell, schema)
             print(f"printing record: {record}")
+            self.output_pipe.write(record)
             cursor.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
