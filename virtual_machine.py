@@ -21,10 +21,11 @@ class VirtualMachine(Visitor):
     """
     def __init__(self, state_manager: StateManager):
         self.state_manager = state_manager
-        self.init()
+        self.init_catalog()
 
-    def init(self):
+    def init_catalog(self):
         """
+        Initialize the catalog
         read the catalog, materialize table metadata and register with the statemanager
         :return:
         """
@@ -107,8 +108,8 @@ class VirtualMachine(Visitor):
             return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
 
         # if generation succeeded, then schema is valid
-        schema = response.body
-        table_name = schema.name
+        table_schema = response.body
+        table_name = table_schema.name
         assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
@@ -120,23 +121,29 @@ class VirtualMachine(Visitor):
         # 4. construct record for table
         # NOTE: for now using page_num as unique int key
         pkey = page_num
-        sql_text = schema_to_ddl(schema)
+        sql_text = schema_to_ddl(table_schema)
         print(f'generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
         response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
         if not response.success:
             return Response(False, error_message=f'Failure due to {response.error_message}')
 
-        # 5. serialize record
-        schema_record = response.body
-        response = serialize_record(schema_record)
+        # 5. serialize table record, i.e. record in catalog table for new user table
+        table_record = response.body
+        response = serialize_record(table_record)
         if not response.success:
             return Response(False, error_message=f'Serialization failed: [{response.error_message}]')
 
-        # 6. insert entry into catalog
+        # 6. insert entry into catalog tree
         cell = response.body
         catalog_tree = self.state_manager.get_catalog_tree()
         catalog_tree.insert(cell)
+
+        # 7. register schema
+        self.state_manager.register_schema(table_name, table_schema)
+        # 8. register tree
+        tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
+        self.state_manager.register_tree(table_name, tree)
 
     def visit_select_expr(self, expr: SelectExpr):
         """
@@ -185,8 +192,10 @@ class VirtualMachine(Visitor):
         # get table's tree
         tree = self.state_manager.get_tree(table_name)
 
-        cell = serialize_record(record)
+        resp = serialize_record(record)
+        assert resp.success, f"serialize record failed due to {resp.error_message}"
 
+        cell = resp.body
         tree.insert(cell)
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
