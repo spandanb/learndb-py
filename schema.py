@@ -142,7 +142,13 @@ class Record:
         return str(self)
 
     def get(self, key: str):
-        return self.values[key]
+        """
+        column names are internally represented as lowercase versions
+        of their names; thus the key must be lowercased for the lookup
+        :param key:
+        :return:
+        """
+        return self.values[key.lower()]
 
 
 def validate_schema(schema: Schema) -> Response:

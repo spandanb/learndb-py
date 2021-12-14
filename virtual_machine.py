@@ -171,7 +171,9 @@ class VirtualMachine(Visitor):
         # iterate cursor
         while cursor.end_of_table is False:
             cell = cursor.get_cell()
-            record = deserialize_cell(cell, schema)
+            resp = deserialize_cell(cell, schema)
+            assert resp.success
+            record = resp.body
             print(f"printing record: {record}")
             self.output_pipe.write(record)
             cursor.advance()
