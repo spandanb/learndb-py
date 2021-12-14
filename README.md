@@ -60,6 +60,9 @@ The following are some parts of a DBMS (In no particular order):
 
 - Run btree tests:
 `python -m pytest -s btree_tests.py`
+
+- Run end-to-end tests:
+`... e2e_tests.py`
   
 - Run serde tests:
 `... serde_tests.py`

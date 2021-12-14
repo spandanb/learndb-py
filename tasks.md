@@ -36,3 +36,7 @@
 - run black
 - run mypy
 
+## Bugs
+  - it seems that column names are getting converted to their lowercase version. 
+    - and subsequent look up the cased name fails. At the very least if the name is being lowercased, a lookup on a cased variant should succeed
+  - more broadly what is the "policy" on case sensitivity?
