@@ -1,0 +1,23 @@
+The goal of this doc is to explain the btree node split algorithm.
+
+Given a new cell (and an included key), we find the node and cell_num on the tree
+where the new cell can be placed.
+
+Note, free space is maintained in 2 places: allocation block, and the free (linked) list.
+
+For the new cell, we first try to provision it on the free list
+    To do so, we iterate over free list and find the first block of equal or greater size.
+    If we find a block, we fragment it (being mindful of minimum block size), update the free
+    list, and total_space_on_free_list
+
+If this does not satisfy, we check if the allocation block has enough space. If it does, we allocate
+the cell there. Then, update the alloc_ptr
+
+If this does not satisfy, we check if total free space (i.e. sum of all space in allocation block + free list) will
+satisfy the cell. If so, we compact the node, and insert the cell.
+
+If, the total free space on a cell does not satisfy. Then we must "split" the node. The split operation will create
+2, 3 new nodes and recycle the old node.
+
+The children nodes must be passed to parent insert method, i.e. internal_node_insert_node will have to be updated to handle
+2 or 3 children.
