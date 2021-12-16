@@ -1,8 +1,5 @@
 # Tasks
 
-## Tests
-- add E2E tests  
-
 ## Storage (btree)
 - support deletion/free-list  
   - support defragmentation of unallocated space
@@ -24,19 +21,12 @@
       is lost when the program is terminated. To avoid space leak, persist the returned
       page nums to an on-disk linked list.
       
-## I/O 
-- Handle read/write to files
 
 ## document/refactoring/cleanliness
 - update commits ref email
-- remove match statements
 - add tutorial
-
-- document sql grammar that's supported
+- regroup btree methods
 - run black
 - run mypy
 
 ## Bugs
-  - it seems that column names are getting converted to their lowercase version. 
-    - and subsequent look up the cased name fails. At the very least if the name is being lowercased, a lookup on a cased variant should succeed
-  - more broadly what is the "policy" on case sensitivity?

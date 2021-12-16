@@ -21,7 +21,7 @@ Leaf nodes will be formatted like:
 - (low address) header, cell pointer array, unallocated space, cells (high address)
 - header:
     nodetype .. is_root .. parent_pointer
-    num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
+    num_cells .. alloc_ptr .. free_list_head_ptr .. total_free_list_space
     ...
     cellptr_0, cellptr_1,... cellptr_N
     ...
@@ -72,8 +72,10 @@ Free space is managed via:
         - to insert a blob of size N, e.g. 8, we write to address: [alloc_ptr - N: alloc_ptr]
 
 2) Free list - singly-linked list
-    - each free nodes stores: 1) size of current block, 2) location (abs offset) of next block
-    - also store total number of free bytes
+    - each free block stores: 1) size of current block, 2) location (abs offset) of next block
+        i.e. block-header -> block-size, next-block-ptr
+    - also store total number of free bytes (in header)
+    - NOTE: cells are never fragmented
 
 
 Storage

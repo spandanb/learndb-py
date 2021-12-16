@@ -8,7 +8,7 @@ from collections import namedtuple, deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, List
 from itertools import chain
 
 from serde import get_cell_key, get_cell_size
@@ -603,7 +603,7 @@ class Tree:
         return offset
 
     @staticmethod
-    def leaf_node_space_on_alloc_block(node: bytes) -> int:
+    def leaf_node_alloc_block_space(node: bytes) -> int:
         """
         space (bytes) available on alloc block
 
@@ -690,7 +690,6 @@ class Tree:
         # start at head (offset to first free block)
         head = Tree.leaf_node_free_list_head(node)
         prev_block = NULLPTR
-        next_block = NULLPTR
         while head != NULLPTR:
             # check current block size
             block_size = Tree.free_block_size(node, head)
@@ -703,7 +702,7 @@ class Tree:
             head = next_block
 
         # no matching block found
-        return False, prev_block, next_block
+        return False, NULLPTR, NULLPTR
 
     def leaf_node_insert(self, page_num: int, cell_num: int, key: int, cell: bytes):
         """
@@ -771,7 +770,7 @@ class Tree:
         assert space_needed <= LEAF_NODE_MAX_CELL_SIZE, "cell exceeds max size"
 
         # space available in allocation block
-        alloc_block_space = Tree.leaf_node_space_on_alloc_block(node)
+        alloc_block_space = Tree.leaf_node_alloc_block_space(node)
         alloc_ptr = Tree.leaf_node_alloc_ptr(node)
         # space available in free list
         total_space_free_list = Tree.leaf_node_total_free_list_space(node)
@@ -786,6 +785,7 @@ class Tree:
 
         # check if a free block will satisfy
         has_free_block, prev_node, next_node = Tree.find_free_block(node, space_needed)
+        assert has_free_block is False, "unexpected free block"
         if has_free_block:
             # update free list nodes, and total_
             # copy cell onto block
@@ -803,27 +803,8 @@ class Tree:
                 cellptrs = self.leaf_node_cellptrs_starting_at(node, cell_num)
                 self.set_leaf_node_cellptrs_starting_at(node, cell_num + 1, cellptrs)
 
-            # update alloc ptr
-            # determine the new value of alloc ptr
-            # alloc_ptr points past the first allocatable byte
-            # alloc pointer grows up, i.e. towards lower addresses
-            # new alloc ptr is also the location of the new cell
-            new_alloc_ptr = alloc_ptr - len(cell)
-
-            # write cellptr
-            # ensure cellptr value is in the right type
-            Tree.set_leaf_node_cellptr(node, cell_num, new_alloc_ptr)
-
-            # copy cell contents onto node
-            # the cell will be copied starting at the new alloc_ptr location
-            # print(f'writing cell to {new_alloc_ptr}')
-            Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
-
-            # update the alloc ptr
-            Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
-
-            # update cell count
-            Tree.set_leaf_node_num_cells(node, num_cells + 1)
+            # allocate cell on alloc block
+            self.leaf_node_allocate_alloc_block_cell(node, cell_num, cell)
 
         # combined alloc + free blocks will satisfy
         else:
@@ -836,127 +817,135 @@ class Tree:
             # update the parent's key
             self.check_update_parent_key(page_num)
 
-    def leaf_node_split_and_insert(self, page_num: int, new_cell_cell_num: int, new_key: int, new_cell: bytes):
+    @staticmethod
+    def leaf_node_allocate_alloc_block_cell(node: bytes, cell_num: int, cell: bytes):
+        """
+        allocate a cell and cell_num;
+        update alloc_ptr
+
+        :param node:
+        :param cell_num:
+        :param cell:
+        :return:
+        """
+        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
+        # update alloc ptr
+        # determine the new value of alloc ptr
+        # alloc_ptr points past the first allocatable byte
+        # alloc pointer grows up, i.e. towards lower addresses
+        # new alloc ptr is also the location of the new cell
+        new_alloc_ptr = alloc_ptr - len(cell)
+
+        # write cellptr
+        # ensure cellptr value is in the right type
+        Tree.set_leaf_node_cellptr(node, cell_num, new_alloc_ptr)
+
+        # copy cell contents onto node
+        # the cell will be copied starting at the new alloc_ptr location
+        # print(f'writing cell to {new_alloc_ptr}')
+        Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
+
+        # update the alloc ptr
+        Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
+
+        # update cell count
+        num_cells = Tree.leaf_node_num_cells(node)
+        Tree.set_leaf_node_num_cells(node, num_cells + 1)
+
+    def leaf_node_split_and_insert(self, page_num: int, new_cell_cell_num: int, new_cell: bytes):
         """
 
         Split node and insert new_cell. After the insert, the nodes must be such that
-        their cells keys are ordered. Thus, in some cases, the node may be split into 3.
+        their cells' keys are ordered. Thus, in some cases, the node may be split into 3.
 
-
-        ---
-
-        Split node, i.e. create a new node and move half the cells over to the new node
-        NB: after split keys on the upper half (right) must be strictly greater than lower (left) half
+        Currently, the original node's content is copied onto a new node. The alternative
+        is to in-place split the node. This may require less copying, but is quiet tricky to implement for
+        variable cells.
 
         If the node being split is a non-root node, split the node and add the new
         child to the parent. If the parent/ancestor is full, repeat split op until every ancestor is
         within capacity.
 
         If node being split is root, will need to create a new root. Root page must remain at `root_page_num`
-
-        Args:
-            new_cell_cell_num: where the new entry would be inserted
-
-        example: insert 2, into leaf node: [1,3,4,5], with max node keys: 4
-            [1,2,3] [4,5]
-            note:
-                - all cells after the new cell to be inserted must be shifted right by 1
-                - cells left of new cell are unchanged
         """
-        # old node is left (lesser) than new node
+        # old node is the original node
         old_node = self.pager.get_page(page_num)
-        # create a new node, corresponding to the right split
-        new_page_num = self.pager.get_unused_page_num()
-        new_node = self.pager.get_page(new_page_num)
 
-        # define these aliases for convenience
-        left_node = old_node
-        right_node = new_node
+        # create a new node to write to
+        # this is the first split, there can be 2, or 3 (rare) splits
+        new_page_num = self.pager.get_unused_page_num()
+        new_node_cell_num = 0
+        new_node = self.pager.get_page(new_page_num)
+        new_nodes = [(new_page_num, new_node)]
+
+        num_cells = Tree.leaf_node_num_cells(old_node)
 
         self.initialize_leaf_node(new_node)
         self.set_node_is_root(new_node, False)
         # get parent page num from left child
         self.set_parent_page_num(new_node, self.get_parent_page_num(old_node))
 
-        # iterate over all the children
-        # split cells
-        for cell_num in range(Tree.leaf_node_num_cells(old_node)):
-            # cells lesser than new cell, will go in left most split
-            if cell_num < new_cell_cell_num:
-                # set count on old-node
-                Tree.set_leaf_node_num_cells(old_node, cell_num + 1)
-            elif cell_num == new_cell_cell_num:
-                # 1. first insert the new cell
-                # 1.1. check if it will fit on old_node
-                # either on alloc block or in free list
-                max_block_size = Tree.leaf_node_max_block_size(old_node)
-                alloc_block_space = Tree.leaf_node_space_on_alloc_block(old_node)
-                if len(new_cell) <= max_block_size or len(new_cell) <= alloc_block_space:
-                    pass
+        # iterate over cells and place them on split
+        # manually iterate so I can handle new cell
+        cell_num = 0
+        new_cell_placed = False
+        while cell_num < num_cells:
+            # check if current node can handle this cell
+            # assume nodes have been compacted, i.e. only consider alloc block
+            available_space = Tree.leaf_node_alloc_block_space(new_node)
 
-                # 2. then insert old cell at cell_num
-                pass
+            # this handles picking the correct cell, i.e. cells must be
+            # placed in the correct order, including the new cell
+            if cell_num == new_cell_cell_num and not new_cell_placed:
+                # place the new cell first
+                cell = new_cell
             else:
-                # cell_num > new_cell_cell_num
-                pass
+                cell = self.leaf_node_cell(old_node, cell_num)
 
+            space_needed = len(cell)
 
+            if available_space < space_needed:
+                # finalize node
+                Tree.set_leaf_node_num_cells(new_node, new_node_cell_num)
+                # create new node
+                new_page_num = self.pager.get_unused_page_num()
+                # update write node ref
+                new_node = self.pager.get_page(new_page_num)
+                new_nodes.append((new_page_num, new_node))
+                new_node_cell_num = 0
 
-        # below is the old logic
+            # provision cell
+            self.leaf_node_allocate_alloc_block_cell(new_node, new_node_cell_num, cell)
+            new_node_cell_num += 1
 
-        # keys must be divided between old (left child) and new (right child)
-        # start from right, move each key (cell) to correct location
-
-        # `shifted_cell_num` iterates from [n..0], i.e. an entry for all existing cells
-        # and the new cell to be inserted
-        for shifted_cell_num in range(LEAF_NODE_MAX_CELLS, -1, -1):
-
-            # determine destination node from it's shifted position
-            if shifted_cell_num >= LEAF_NODE_LEFT_SPLIT_COUNT:
-                dest_node = new_node
+            if cell_num == new_cell_cell_num and not new_cell_placed:
+                new_cell_placed = True
             else:
-                dest_node = old_node
+                # only increment cell num when not equal to new cell num
+                cell_num += 1
 
-            # determine new cell, i.e. post-splitting location
-            # cell should be left aligned on its node
-            new_cell_num = shifted_cell_num % LEAF_NODE_LEFT_SPLIT_COUNT
-
-            # insert new entry
-            if shifted_cell_num == new_cell_cell_num:
-                self.set_leaf_node_key_value(dest_node, new_cell_num, new_key, new_cell)
-                continue
-
-            # handle existing cells
-            # determine cell's current location
-            current_cell_num = shifted_cell_num
-            if shifted_cell_num > new_cell_cell_num:
-                current_cell_num = shifted_cell_num - 1
-
-            # copy existing cell
-            cell_to_copy = self.leaf_node_cell(old_node, current_cell_num)
-            self.set_leaf_node_cell(dest_node, new_cell_num, cell_to_copy)
-
-            # key_to_move = self.leaf_node_key(old_node, current_cell_num)
-            # node_name = "old_node" if dest_node is old_node else "new_node"
-            # print(f"key_to_move: {key_to_move} from cell_idx: {current_cell_num} to [{node_name}, {new_cell_num}]")
-
-        # update counts on child nodes
-        self.set_leaf_node_num_cells(old_node, LEAF_NODE_LEFT_SPLIT_COUNT)
-        self.set_leaf_node_num_cells(new_node, LEAF_NODE_RIGHT_SPLIT_COUNT)
-
-        debug("printing old leaf node after split-insert")
-        # self.print_leaf_node(old_node)
-        debug("printing new leaf node after split-insert")
-        # self.print_leaf_node(new_node)
+        # todo: recycle old node
+        # seems, I should wait until create_new_root is called
+        # self.pager.return_page(page_num)
 
         # add new node as child to parent of split node
         # if split node was root, create new root and add split as children
         if self.is_node_root(old_node):
+            # todo: pass new_nodes instead
             self.create_new_root(new_page_num)
         else:
+            # todo: pass new_nodes instead
             self.internal_node_insert(page_num, new_page_num)
 
-    def create_new_root(self, right_child_page_num: int):
+    def create_new_root(self, child_page_nums: List[int]):
+        """
+        unlike the old approach, with fixed sized cells, with
+        variable len cells, there can be 2, or 3 new cells
+        :return:
+        """
+        root = self.pager.get_page(self.root_page_num)
+
+    def create_new_root_old(self, right_child_page_num: int):
         """
         Create a root.
         Here the old root's content is copied to new left child.
@@ -2197,7 +2186,7 @@ class Tree:
         node[offset: offset + len(cells)] = cells
 
     @staticmethod
-    def set_leaf_node_num_cells(node: bytearray, num_cells: int):
+    def set_leaf_node_num_cells(node: bytes, num_cells: int):
         """
         write num of node cells: encode to int
         """
