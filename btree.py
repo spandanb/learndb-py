@@ -11,7 +11,7 @@ from enum import Enum, auto
 from typing import Optional, List
 from itertools import chain
 
-from serde import get_cell_key, get_cell_size
+from serde import get_cell_key, get_cell_key_in_page, get_cell_size
 from utils import debug
 
 from constants import (WORD,
@@ -337,6 +337,18 @@ class Tree:
     def internal_node_insert(self, old_child_page_num: int, new_child_page_num: int, left_child_page_num: int,
                              right_child_page_num: int, middle_child_page_num: Optional[int] = None):
         """
+        Invoked after a child node (`old_child_page_num`) is split into left_ right_ and optionally
+        middle_child_page_num. Add new children to old child's parent and remove old child.
+
+        To find the insertion location, find the location of old_child in parent.
+        - If old_child was right child, right split becomes new right child,
+        and left and middle are added to tail of existing children.
+        - If old child was an inner child, then start by adding the left child in old's spot.
+        Then move any siblings to the right over, more to the right.
+        Insert middle and right to the right of that.
+
+        ---
+
         Invoked after children at `old_child_page_num` and `new_child_page_num`,
         are created after a new entry causes the node to split. The split can cause either
         sibling to contain the new entry and thus, insert must update the correct child key.
@@ -369,79 +381,74 @@ class Tree:
         # number of nodes to add; one node is already included
         num_new_nodes = 1 if middle_child_page_num is None else 2
         if num_keys + num_new_nodes > INTERNAL_NODE_MAX_CELLS:
+            # todo: update internal_node_split_and_insert
+            raise Exception("Inner node split not implemented")
             self.internal_node_split_and_insert(parent_page_num, old_child_page_num, left_child_page_num,
                                                 right_child_page_num, middle_child_page_num)
             return
 
+        # get children
         old_node = self.pager.get_page(old_child_page_num)
         left_child = self.pager.get_page(left_child_page_num)
+        middle_child = None
         right_child = self.pager.get_page(right_child_page_num)
-        middle_child = None if middle_child_page_num is None else self.pager.get_page(middle_child_page_num)
 
-        # determine which child(ren) need to be updated
         old_child_max_key = self.get_node_max_key(old_node)
         left_child_max_key = self.get_node_max_key(left_child)
+        middle_child_max_key = None
         right_child_max_key = self.get_node_max_key(right_child)
         right_child_updated = False
-        middle_child_max_key = middle_child and self.get_node_max_key(middle_child)
 
-        # todo: think through the insert logic
-        # should I get the child num of old node, or right child
-        # the new nodes will be inserted where old child was located?
+        if middle_child_page_num:
+            middle_child = self.pager.get_page(middle_child_page_num)
+            middle_child_max_key = self.get_node_max_key(middle_child)
 
+        # determine old_node's location
         old_child_num = self.internal_node_find(parent_page_num, old_child_max_key)
-        right_child_child_num = self.internal_node_find(parent_page_num, right_child_max_key)
-        if right_child_child_num == INTERNAL_NODE_MAX_CELLS:
-            # move current right child to tail of main body
-            # doesn't seem like it should be needed
-            current_right_child_page_num = self.internal_node_right_child(parent)
-            # if the right child is the right-most child, it must have
-            # been so before the split the too
-            assert current_right_child_page_num == old_child_page_num, "Expected current right child to be old page num"
-            # current_right_child = self.pager.get_page(current_right_child_page_num)
-            # current_right_child_max_key = self.get_node_max_key(current_right_child)
-            # self.set_internal_node_child(parent, num_keys, current_right_child_page_num)
-            # self.set_internal_node_key(parent, num_keys, current_right_child_max_key)
-
+        if old_child_num == INTERNAL_NODE_MAX_CELLS:
+            # old child is the right child, the splits must all be right of all other children
+            # set right split as new right child
             self.set_internal_node_right_child(parent, right_child_page_num)
             right_child_updated = True
 
-            if middle_child:
+            # insert left child at tail of existing children
+            self.set_internal_node_child(parent, num_keys, left_child_page_num)
+            self.set_internal_node_key(parent, num_keys, left_child_max_key)
+            num_keys += 1
+
+            if middle_child_page_num:
+                self.set_internal_node_child(parent, num_keys, middle_child_page_num)
+                self.set_internal_node_key(parent, num_keys, middle_child_max_key)
 
         else:
-            # right child is in internal of node
-            # move children right of insertion point right by +1
-            children = self.internal_node_children_starting_at(parent, right_child_child_num)
-            self.set_internal_node_children_starting_at(parent, children, right_child_child_num + 1)
-            self.set_internal_node_key(parent, right_child_child_num, right_child_max_key)
-            self.set_internal_node_child(parent, right_child_child_num, new_child_page_num)
+            # old node was inner child; insert left most split at its location
+            # all splits must be inner children
+            self.set_internal_node_key(parent, old_child_num, left_child_max_key)
+            self.set_internal_node_child(parent, old_child_num, left_child_page_num)
 
+            # to insert other splits, move siblings over
+            sibling_src_num = old_child_num + 1
+            sibling_dest_num = sibling_src_num + (2 if middle_child_page_num else 1)
+            children = self.internal_node_children_starting_at(parent, sibling_src_num)
+            self.set_internal_node_children_starting_at(parent, children, sibling_dest_num)
 
-        # old child is left of new child; we may need to update key for both
-        # we have to be careful, since find depends on the state of the node
-        # first update old node
-        left_child_child_num = self.internal_node_find(parent_page_num, left_child_max_key)
-        if left_child_child_num < INTERNAL_NODE_MAX_CELLS:
-            # nothing to do if left child is still right child
-            # the subsequent insertion of right child will move this
-            # later we'll have to update its ancestors
-            key_at_left_child_child_num = self.internal_node_key(parent, left_child_child_num)
-            if left_child_max_key != key_at_left_child_child_num:
+            # insert middle
+            next_child_num = old_child_num + 1
+            if middle_child_page_num:
+                self.set_internal_node_key(parent, next_child_num, middle_child_max_key)
+                self.set_internal_node_child(parent, next_child_num, middle_child_page_num)
+                next_child_num += 1
+                num_keys += 1
 
-                self.set_internal_node_key(parent, left_child_child_num, left_child_max_key)
+            # insert right
+            self.set_internal_node_key(parent, next_child_num, right_child_max_key)
+            self.set_internal_node_child(parent, next_child_num, right_child_page_num)
+            num_keys += 1
 
-                # it's possible that the left child num may point to an unoccupied but non-right cell
-                if left_child_child_num <= self.internal_node_num_keys(parent) - 1:
-                    # NOTE: this is only updating the child key, but the ptr should refer to the same page
-                    child_at_left_child_child_num = self.internal_node_child(parent, left_child_child_num)
-                    assert child_at_left_child_child_num == old_child_page_num, \
-                        f"child_at_left_child_child_num={child_at_left_child_child_num}, old_child_page_num = {old_child_page_num}"
-                else:
-                    # unoccupied cell- set child ref
-                    self.set_internal_node_child(parent, left_child_child_num, old_child_page_num)
+        self.set_internal_node_num_keys(num_keys)
 
-        # update count
-        self.set_internal_node_num_keys(parent, num_keys + 1)
+        # recycle old node
+        self.pager.return_page(old_child_page_num)
 
         # right child was split; but we don't know whether a new max key was inserted
         if right_child_updated:
@@ -796,12 +803,14 @@ class Tree:
         # space available in free list
         total_space_free_list = Tree.leaf_node_total_free_list_space(node)
 
+        debug(f'alloc_block_space= {alloc_block_space}, total_space_free_list={total_space_free_list}')
+
         # determine where to place the cell
         # NOTE: the condition on num_cells is only for debugging/developing
         if total_space_free_list + alloc_block_space < space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
             # node is full - split node and insert
-            raise Exception("no way leaf is full")
-            self.leaf_node_split_and_insert(page_num, cell_num, key, cell)
+            # raise Exception("no way leaf is full")
+            self.leaf_node_split_and_insert(page_num, cell_num, cell)
             return
 
         # check if a free block will satisfy
@@ -930,7 +939,9 @@ class Tree:
 
             space_needed = len(cell)
 
-            if available_space < space_needed:
+            # we want to respect LEAF_NODE_MAX_CELLS since a split may have been
+            # called because of this and not inadequate space on node
+            if available_space < space_needed or cell_num >= LEAF_NODE_MAX_CELLS:
                 # finalize node
                 Tree.set_leaf_node_num_cells(new_node, new_node_cell_num)
                 # create new node
@@ -944,11 +955,8 @@ class Tree:
             self.leaf_node_allocate_alloc_block_cell(new_node, new_node_cell_num, cell)
             new_node_cell_num += 1
 
-        # todo: recycle old node
-        # seems, I should wait until create_new_root is called
-        # self.pager.return_page(page_num)
-
-        assert len(new_node_page_nums) == 2 or len(new_node_page_nums) == 3, "Expected 2 or 3 new nodes"
+        new_node_count = len(new_node_page_nums)
+        assert new_node_count == 2 or new_node_count == 3, f"Expected 2 or 3 new nodes; received {new_node_count}"
         left_child_page_num = new_node_page_nums[0]
         right_child_page_num = new_node_page_nums[-1]
         middle_child_page_num = new_node_page_nums[1] if len(new_node_page_nums) == 3 else None
@@ -958,8 +966,11 @@ class Tree:
         if self.is_node_root(old_node):
             self.create_new_root(left_child_page_num, right_child_page_num, middle_child_page_num=middle_child_page_num)
         else:
-            # todo: pass new_nodes instead
-            self.internal_node_insert(page_num, page_num, left_child_page_num, right)
+            # todo: ensure the tail invocation recycles old node
+            # for create_new_root, the old node doesn't get recycled
+            # and I dont' wan this method to be responsible for anything once the below has been called
+            self.internal_node_insert(page_num, page_num, left_child_page_num, right_child_page_num,
+                                      middle_child_page_num=middle_child_page_num)
 
     def create_new_root(self, left_child_page_num: int, right_child_page_num: int,
                         middle_child_page_num: Optional[int] = None):
@@ -1738,14 +1749,14 @@ class Tree:
             divider = f"{indent}{len(body) * '.'}"
             print(f"{indent}{body}")
             print(divider)
-            self.print_leaf_node(root, depth = depth)
+            self.print_leaf_node(root, depth=depth)
             print(divider)
         else:
             body = f"printing internal node at page num: [{root_page_num}]. parent: [{parent_num}]"
             divider = f"{indent}{len(body) * '.'}"
             print(f"{indent}{body}")
             print(divider)
-            self.print_internal_node(root, recurse = True, depth = depth)
+            self.print_internal_node(root, recurse=True, depth=depth)
             print(divider)
 
     @staticmethod
@@ -2021,26 +2032,12 @@ class Tree:
         """
         get key in leaf node at position `cell_num`
 
-        To get the key:
-            - read the cellptr value
-            - the cellptr indicates the cell location
-            - read the cell
-
         :param node:
         :param cell_num: a contiguous integer (0-based), indicating the relative position
         :return:
         """
-        # get the cell location
         cell_offset = Tree.leaf_node_cell_offset(node, cell_num)
-        # the cell is formatted like: key-size, data-size, key-payload, data-payload
-        # NOTE: the key-size is fixed size, but this indirection will allow variable length keys in the future
-        key_size_offset = cell_offset + CELL_KEY_SIZE_OFFSET
-        key_size_bytes = node[key_size_offset: key_size_offset + CELL_KEY_SIZE_SIZE]
-        key_size = int.from_bytes(key_size_bytes, sys.byteorder)
-
-        key_bytes = node[CELL_KEY_PAYLOAD_OFFSET: CELL_KEY_PAYLOAD_OFFSET + key_size]
-        key = int.from_bytes(key_bytes, sys.byteorder)
-        return key
+        return get_cell_key_in_page(node, cell_offset)
 
     @staticmethod
     def leaf_node_cellptr(node: bytes, cell_num: int) -> int:
@@ -2065,7 +2062,7 @@ class Tree:
         """
         assert cell_num <= Tree.leaf_node_num_cells(node) - 1, \
             f"out of bounds cell [{cell_num}] lookup [total: {Tree.leaf_node_num_cells(node)}]"
-        offset = Tree.leaf_node_cell_offset(cell_num)
+        offset = Tree.leaf_node_cell_offset(node, cell_num)
         num_cells = Tree.leaf_node_num_cells(node)
         num_cellptrs_after_cell_num = num_cells - cell_num
         return node[offset: offset + num_cellptrs_after_cell_num * LEAF_NODE_CELL_POINTER_SIZE]
