@@ -285,3 +285,10 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 12/14
     Case sensitivity of identifiers. Right now only unquoted identifiers are supported. Identifiers are case insensitive
     and internally represented as their lowercased version.
+
+12/16
+    As I'm rewriting btree insert logic to handle variable length cells, I opted to rewrite some of the in-place operations
+    out of place. e.g. when a node split happens, the in-place way is that node being split is reused as one of the splits;
+    the out of place approach is to create a seperate node for the split. The latter simplifies the logic, both because:
+    1) you don't need to do any bookkeeping around what space you can touch and what you can't; 2) you can simultaneous access
+    before and after states.
