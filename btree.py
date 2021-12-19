@@ -461,68 +461,128 @@ class Tree:
         right splits will go where the old child was. Additionally, all nodes must
         be
 
+        This performs an out-of-place split.
+
+
         :param old_child_page_num:
         :param left_child_page_num:
         :param right_child_page_num:
         :param middle_child_page_num:
         :return:
         """
+        # 1. setup
         old_child = self.pager.get_page(old_child_page_num)
         parent_page_num = self.get_parent_page_num(old_child)
-        # the `parent` node will be split into left and right parents
-        left_parent = self.pager.get_page(parent_page_num)
+        parent = self.pager.get_page(parent_page_num)
+        grandparent_page_num = self.get_parent_page_num(parent)
 
-        # create a new node for the right split of `parent`
+        # 1.1. initialize new parents
+        # parent node will be out-of-place split into left_ and right_ parent
+        # create new nodes for the left and right split of `parent`
+        left_parent_page_num = self.pager.get_unused_page_num()
+        left_parent = self.pager.get_page(left_parent_page_num)
+        self.initialize_internal_node(left_parent, node_is_root=False)
+        self.set_parent_page_num(left_parent, grandparent_page_num)
         right_parent_page_num = self.pager.get_unused_page_num()
         right_parent = self.pager.get_page(right_parent_page_num)
         self.initialize_internal_node(right_parent, node_is_root=False)
-        grandparent_page_num = self.get_parent_page_num(left_parent)
         self.set_parent_page_num(right_parent, grandparent_page_num)
 
+        # 1.2. prepare new children to be inserted
         old_child_max_key = self.get_node_max_key(old_child)
         left_child = self.pager.get_page(left_child_page_num)
         middle_child = None
         right_child = self.pager.get_page(right_child_page_num)
+        if middle_child_page_num:
+            middle_child = self.pager.get_page(middle_child_page_num)
 
         # the new children will go where old child was
         old_child_num = self.internal_node_find(parent_page_num, old_child_max_key)
-        if old_child_num == INTERNAL_NODE_MAX_CELLS:
-            pass
 
-        # todo: recycle old_child_num
+        # we iterate over all children- internal and right
+        # when it sees the child_num of old_child - it starts a
+        # sub-iteration over the new children.
+        # The alternative to sub-iterators, is to materialize
+        # sub-iterator into mapping of each src child and dest node and pos, e.g.
+        # shifted_cell in prev impl of internal_node_split, which encodes this location,
+        # although in a way less comprehensible than nested loops
 
         # determine how many total children to distribute across splits
-        num_keys = Tree.internal_node_num_keys(left_parent)
+        num_keys = Tree.internal_node_num_keys(parent)
         total_children = num_keys + (1 if middle_child_page_num is None else 2)
         right_split_count = total_children // 2
         left_split_count = total_children - right_split_count
 
-        # Todo: iterate backwards so I can do this in-place
-        # actually, doing it in-place break the API?
-        child_num = 0
-        # distribute children on left_parent and three splits
+        # track which children have to be inserted
+        new_children = deque()
+        new_children.append(left_child)
+        if middle_child_page_num:
+            new_children.append(middle_child)
+        new_children.append(right_child)
+
+        # distribute children from old parent, and new splits
         # evenly onto left_ and right_parent.
+        # src child num
+        child_num = 0
+        dest_child_num = 0
+        # flag to determine whether to write or left or right split
+        write_to_left = True
+
+        # a.1. handle inner children
         while child_num < num_keys:
-            # get child_num
-            # set child on node if needed
-            if child_num == old_child_num:
-                # this is where new nodes go
+            # determine src child
+            if child_num == old_child_num and len(new_children) > 0:
+                # insert new child
+                # todo: we want chid page num not src_child
+                src_child = new_children.popleft()
+            else:
+                src_child = Tree.internal_node_child(parent, child_num)
+                child_num += 1
 
-            if current_split_count > left_split_count:
-                # switch to current_node to right_split_count
-                pass
+            # determine destination node and position
+            # copy src to destination
+            if write_to_left:
+                # destination is left node
+                if dest_child_num == left_split_count:
+                    # src is the right child of left parent
+                    # todo: child_page_num is the page corresponding to `child`
+                    Tree.set_internal_node_right_child(left_parent, child_page_num)
+                    # write to node
+                    # left node is full; subsequent writes will go to right nodes
+                    write_to_left = False
+                    dest_child_num = 0
+                else:
+                    # src is an inner child
+                    # todo: also need to set the key
+                    Tree.set_internal_node_child(left_parent, dest_child_num, child_page_num)
+            else:
+                # destination is right node
+                if dest_child_num == right_split_count:
+                    Tree.set_internal_node_right_child(right_parent, child_page_num)
+                else:
+                    # src is an inner child
+                    Tree.set_internal_node_child(left_parent, dest_child_num, child_page_num)
 
-            # ensure both splits have right child set
+        # todo: recycle old_child_num
 
-        # handle old right child
+        # a.2. handle right child from original node
+        src_child = Tree.internal_node_right_child(right_child)
+        if old_child_num == INTERNAL_NODE_MAX_CELLS:
+            # old child was the right child, then the right-most split of child will
+            assert len(new_children) == 1
+            Tree.set_internal_node_right_child(right_parent, new_children.pop())
+        else:
+            Tree.set_internal_node_right_child(right_parent, Tree.internal_node_right_child(parent))
 
-
+        # update counts
+        Tree.set_internal_node_num_keys(left_parent, left_split_count - 1)
+        Tree.set_internal_node_num_keys(right_parent, right_split_count - 1)
 
         # update parent
-        if self.is_node_root(left_parent):
-            self.create_new_root(parent_page_num, right_parent_page_num)
+        if self.is_node_root(parent):
+            self.create_new_root(parent_page_num, left_parent_page_num, right_parent_page_num)
         else:
-            self.internal_node_insert(parent_page_num, right_parent_page_num)
+            self.internal_node_insert(parent_page_num, left_parent_page_num, right_parent_page_num)
 
     def internal_node_split_and_insert_old(self, page_num: int, new_child_page_num: int, old_child_page_num: int):
         """
