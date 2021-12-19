@@ -20,6 +20,13 @@
     - when pager is returned a page- it keeps this in an in-mem structure, that
       is lost when the program is terminated. To avoid space leak, persist the returned
       page nums to an on-disk linked list.
+
+## User API
+- there are a few candidates for the user api, e.g. 
+  - cursor,
+  - input_handler + vm.run + pipe
+  - the above wrapped in LearnDB class    
+  - python db api, i.e. natively supported 
       
 
 ## document/refactoring/cleanliness
@@ -30,3 +37,4 @@
 - run mypy
 
 ## Bugs
+  - duplicate key not erroring

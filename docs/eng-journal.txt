@@ -289,6 +289,21 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 12/16
     As I'm rewriting btree insert logic to handle variable length cells, I opted to rewrite some of the in-place operations
     out of place. e.g. when a node split happens, the in-place way is that node being split is reused as one of the splits;
-    the out of place approach is to create a seperate node for the split. The latter simplifies the logic, both because:
+    the out of place approach is to create a separate node for the split. The latter simplifies the logic, both because:
     1) you don't need to do any bookkeeping around what space you can touch and what you can't; 2) you can simultaneous access
     before and after states.
+
+12/18
+    Btree in-place vs. out-of-place splitting.
+    One of the trickier aspects of the btree implementation is the split operation (and compact) operations.
+    Previously, when cells were fixed-length, this op was done in-place, i.e. the node that was being split, would
+    become one of the future splits. This is tricky with variable-length cells, so I opted for out-of-place splitting.
+
+    But internal nodes can be split-in place with not too much difficulty. But then that requires supporting two mechanisms/
+    methods for internal_node_split- one that expects the old_node to be recycled- i.e. when called from a leaf. And
+    another that expects the old-node to be one of the new splits - i.e. when called from another internal node operation.
+
+    It's simpler to support out-of-place ops- even though this translates to obviously poorer performance (due to
+    more copy ops- not empirically validated). Although this op, should happen rarely on a full btree- so the amortized
+    cost should be low.
+
