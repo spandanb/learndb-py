@@ -4,6 +4,7 @@ Python prototype/reference implementation
 """
 import os.path
 import sys
+import logging
 
 from typing import Union, List, Any
 from dataclasses import dataclass
@@ -194,8 +195,8 @@ def devloop():
     this works through the entire intialize process
     :return:
     """
-    # if os.path.exists(DB_FILE):
-    #    os.remove(DB_FILE)
+    if os.path.exists(DB_FILE):
+        os.remove(DB_FILE)
 
     # create state manager
     state_manager = StateManager(DB_FILE)
@@ -203,29 +204,44 @@ def devloop():
     # output pipe
     pipe = Pipe()
 
+    # config logger
+    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
+    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
+
     # create virtual machine
     virtmachine = VirtualMachine(state_manager, pipe)
 
     # create table
     cmds = [
-        # "create table foo ( colA integer primary key, colB text)",
-        "select pkey, root_pagenum from catalog",
-        "insert into foo (colA, colB) values (4, 'hellew words')",
-        "select colA, colB  from foo"
+        "create table foo ( colA integer primary key, colB text)",
+        # "select pkey, root_pagenum from catalog",
+        #"insert into foo (colA, colB) values (0, 'hellew words')",
+        "insert into foo (colA, colB) values (1, 'hellew words')",
+        #"insert into foo (colA, colB) values (89, 'hellew words foo')",
+        #"insert into foo (colA, colB) values (90, 'hellew words foo')",
+        #"insert into foo (colA, colB) values (91, 'hellew words foo')",
+        #"insert into foo (colA, colB) values (92, 'hellew words foo')",
+        #"insert into foo (colA, colB) values (4, 'hellew words foo')",
+        #"insert into foo (colA, colB) values (2, 'hellew words foo')",
+        #"select colA, colB  from foo"
     ]
 
     for cmd in cmds:
-        print(f"handling [{cmd}]")
+        logging.info(f"handling [{cmd}]")
         p_resp = prepare_statement(cmd)
         if not p_resp.success:
             print(f"failure due to {p_resp.error_message}")
             return EXIT_FAILURE
 
         virtmachine.run(p_resp.body)
+        # state_manager.print_tree("foo")
 
         # print anything in the output buffer
         while pipe.has_msgs():
             pipe.read()
+
+        state_manager.print_tree("foo")
+        print('*'*100)
 
     # close statemanager to push changed state to disk
     state_manager.close()
