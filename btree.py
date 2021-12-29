@@ -244,6 +244,33 @@ class Tree:
 
     # section: logic helpers - find
 
+    def leaf_node_find(self, page_num: int, key: int) -> int:
+        """
+        find `key` on leaf node ref'ed by `page_num` via binary search
+        :param page_num:
+        :param key:
+        :return: cell_number corresponding to insert location
+        """
+        node = self.pager.get_page(page_num)
+        num_cells = self.leaf_node_num_cells(node)
+        left_closed_index = 0
+        # 'open' since it's one past right index
+        right_open_index = num_cells
+        while left_closed_index != right_open_index:
+            # this avoid the overflow issue with
+            # index = (right_open_index + left_closed_index) // 2
+            index = left_closed_index + (right_open_index - left_closed_index) // 2
+            key_at_index = self.leaf_node_key(node, index)
+            if key == key_at_index:
+                # key found
+                return index
+            if key < key_at_index:
+                right_open_index = index
+            else:
+                left_closed_index = index + 1
+
+        return left_closed_index
+
     def internal_node_find(self, page_num: int, key: int) -> int:
         """
         implement a binary search to find child location where key should be inserted
@@ -307,34 +334,225 @@ class Tree:
 
         return left_closed_index
 
-    def leaf_node_find(self, page_num: int, key: int) -> int:
+    # section: logic helpers - insert core
+
+    def leaf_node_insert(self, page_num: int, cell_num: int, cell: bytes):
         """
-        find `key` on leaf node ref'ed by `page_num` via binary search
+        If there is space on the referred leaf, then the cell will be inserted,
+        and the operation will terminate.
+
+        If there is not, the node will be split.
+
+        Allocation can happen from: 1) allocation block or 2) free list.
+
+        The allocation strategy is:
+            - first check if there is a block in free list that satisfies cell
+                - if so, fragment the block (if-needed)
+                - copy cell onto block
+                - update total_free_bytes
+            - next, check if allocation block has enough space
+                - if so, copy cell
+                - update alloc_ptr
+            - next, check if total free space in free list and alloc block
+              can satisfy the cell
+                 - if so, compact the node
+                 - copy cell
+            - else,
+                - split node and copy cells
+
+        NOTE: for now ignoring free-list- allocating from allocation block
+
+        nodetype .. is_root .. parent_pointer
+        num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
+        ...
+        cellptr_0, cellptr_1,... cellptr_N
+        ...
+        unallocated-space
+        ...
+        cells
+
+        e.g.
+
+        consider a page of size 32, word: 8
+        the indexable bytes are [0, 31]
+        the alloc_ptr starts at value 32
+        if the header takes 8 bytes, then the cellptr would start at 8
+        and say that takes a word, then the allocated space starts at 16,
+        so the total space available is 2 words, i.e. 32 - 16 i.e. alloc_ptr - len(cell)
+        next, alloc_ptr is updated to 16, i.e.
+
+        0
+        8
+        16
+        24....31
+
+
         :param page_num:
-        :param key:
-        :return: cell_number corresponding to insert location
+        :param cell_num: the current cell that the cursor is pointing to
+        :param key: key in cell
+        :param cell: to be inserted
+        :return:
         """
+
         node = self.pager.get_page(page_num)
-        num_cells = self.leaf_node_num_cells(node)
-        left_closed_index = 0
-        # 'open' since it's one past right index
-        right_open_index = num_cells
-        while left_closed_index != right_open_index:
-            # this avoid the overflow issue with
-            # index = (right_open_index + left_closed_index) // 2
-            index = left_closed_index + (right_open_index - left_closed_index) // 2
-            key_at_index = self.leaf_node_key(node, index)
-            if key == key_at_index:
-                # key found
-                return index
-            if key < key_at_index:
-                right_open_index = index
+        num_cells = Tree.leaf_node_num_cells(node)
+
+        # determine space needed
+        space_needed = len(cell)
+        assert space_needed <= LEAF_NODE_MAX_CELL_SIZE, "cell exceeds max size"
+        # space available in allocation block
+        alloc_block_space = Tree.leaf_node_alloc_block_space(node)
+        # space available in free list
+        total_space_free_list = Tree.leaf_node_total_free_list_space(node)
+
+        logging.debug(f'alloc_block_space= {alloc_block_space}, total_space_free_list={total_space_free_list}')
+
+        # determine where to place the cell
+        # NOTE: the condition on num_cells is only for debugging/developing
+        # determine whether we need to split the cell
+        if total_space_free_list + alloc_block_space < space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
+            # node is full - split node and insert
+            # raise Exception("no way leaf is full")
+            self.leaf_node_split_and_insert(page_num, cell_num, cell)
+            return
+
+        # check if a free block will satisfy
+        has_free_block, prev_node, next_node = Tree.find_free_block(node, space_needed)
+        assert has_free_block is False, "unexpected free block"
+        if has_free_block:
+            # update free list nodes, and total_
+            # copy cell onto block
+            # todo: complete me
+            pass
+        # check if allocation block will satisfy
+        elif alloc_block_space >= space_needed:
+            # copy cell onto block
+            # update alloc_ptr
+
+            if cell_num < num_cells:
+                # NOTE: cell ptrs are sorted by cell key
+                # the new cell is left of some existing cell(s)
+                # move these cell ptrs right by 1 unit
+                cellptrs = self.leaf_node_cellptrs_starting_at(node, cell_num)
+                self.set_leaf_node_cellptrs_starting_at(node, cell_num + 1, cellptrs)
+
+            # NOTE: cells are unordered
+            # allocate cell on (top of) alloc block
+            self.leaf_node_allocate_alloc_block_cell(node, cell_num, cell)
+            logging.debug('printing tree')
+            self.print_leaf_node(node)
+            logging.debug(f'node id is {id(node)}')
+            logging.debug('done printing tree')
+
+        # check if combined alloc + free blocks will satisfy
+        else:
+            assert alloc_block_space + total_space_free_list >= space_needed
+            # perform compaction on node
+            # todo: complete me
+            # todo: this could be done with a check above allocate; whether node should be compacted before alloc
+
+        # new key was inserted at largest index, i.e. new max-key - update parent
+        if cell_num == num_cells and cell_num != 0:
+            # update the parent's key
+            old_max_key = Tree.leaf_node_key(node, cell_num - 1)
+            new_max_key = get_cell_key(cell)
+            self.update_parent_on_new_right_child(page_num, old_max_key, new_max_key)
+            # self.check_update_parent_key(page_num)
+
+    def leaf_node_split_and_insert(self, page_num: int, new_cell_num: int, new_cell: bytes):
+        """
+        Split node at `page_num` and insert `new_cell`. After the insert, the nodes must be such that
+        their cells' keys are ordered. Thus, in some cases, the node may be split into 3.
+
+        Currently, the original node's content is copied onto a new node,
+        i.e. split is out-of-place.
+
+        If the node being split is a non-root node, split the node and add the new
+        child to the parent. If the parent/ancestor is full, repeat split op until every ancestor is
+        within capacity.
+
+        If node being split is root, will need to create a new root. Root page must remain at `root_page_num`
+
+        :param page_num: the original node where new cell should be placed; but must be split
+            due to capacity
+        :param new_cell_num: location of new cell
+        :param new_cell: contents of new cell
+        """
+        # 1. get old node
+        old_node = self.pager.get_page(page_num)
+        num_cells = Tree.leaf_node_num_cells(old_node)
+
+        # 2. create first split; there can be 2, or 3 splits
+        # these are dest(ination) nodes
+        new_page_num = self.pager.get_unused_page_num()
+        dest_node = self.pager.get_page(new_page_num)
+        dest_cell_num = 0
+        self.initialize_leaf_node(dest_node, node_is_root=False, parent_page_num=self.get_parent_page_num(old_node))
+
+        # 3. track all splits
+        new_node_page_nums = [new_page_num]
+
+        # 4. place all children cells of old node into new splits
+        # manually control iteration var, since both new_cell and an existing
+        # cell correspond to same cell_num
+        src_cell_num = 0
+        new_cell_placed = False
+        while src_cell_num < num_cells:
+            # check if current node can handle this cell
+            # for a new node we only need to consider the alloc block
+            available_space = Tree.leaf_node_alloc_block_space(dest_node)
+
+            # this handles picking the correct cell, i.e. cells must be
+            # placed in the correct order, including the new cell
+            # which must be placed before existing cell at cell_num
+            if src_cell_num == new_cell_num and not new_cell_placed:
+                # place the new cell first
+                cell = new_cell
+                # don't incr src_cell_num
+                new_cell_placed = True
             else:
-                left_closed_index = index + 1
+                cell = self.leaf_node_cell(old_node, src_cell_num)
+                src_cell_num += 1
 
-        return left_closed_index
+            space_needed = len(cell)
 
-    # section: logic helpers - insert
+            # we want to respect LEAF_NODE_MAX_CELLS since a split may have been
+            # invoked because of count and not space constraint on node
+            if available_space < space_needed or src_cell_num >= LEAF_NODE_MAX_CELLS:
+                # finalize previous split
+                Tree.set_leaf_node_num_cells(dest_node, dest_cell_num)
+
+                # create new node
+                new_page_num = self.pager.get_unused_page_num()
+                dest_node = self.pager.get_page(new_page_num)
+                dest_cell_num = 0
+                self.initialize_leaf_node(dest_node, node_is_root=False)
+                self.set_parent_page_num(dest_node, self.get_parent_page_num(old_node))
+                new_node_page_nums.append(new_page_num)
+
+            # provision cell
+            self.leaf_node_allocate_alloc_block_cell(dest_node, dest_cell_num, cell)
+            dest_cell_num += 1
+
+        new_node_count = len(new_node_page_nums)
+        assert new_node_count == 2 or new_node_count == 3, f"Expected 2 or 3 new nodes; received {new_node_count}"
+        left_child_page_num = new_node_page_nums[0]
+        right_child_page_num = new_node_page_nums[-1]
+        middle_child_page_num = new_node_page_nums[1] if len(new_node_page_nums) == 3 else None
+
+        # todo: ensure the old node is recycled
+
+        # add new node as child to parent of split node
+        # if split node was root, create new root and add split as children
+        if self.is_node_root(old_node):
+            self.create_new_root(left_child_page_num, right_child_page_num, middle_child_page_num=middle_child_page_num)
+        else:
+            # todo: ensure the tail invocation recycles old node
+            # for create_new_root, the old node doesn't get recycled
+            # and I dont' wan this method to be responsible for anything once the below has been called
+            self.internal_node_insert(page_num, left_child_page_num, right_child_page_num,
+                                      middle_child_page_num=middle_child_page_num)
+
 
     def internal_node_insert(self, old_child_page_num: int, left_child_page_num: int,
                              right_child_page_num: int, middle_child_page_num: Optional[int] = None):
@@ -592,603 +810,6 @@ class Tree:
         else:
             self.internal_node_insert(parent_page_num, left_parent_page_num, right_parent_page_num)
 
-    def internal_node_split_and_insert_old(self, page_num: int, new_child_page_num: int, old_child_page_num: int):
-        """
-
-        Invoked when a new child (internal node, referred to by `new_child_page_num`)
-        is to be inserted into an parent (internal node, referred to by `page_num`),
-        and the parent node is full. Here the parent node is split, and the
-        new child is inserted into the parent.
-        # todo: nuke me
-        """
-
-        parent = self.pager.get_page(page_num)
-
-        # first check if old child node key needs to be updated; page num should be unchanged
-        old_child = self.pager.get_page(old_child_page_num)
-        old_child_key = self.get_node_max_key(old_child)
-        old_child_insert_pos = self.internal_node_find(page_num, old_child_key)
-        if old_child_insert_pos < INTERNAL_NODE_MAX_CELLS:
-            page_num_at_old_child_insert_pos = self.internal_node_child(parent, old_child_insert_pos)
-            # if this assertion fails, that means the old page is not landing quiet where it should
-            # perhaps, then something needs to be moved, or there is another error
-            assert old_child_page_num == page_num_at_old_child_insert_pos, \
-                f"old child page num [{old_child_page_num}] did not match page num at child pos [{page_num_at_old_child_insert_pos}]"
-            if self.internal_node_key(parent, old_child_insert_pos) != old_child_key:
-                # key has changed, update
-                self.set_internal_node_key(parent, old_child_insert_pos, old_child_key)
-
-        # create a new node, i.e. corresponding to the right split of `parent`, i.e. `new_parent`
-        new_parent_page_num = self.pager.get_unused_page_num()
-        new_parent = self.pager.get_page(new_parent_page_num)
-        self.initialize_internal_node(new_parent)
-        self.set_node_is_root(new_parent, False)
-        self.set_parent_page_num(new_parent, self.get_parent_page_num(parent))
-
-        # `num_keys` is the number of keys stored in body of internal node
-        num_keys = self.internal_node_num_keys(parent)
-        # `total_keys` contains total number of keys
-        # including 1 extra key for the new child
-        total_keys = num_keys + 1
-
-        # determine insertion location of `new_child_page_num`, using key (child-node-max-key)
-        new_child = self.pager.get_page(new_child_page_num)
-        new_child_key = self.get_node_max_key(new_child)
-        # NOTE: this find op assumes node has capacity for new child
-        # specifically if it returns `INTERNAL_NODE_MAX_CELLS` that may represent either
-        # right child insert point or last cell; this must be handled before using `new_child_insert_pos`
-        new_child_insert_pos = self.internal_node_find(page_num, new_child_key)
-
-        if new_child_insert_pos == INTERNAL_NODE_MAX_CELLS and new_child_key > self.get_node_max_key(parent):
-            # if `new_child_insert_pos`value is INTERNAL_NODE_MAX_CELLS
-            # it's post split position is ambiguous since it could refer
-            # to last inner child or right child
-            new_child_insert_pos += 1
-
-        # divide keys evenly between old (left child) and new (right child)
-        split_left_count = 0
-        split_right_count = 0
-        # `shifted_index` iterates over [num_keys+1,...0]; can be conceptualized
-        # as index of each child as if the internal node could hold new child
-        for shifted_index in range(total_keys, -1, -1):
-
-            # determine destination node from the shifted position
-            if shifted_index >= INTERNAL_NODE_LEFT_SPLIT_CHILD_COUNT:
-                # NOTE: `new_parent` is the split of parent
-                dest_node = new_parent
-                dest_page_num = new_parent_page_num
-                split_right_count += 1
-            else:
-                dest_node = parent
-                dest_page_num = page_num
-                split_left_count += 1
-
-            # determine location for cell on it's respective node, after partition operation
-            post_partition_index = shifted_index % INTERNAL_NODE_LEFT_SPLIT_CHILD_COUNT
-
-            # we're iterating from higher to lower keyed children,
-            # so if this is the first child in the given split, it must be the right child
-            is_right_child_after_split = split_left_count == 1 or split_right_count == 1
-
-            # debugging info
-            dest_name = "old/left" if dest_node == parent else "new/right"
-
-            # insert new child
-            if shifted_index == new_child_insert_pos:
-                # set new node's parent: i.e. parent or new_parent
-                self.set_parent_page_num(new_child, dest_page_num)
-
-                debug(f"In loop shifted_index: {shifted_index} post-part-idx: {post_partition_index}"
-                      f" inserting new child into {dest_name} at {new_child_insert_pos}; key: {new_child_key}: "
-                      f" is_right_after_split: {is_right_child_after_split}, new_child_page_num: {new_child_page_num}")
-                if is_right_child_after_split:
-                    self.set_internal_node_right_child(dest_node, new_child_page_num)
-                else:
-                    self.set_internal_node_key(dest_node, post_partition_index, new_child_key)
-                    self.set_internal_node_child(dest_node, post_partition_index, new_child_page_num)
-                # below logic is for copying existing children; skip
-                continue
-
-            # handle existing entries
-            # determine which child the `shifted_index` is referring to
-            current_idx = shifted_index
-            if shifted_index > new_child_insert_pos:
-                current_idx -= 1
-
-            is_current_right_child = current_idx == num_keys
-
-            debug(f"In loop shifted_index: {shifted_index} post-part-idx: {post_partition_index}"
-                  f" inserting existing child into {dest_name} is_right_after_split: {is_right_child_after_split}"
-                  f" is_current_right_child: {is_current_right_child}")
-
-            # copy existing child cell to new location
-            if is_current_right_child and is_right_child_after_split:
-                # current right child, remains a right child
-                current_child_page_num = self.internal_node_right_child(parent)
-                self.set_internal_node_right_child(dest_node, current_child_page_num)
-                debug(f"In loop; right to right; current_child_page_num: {current_child_page_num}")
-            elif is_current_right_child:
-                # current right child, becomes an internal cell
-                # lookup key from right child page num
-                current_child_page_num = self.internal_node_right_child(parent)
-                current_child = self.pager.get_page(current_child_page_num)
-                current_child_key = self.get_node_max_key(current_child)
-                self.set_internal_node_key(dest_node, post_partition_index, current_child_key)
-                self.set_internal_node_child(dest_node, post_partition_index, current_child_page_num)
-                debug(f"In loop; is_current_right; current_child_page_num: {current_child_page_num}, "
-                      f"current_child_key: {current_child_key} ")
-            elif is_right_child_after_split:
-                # internal cell becomes right child
-                current_child_page_num = self.internal_node_child(parent, current_idx)
-                self.set_internal_node_right_child(dest_node, current_child_page_num)
-                debug(f"In loop; to_right; current_child_page_num: {current_child_page_num}")
-            else:  # never a right child
-                assert current_idx < num_keys, \
-                    f"Internal node set cell location [{current_idx}] must be less than num_cells [{num_keys}]"
-
-                cell_to_copy = self.internal_node_cell(parent, current_idx)
-                self.set_internal_node_cell(dest_node, post_partition_index, cell_to_copy)
-                debug(f"non-right to non-right")
-            print(" ")
-
-        # set left and right split counts
-        # -1 since the number of keys excludes right child's key
-        self.set_internal_node_num_keys(parent, split_left_count - 1)
-        self.set_internal_node_num_keys(new_parent, split_right_count - 1)
-
-        # some children got moved to the new/right node; update that nodes' children
-        self.check_update_parent_ref_in_children(new_parent_page_num)
-
-        # for testing
-        debug("In internal_node_split_and_insert")
-        debug("print old/left internal node after split")
-        # self.print_internal_node(parent, recurse=False)
-        debug("print new/right internal node after split")
-        # self.print_internal_node(new_parent, recurse=False)
-
-        # update parent
-        if self.is_node_root(parent):
-            self.create_new_root(new_parent_page_num)
-        else:
-            self.internal_node_insert(page_num, new_parent_page_num)
-
-    @staticmethod
-    def leaf_node_alloc_ptr(node: bytes) -> int:
-        """
-        :param node:
-        :return: the value of the alloc ptr, i.e. the abs offset of the first byte that can be allocated
-        """
-        bstring = node[LEAF_NODE_ALLOC_POINTER_OFFSET: LEAF_NODE_ALLOC_POINTER_OFFSET + LEAF_NODE_ALLOC_POINTER_SIZE]
-        return int.from_bytes(bstring, sys.byteorder)
-
-    @staticmethod
-    def leaf_node_unallocated_offset(node: bytes) -> int:
-        """
-        return first bytes of unallocated space- i.e. first byte past the cell ptr array
-        :param node:
-        :return:
-        """
-        array_size = Tree.leaf_node_num_cells(node) * LEAF_NODE_CELL_POINTER_SIZE
-        offset = LEAF_NODE_HEADER_SIZE + array_size
-        return offset
-
-    @staticmethod
-    def leaf_node_alloc_block_space(node: bytes) -> int:
-        """
-        space (bytes) available on alloc block
-
-        TODO: move static methods with rest of static methods
-
-        :param node:
-        :return:
-        """
-        # space available is from tail of cell ptr array to alloc_ptr
-        unalloc_head = Tree.leaf_node_unallocated_offset(node)
-        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
-        space_available = alloc_ptr - unalloc_head
-        return space_available
-
-    @staticmethod
-    def leaf_node_total_free_list_space(node: bytes) -> int:
-        """
-        total/combined space in free list
-        :param node:
-        :return:
-        """
-        binvalue = node[LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET:
-                        LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET + LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE]
-        return int.from_bytes(binvalue, sys.byteorder)
-
-    @staticmethod
-    def set_leaf_node_total_free_list_space(node: bytes, total_free_space: int) -> int:
-        value = total_free_space.to_bytes(LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE, sys.byteorder)
-        node[LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET:
-             LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET + LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE] = value
-
-    @staticmethod
-    def leaf_node_free_list_head(node: bytes) -> int:
-        """
-        return head of free list. May be null, i.e. 0 if
-        list is empty.
-        :param node:
-        :return:
-        """
-        binval = node[LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET:
-                      LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET + LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE]
-        return int.from_bytes(binval, sys.byteorder)
-
-    @staticmethod
-    def set_leaf_node_free_list_head(node: bytes, head: int):
-        """
-        
-        :param node:
-        :param head: offset to head of free list, i.e. free node location
-        :return:
-        """
-        value = head.to_bytes(LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE, sys.byteorder)
-        node[LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET:
-             LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET + LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE] = value
-
-    @staticmethod
-    def free_block_size(node: bytes, free_block_offset: int) -> int:
-        """
-
-        todo: these should be grouped with other static accessors
-
-        get size of free block pointed to by `free_block_offset`
-        :param node:
-        :param free_block_offset:
-        :return:
-        """
-        offset = free_block_offset + FREE_BLOCK_SIZE_OFFSET
-        binval = node[offset: offset + FREE_BLOCK_SIZE_SIZE]
-        return int.from_bytes(binval, sys.byteorder)
-
-    @staticmethod
-    def free_block_next_free(node: bytes, free_block_offset: int) -> int:
-        """
-        get next free block pointed to by block at `free_block_offset`
-        """
-        offset = free_block_offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
-        binval = node[offset: offset + FREE_BLOCK_NEXT_BLOCK_SIZE]
-        return int.from_bytes(binval, sys.byteorder)
-
-    @staticmethod
-    def find_free_block(node: bytes, space_needed: int):
-        """
-        find first free block in free list that is at least as big as `space_needed`
-        free list is unsorted
-
-        :param node:
-        :param space_needed:
-        :return: (bool, int, int): (free_block_found, prev_block, next_block)
-            prev_ and next_block are int offsets
-        """
-        # start at head (offset to first free block)
-        head = Tree.leaf_node_free_list_head(node)
-        prev_block = NULLPTR
-        while head != NULLPTR:
-            # check current block size
-            block_size = Tree.free_block_size(node, head)
-            next_block = Tree.free_block_next_free(node, head)
-            if block_size >= space_needed:
-                return True, prev_block, next_block
-
-            # go to next block
-            prev_block = head
-            head = next_block
-
-        # no matching block found
-        return False, NULLPTR, NULLPTR
-
-    def leaf_node_insert(self, page_num: int, cell_num: int, cell: bytes):
-        """
-        If there is space on the referred leaf, then the cell will be inserted,
-        and the operation will terminate.
-
-        If there is not, the node will be split.
-
-        Allocation can happen from: 1) allocation block or 2) free list.
-
-        The allocation strategy is:
-            - first check if there is a block in free list that satisfies cell
-                - if so, fragment the block (if-needed)
-                - copy cell onto block
-                - update total_free_bytes
-            - next, check if allocation block has enough space
-                - if so, copy cell
-                - update alloc_ptr
-            - next, check if total free space in free list and alloc block
-              can satisfy the cell
-                 - if so, compact the node
-                 - copy cell
-            - else,
-                - split node and copy cells
-
-        NOTE: for now ignoring free-list- allocating from allocation block
-
-        nodetype .. is_root .. parent_pointer
-        num_cells .. alloc_ptr .. free_list_head_ptr .. total_bytes_in_free_list
-        ...
-        cellptr_0, cellptr_1,... cellptr_N
-        ...
-        unallocated-space
-        ...
-        cells
-
-        e.g.
-
-        consider a page of size 32, word: 8
-        the indexable bytes are [0, 31]
-        the alloc_ptr starts at value 32
-        if the header takes 8 bytes, then the cellptr would start at 8
-        and say that takes a word, then the allocated space starts at 16,
-        so the total space available is 2 words, i.e. 32 - 16 i.e. alloc_ptr - len(cell)
-        next, alloc_ptr is updated to 16, i.e.
-
-        0
-        8
-        16
-        24....31
-
-
-        :param page_num:
-        :param cell_num: the current cell that the cursor is pointing to
-        :param key: key in cell
-        :param cell: to be inserted
-        :return:
-        """
-
-        node = self.pager.get_page(page_num)
-        num_cells = Tree.leaf_node_num_cells(node)
-
-        # determine space needed
-        space_needed = len(cell)
-        assert space_needed <= LEAF_NODE_MAX_CELL_SIZE, "cell exceeds max size"
-        # space available in allocation block
-        alloc_block_space = Tree.leaf_node_alloc_block_space(node)
-        # space available in free list
-        total_space_free_list = Tree.leaf_node_total_free_list_space(node)
-
-        logging.debug(f'alloc_block_space= {alloc_block_space}, total_space_free_list={total_space_free_list}')
-
-        # determine where to place the cell
-        # NOTE: the condition on num_cells is only for debugging/developing
-        # determine whether we need to split the cell
-        if total_space_free_list + alloc_block_space < space_needed or num_cells >= LEAF_NODE_MAX_CELLS:
-            # node is full - split node and insert
-            # raise Exception("no way leaf is full")
-            self.leaf_node_split_and_insert(page_num, cell_num, cell)
-            return
-
-        # check if a free block will satisfy
-        has_free_block, prev_node, next_node = Tree.find_free_block(node, space_needed)
-        assert has_free_block is False, "unexpected free block"
-        if has_free_block:
-            # update free list nodes, and total_
-            # copy cell onto block
-            # todo: complete me
-            pass
-        # check if allocation block will satisfy
-        elif alloc_block_space >= space_needed:
-            # copy cell onto block
-            # update alloc_ptr
-
-            if cell_num < num_cells:
-                # NOTE: cell ptrs are sorted by cell key
-                # the new cell is left of some existing cell(s)
-                # move these cell ptrs right by 1 unit
-                cellptrs = self.leaf_node_cellptrs_starting_at(node, cell_num)
-                self.set_leaf_node_cellptrs_starting_at(node, cell_num + 1, cellptrs)
-
-            # NOTE: cells are unordered
-            # allocate cell on (top of) alloc block
-            self.leaf_node_allocate_alloc_block_cell(node, cell_num, cell)
-            logging.debug('printing tree')
-            self.print_leaf_node(node)
-            logging.debug(f'node id is {id(node)}')
-            logging.debug('done printing tree')
-
-        # check if combined alloc + free blocks will satisfy
-        else:
-            assert alloc_block_space + total_space_free_list >= space_needed
-            # perform compaction on node
-            # todo: complete me
-            # todo: this could be done with a check above allocate; whether node should be compacted before alloc
-
-        # new key was inserted at largest index, i.e. new max-key - update parent
-        if cell_num == num_cells and cell_num != 0:
-            # update the parent's key
-            old_max_key = Tree.leaf_node_key(node, cell_num - 1)
-            new_max_key = get_cell_key(cell)
-            self.update_parent_on_new_right_child(page_num, old_max_key, new_max_key)
-            # self.check_update_parent_key(page_num)
-
-    @staticmethod
-    def leaf_node_deallocate_cell(node: bytes, cell_num: int):
-        """
-        deallocate the cell referered to at cell_num.
-        If the cell is at the boundary of the alloc ptr, i.e. the cell at the lowest
-        address, then return cell to the alloc ptr, otherwise return to free list.
-
-        ensure this is called before cellptr is deallocated
-        :param node:
-        :param cell_num:
-        :return:
-        """
-
-        # 1. check if cell can be returned to alloc block
-        cellptr = Tree.leaf_node_cellptr(node, cell_num)
-        cell = Tree.leaf_node_cell(node, cell_num)
-        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
-
-        if cellptr == alloc_ptr:
-            # return cell to alloc block
-            new_alloc_ptr = alloc_ptr + len(cell)
-            Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
-            return
-
-        # 2. return cell to free list
-        # 2.1. format cell as free list node
-        offset = cellptr
-        # 2.2. set block size
-        block_size = len(cell)
-        block_size_value = block_size.to_bytes(FREE_BLOCK_SIZE_SIZE)     # encoded value
-        block_size_offset = offset + FREE_BLOCK_SIZE_OFFSET
-        node[block_size_offset: block_size_offset + FREE_BLOCK_SIZE_SIZE] = block_size_value
-
-        # 2.3. insert node and set next ptr
-        head = Tree.leaf_node_free_list_head(node)
-        if head == NULLPTR:
-            # set head to cell offset
-            Tree.set_leaf_node_free_list_head(node, cellptr)
-            next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
-            # set next ptr to null
-            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = NULLPTR
-        else:
-            # insert to head of list
-            # make current head, new cell's next
-            next_ptr = head.to_bytes(FREE_BLOCK_NEXT_BLOCK_SIZE)
-            next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
-            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = next_ptr
-            # set new node as head
-            Tree.set_leaf_node_free_list_head(node, cellptr)
-
-        # 2.4. set free list total space
-        Tree.set_leaf_node_total_free_list_space(node, Tree.leaf_node_total_free_list_space(node) + len(cell))
-
-    @staticmethod
-    def leaf_node_allocate_alloc_block_cell(node: bytes, cell_num: int, cell: bytes):
-        """
-        allocate a cell and cell_num;
-        update alloc_ptr
-
-        :param node:
-        :param cell_num:
-        :param cell:
-        :return:
-        """
-        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
-        # update alloc ptr
-        # determine the new value of alloc ptr
-        # alloc_ptr points past the first allocatable byte
-        # alloc pointer grows up, i.e. towards lower addresses
-        # new alloc ptr is also the location of the new cell
-        new_alloc_ptr = alloc_ptr - len(cell)
-
-        # write cellptr
-        Tree.set_leaf_node_cellptr(node, cell_num, new_alloc_ptr)
-
-        # copy cell contents onto node
-        # the cell will be copied starting at the new alloc_ptr location
-        # print(f'writing cell to {new_alloc_ptr}')
-        Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
-
-        # update the alloc ptr
-        Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
-
-        # update cell count
-        num_cells = Tree.leaf_node_num_cells(node)
-        Tree.set_leaf_node_num_cells(node, num_cells + 1)
-
-        # logging.debug(f'cell-count {Tree.leaf_node_num_cells(node)}')
-        # Tree.print_leaf_node(node)
-        # logging.debug(f'finished printing node')
-
-    def leaf_node_split_and_insert(self, page_num: int, new_cell_num: int, new_cell: bytes):
-        """
-        Split node at `page_num` and insert `new_cell`. After the insert, the nodes must be such that
-        their cells' keys are ordered. Thus, in some cases, the node may be split into 3.
-
-        Currently, the original node's content is copied onto a new node,
-        i.e. split is out-of-place.
-
-        If the node being split is a non-root node, split the node and add the new
-        child to the parent. If the parent/ancestor is full, repeat split op until every ancestor is
-        within capacity.
-
-        If node being split is root, will need to create a new root. Root page must remain at `root_page_num`
-
-        :param page_num: the original node where new cell should be placed; but must be split
-            due to capacity
-        :param new_cell_num: location of new cell
-        :param new_cell: contents of new cell
-        """
-        # 1. get old node
-        old_node = self.pager.get_page(page_num)
-        num_cells = Tree.leaf_node_num_cells(old_node)
-
-        # 2. create first split; there can be 2, or 3 splits
-        # these are dest(ination) nodes
-        new_page_num = self.pager.get_unused_page_num()
-        dest_node = self.pager.get_page(new_page_num)
-        dest_cell_num = 0
-        self.initialize_leaf_node(dest_node, node_is_root=False, parent_page_num=self.get_parent_page_num(old_node))
-
-        # 3. track all splits
-        new_node_page_nums = [new_page_num]
-
-        # 4. place all children cells of old node into new splits
-        # manually control iteration var, since both new_cell and an existing
-        # cell correspond to same cell_num
-        src_cell_num = 0
-        new_cell_placed = False
-        while src_cell_num < num_cells:
-            # check if current node can handle this cell
-            # for a new node we only need to consider the alloc block
-            available_space = Tree.leaf_node_alloc_block_space(dest_node)
-
-            # this handles picking the correct cell, i.e. cells must be
-            # placed in the correct order, including the new cell
-            # which must be placed before existing cell at cell_num
-            if src_cell_num == new_cell_num and not new_cell_placed:
-                # place the new cell first
-                cell = new_cell
-                # don't incr src_cell_num
-                new_cell_placed = True
-            else:
-                cell = self.leaf_node_cell(old_node, src_cell_num)
-                src_cell_num += 1
-
-            space_needed = len(cell)
-
-            # we want to respect LEAF_NODE_MAX_CELLS since a split may have been
-            # invoked because of count and not space constraint on node
-            if available_space < space_needed or src_cell_num >= LEAF_NODE_MAX_CELLS:
-                # finalize previous split
-                Tree.set_leaf_node_num_cells(dest_node, dest_cell_num)
-
-                # create new node
-                new_page_num = self.pager.get_unused_page_num()
-                dest_node = self.pager.get_page(new_page_num)
-                dest_cell_num = 0
-                self.initialize_leaf_node(dest_node, node_is_root=False)
-                self.set_parent_page_num(dest_node, self.get_parent_page_num(old_node))
-                new_node_page_nums.append(new_page_num)
-
-            # provision cell
-            self.leaf_node_allocate_alloc_block_cell(dest_node, dest_cell_num, cell)
-            dest_cell_num += 1
-
-        new_node_count = len(new_node_page_nums)
-        assert new_node_count == 2 or new_node_count == 3, f"Expected 2 or 3 new nodes; received {new_node_count}"
-        left_child_page_num = new_node_page_nums[0]
-        right_child_page_num = new_node_page_nums[-1]
-        middle_child_page_num = new_node_page_nums[1] if len(new_node_page_nums) == 3 else None
-
-        # todo: ensure the old node is recycled
-
-        # add new node as child to parent of split node
-        # if split node was root, create new root and add split as children
-        if self.is_node_root(old_node):
-            self.create_new_root(left_child_page_num, right_child_page_num, middle_child_page_num=middle_child_page_num)
-        else:
-            # todo: ensure the tail invocation recycles old node
-            # for create_new_root, the old node doesn't get recycled
-            # and I dont' wan this method to be responsible for anything once the below has been called
-            self.internal_node_insert(page_num, left_child_page_num, right_child_page_num,
-                                      middle_child_page_num=middle_child_page_num)
-
     def create_new_root(self, left_child_page_num: int, right_child_page_num: int,
                         middle_child_page_num: Optional[int] = None):
         """
@@ -1261,7 +882,76 @@ class Tree:
         # update all of left node's children to refer to new left page
         self.check_update_parent_ref_in_children(left_child_page_num)
 
-    # section: logic helpers - delete
+
+    # section: logic helpers - insert helpers
+
+    @staticmethod
+    def find_free_block(node: bytes, space_needed: int):
+        """
+        find first free block in free list that is at least as big as `space_needed`
+        free list is unsorted
+
+        :param node:
+        :param space_needed:
+        :return: (bool, int, int): (free_block_found, prev_block, next_block)
+            prev_ and next_block are int offsets
+        """
+        # start at head (offset to first free block)
+        head = Tree.leaf_node_free_list_head(node)
+        prev_block = NULLPTR
+        while head != NULLPTR:
+            # check current block size
+            block_size = Tree.free_block_size(node, head)
+            next_block = Tree.free_block_next_free(node, head)
+            if block_size >= space_needed:
+                return True, prev_block, next_block
+
+            # go to next block
+            prev_block = head
+            head = next_block
+
+        # no matching block found
+        return False, NULLPTR, NULLPTR
+
+    @staticmethod
+    def leaf_node_allocate_alloc_block_cell(node: bytes, cell_num: int, cell: bytes):
+        """
+        allocate a cell and cell_num;
+        update alloc_ptr
+
+        :param node:
+        :param cell_num:
+        :param cell:
+        :return:
+        """
+        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
+        # update alloc ptr
+        # determine the new value of alloc ptr
+        # alloc_ptr points past the first allocatable byte
+        # alloc pointer grows up, i.e. towards lower addresses
+        # new alloc ptr is also the location of the new cell
+        new_alloc_ptr = alloc_ptr - len(cell)
+
+        # write cellptr
+        Tree.set_leaf_node_cellptr(node, cell_num, new_alloc_ptr)
+
+        # copy cell contents onto node
+        # the cell will be copied starting at the new alloc_ptr location
+        # print(f'writing cell to {new_alloc_ptr}')
+        Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
+
+        # update the alloc ptr
+        Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
+
+        # update cell count
+        num_cells = Tree.leaf_node_num_cells(node)
+        Tree.set_leaf_node_num_cells(node, num_cells + 1)
+
+        # logging.debug(f'cell-count {Tree.leaf_node_num_cells(node)}')
+        # Tree.print_leaf_node(node)
+        # logging.debug(f'finished printing node')
+
+    # section: logic helpers - delete core
 
     def leaf_node_delete(self, page_num: int, cell_num: int):
         """
@@ -1298,8 +988,8 @@ class Tree:
 
             # 2.1. compaction is possible if: 1) node is non-root, 2)  num of children and 3) space can
             # fit on one at least 1 fewer node
-             if num_children <= (num_sibs - 1) * LEAF_NODE_MAX_CELLS and \
-                    total_space_needed <= (num_sibs - 1) * LEAF_NODE_NON_HEADER_SPACE:
+            if (num_children <= (num_sibs - 1) * LEAF_NODE_MAX_CELLS and
+                     total_space_needed <= (num_sibs - 1) * LEAF_NODE_NON_HEADER_SPACE):
                 return self.leaf_node_compact_and_delete(page_num, cell_num)
 
         # 3. handle deletion
@@ -1317,8 +1007,13 @@ class Tree:
             new_right_key = self.leaf_node_key(node, cell_num - 1)
             self.update_parent_on_new_right_child(page_num, del_key, new_right_key)
 
-    def leaf_node_compact_and_delete(self, page_num, cell_num):
+    def leaf_node_compact_and_delete(self, page_num: int, cell_num: int):
+        """
 
+        :param page_num:
+        :param cell_num:
+        :return:
+        """
         # 1. setup
         # 1.1. get all src nodes
         node = self.pager.get_page(page_num)
@@ -1434,8 +1129,114 @@ class Tree:
         :return:
         """
 
+    def internal_node_compact_and_delete(self, old_left_child_page_num: Optional[int], old_middle_child_page_num: int,
+                         old_right_child_page_num: Optional[int], new_left_child_page_num: int,
+                         new_right_child_page_num: Optional[int]):
+        """
+
+        :param old_left_child_page_num:
+        :param old_middle_child_page_num:
+        :param old_right_child_page_num:
+        :param new_left_child_page_num:
+        :param new_right_child_page_num:
+        :return:
+        """
+
+    def check_delete_root(self, page_num: int):
+        """
+        Delete the root at `page_num`
+
+        Note that root_page_num must not change. So we must
+        copy the contents of the new root, onto the page that corresponds to the old
+        root.
+
+        :param page_num: the node to delete
+        :return:
+        """
+        root = self.pager.get_page(page_num)
+        assert self.is_node_root(root)
+
+        if self.internal_node_num_keys(root) > 0:
+            # the tree has at least two node; nothing to do
+            return
+
+        if not self.internal_node_has_right_child(root):
+            # nothing is left in the tree; reset root to empty leaf node
+            self.initialize_leaf_node(root)
+        else:
+            # tree is unary; delete root and set child to be new root
+            child_page_num = self.internal_node_right_child(root)
+            child = self.pager.get_page(child_page_num)
+            # copy child onto root page
+            root[:PAGE_SIZE] = child
+            self.set_node_is_root(root, True)
+            # update children of root; since parent page_num has changed
+            self.check_update_parent_ref_in_children(page_num)
+            self.pager.return_page(child_page_num)
+
+
+    # section: logic helpers - delete helpers
+
+    @staticmethod
+    def leaf_node_deallocate_cell(node: bytes, cell_num: int):
+        """
+        deallocate the cell referered to at cell_num.
+        If the cell is at the boundary of the alloc ptr, i.e. the cell at the lowest
+        address, then return cell to the alloc ptr, otherwise return to free list.
+
+        ensure this is called before cellptr is deallocated
+        :param node:
+        :param cell_num:
+        :return:
+        """
+
+        # 1. check if cell can be returned to alloc block
+        cellptr = Tree.leaf_node_cellptr(node, cell_num)
+        cell = Tree.leaf_node_cell(node, cell_num)
+        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
+
+        if cellptr == alloc_ptr:
+            # return cell to alloc block
+            new_alloc_ptr = alloc_ptr + len(cell)
+            Tree.set_leaf_node_alloc_ptr(node, new_alloc_ptr)
+            return
+
+        # 2. return cell to free list
+        # 2.1. format cell as free list node
+        offset = cellptr
+        # 2.2. set block size
+        block_size = len(cell)
+        block_size_value = block_size.to_bytes(FREE_BLOCK_SIZE_SIZE)     # encoded value
+        block_size_offset = offset + FREE_BLOCK_SIZE_OFFSET
+        node[block_size_offset: block_size_offset + FREE_BLOCK_SIZE_SIZE] = block_size_value
+
+        # 2.3. insert node and set next ptr
+        head = Tree.leaf_node_free_list_head(node)
+        if head == NULLPTR:
+            # set head to cell offset
+            Tree.set_leaf_node_free_list_head(node, cellptr)
+            next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
+            # set next ptr to null
+            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = NULLPTR
+        else:
+            # insert to head of list
+            # make current head, new cell's next
+            next_ptr = head.to_bytes(FREE_BLOCK_NEXT_BLOCK_SIZE)
+            next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
+            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = next_ptr
+            # set new node as head
+            Tree.set_leaf_node_free_list_head(node, cellptr)
+
+        # 2.4. set free list total space
+        Tree.set_leaf_node_total_free_list_space(node, Tree.leaf_node_total_free_list_space(node) + len(cell))
+
+
+
+    # section: old delete - nuke
+
     def leaf_node_delete_old(self, page_num: int, cell_num: int):
         """
+        todo: nuke this and other old delete methods
         delete key located at `page_num` at `cell_num`
         :param page_num:
         :param cell_num:
@@ -1653,38 +1454,6 @@ class Tree:
         # 7. recycle nodes
         while deleted_children:
             self.pager.return_page(deleted_children.pop().page_num)
-
-    def check_delete_root(self, page_num: int):
-        """
-        Delete the root at `page_num`
-
-        Note that root_page_num must not change. So we must
-        copy the contents of the new root, onto the page that corresponds to the old
-        root.
-
-        :param page_num: the node to delete
-        :return:
-        """
-        root = self.pager.get_page(page_num)
-        assert self.is_node_root(root)
-
-        if self.internal_node_num_keys(root) > 0:
-            # the tree has at least two node; nothing to do
-            return
-
-        if not self.internal_node_has_right_child(root):
-            # nothing is left in the tree; reset root to empty leaf node
-            self.initialize_leaf_node(root)
-        else:
-            # tree is unary; delete root and set child to be new root
-            child_page_num = self.internal_node_right_child(root)
-            child = self.pager.get_page(child_page_num)
-            # copy child onto root page
-            root[:PAGE_SIZE] = child
-            self.set_node_is_root(root, True)
-            # update children of root; since parent page_num has changed
-            self.check_update_parent_ref_in_children(page_num)
-            self.pager.return_page(child_page_num)
 
     def compact_internal_nodes(self, siblings: list) -> int:
         """
@@ -2325,7 +2094,7 @@ class Tree:
 
         return True
 
-    # section : node getter/setters: common, internal, leaf
+    # section : node getters setters: common, internal, leaf, leaf::free-list
 
     @staticmethod
     def get_parent_page_num(node: bytes) -> int:
@@ -2440,18 +2209,6 @@ class Tree:
         return int.from_bytes(bin_num, sys.byteorder)
 
     @staticmethod
-    def leaf_node_key_old(node: bytes, cell_num: int) -> int:
-        """
-        return the leaf node key (int)
-        :param node:
-        :param cell_num:
-        :return:
-        """
-        offset = Tree.leaf_node_key_offset(cell_num)
-        bin_num = node[offset: offset + LEAF_NODE_KEY_SIZE]
-        return int.from_bytes(bin_num, sys.byteorder)
-
-    @staticmethod
     def leaf_node_key(node: bytes, cell_num: int) -> int:
         """
         get key in leaf node at position `cell_num`
@@ -2518,6 +2275,84 @@ class Tree:
         """
         offset = Tree.leaf_node_value_offset(cell_num)
         return node[offset: offset + LEAF_NODE_VALUE_SIZE]
+
+    @staticmethod
+    def leaf_node_alloc_ptr(node: bytes) -> int:
+        """
+        :param node:
+        :return: the value of the alloc ptr, i.e. the abs offset of the first byte that can be allocated
+        """
+        bstring = node[LEAF_NODE_ALLOC_POINTER_OFFSET: LEAF_NODE_ALLOC_POINTER_OFFSET + LEAF_NODE_ALLOC_POINTER_SIZE]
+        return int.from_bytes(bstring, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_unallocated_offset(node: bytes) -> int:
+        """
+        return first bytes of unallocated space- i.e. first byte past the cell ptr array
+        :param node:
+        :return:
+        """
+        array_size = Tree.leaf_node_num_cells(node) * LEAF_NODE_CELL_POINTER_SIZE
+        offset = LEAF_NODE_HEADER_SIZE + array_size
+        return offset
+
+    @staticmethod
+    def leaf_node_alloc_block_space(node: bytes) -> int:
+        """
+        space (bytes) available on alloc block
+
+        :param node:
+        :return:
+        """
+        # space available is from tail of cell ptr array to alloc_ptr
+        unalloc_head = Tree.leaf_node_unallocated_offset(node)
+        alloc_ptr = Tree.leaf_node_alloc_ptr(node)
+        space_available = alloc_ptr - unalloc_head
+        return space_available
+
+    @staticmethod
+    def leaf_node_total_free_list_space(node: bytes) -> int:
+        """
+        total/combined space in free list
+        :param node:
+        :return:
+        """
+        binvalue = node[LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET:
+                        LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET + LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE]
+        return int.from_bytes(binvalue, sys.byteorder)
+
+    @staticmethod
+    def leaf_node_free_list_head(node: bytes) -> int:
+        """
+        return head of free list. May be null, i.e. 0 if
+        list is empty.
+        :param node:
+        :return:
+        """
+        binval = node[LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET:
+                      LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET + LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE]
+        return int.from_bytes(binval, sys.byteorder)
+
+    @staticmethod
+    def free_block_size(node: bytes, free_block_offset: int) -> int:
+        """
+        get size of free block pointed to by `free_block_offset`
+        :param node:
+        :param free_block_offset:
+        :return:
+        """
+        offset = free_block_offset + FREE_BLOCK_SIZE_OFFSET
+        binval = node[offset: offset + FREE_BLOCK_SIZE_SIZE]
+        return int.from_bytes(binval, sys.byteorder)
+
+    @staticmethod
+    def free_block_next_free(node: bytes, free_block_offset: int) -> int:
+        """
+        get next free block pointed to by block at `free_block_offset`
+        """
+        offset = free_block_offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
+        binval = node[offset: offset + FREE_BLOCK_NEXT_BLOCK_SIZE]
+        return int.from_bytes(binval, sys.byteorder)
 
     @staticmethod
     def set_parent_page_num(node: bytes, page_num: int):
@@ -2653,17 +2488,6 @@ class Tree:
         node[LEAF_NODE_NUM_CELLS_OFFSET: LEAF_NODE_NUM_CELLS_OFFSET + LEAF_NODE_NUM_CELLS_SIZE] = value
 
     @staticmethod
-    def set_leaf_node_value(node: bytes, cell_num: int, value: bytes):
-        """
-        :param node:
-        :param cell_num:
-        :param value:
-        :return:
-        """
-        offset = Tree.leaf_node_value_offset(cell_num)
-        node[offset: offset + LEAF_NODE_VALUE_SIZE] = value
-
-    @staticmethod
     def set_leaf_node_cell(node: bytes, cell_offset: int, cell: bytes):
         """
         write cell to given offset
@@ -2674,10 +2498,31 @@ class Tree:
         node[cell_offset: cell_offset + len(cell)] = cell
 
     @staticmethod
-    def set_leaf_node_key_value(node: bytes, cell_num: int, key: int, value: bytes):
+    def set_leaf_node_free_list_head(node: bytes, head: int):
         """
-        write both key and value for a given cell
+
+        :param node:
+        :param head: offset to head of free list, i.e. free node location
+        :return:
         """
-        Tree.set_leaf_node_key(node, cell_num, key)
-        Tree.set_leaf_node_value(node, cell_num, value)
+        value = head.to_bytes(LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE, sys.byteorder)
+        node[LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET:
+             LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET + LEAF_NODE_FREE_LIST_HEAD_POINTER_SIZE] = value
+
+    @staticmethod
+    def set_leaf_node_total_free_list_space(node: bytes, total_free_space: int) -> int:
+        value = total_free_space.to_bytes(LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE, sys.byteorder)
+        node[LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET:
+             LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET + LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE] = value
+
+    @staticmethod
+    def set_leaf_node_cell(node: bytes, cell_offset: int, cell: bytes):
+        """
+        todo: nuke me
+        write cell to given offset
+
+        :param cell_offset: abs offset on node
+        :param cell: cell to write
+        """
+        node[cell_offset: cell_offset + len(cell)] = cell
 
