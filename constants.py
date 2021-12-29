@@ -125,8 +125,10 @@ CELL_KEY_SIZE_SIZE = WORD
 CELL_DATA_SIZE_OFFSET = CELL_KEY_SIZE_OFFSET + CELL_KEY_SIZE_SIZE
 CELL_DATA_SIZE_SIZE = WORD
 CELL_KEY_PAYLOAD_OFFSET = CELL_DATA_SIZE_OFFSET + CELL_DATA_SIZE_SIZE
-# max cell that can fit on page
-LEAF_NODE_MAX_CELL_SIZE = PAGE_SIZE - LEAF_NODE_HEADER_SIZE - LEAF_NODE_CELL_POINTER_SIZE
+# space excluding headers, i.e. only space for cells and cellptr
+LEAF_NODE_NON_HEADER_SPACE = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
+# max cell that can fit on page is non-header space and 1 cell ptr
+LEAF_NODE_MAX_CELL_SIZE = LEAF_NODE_NON_HEADER_SPACE - LEAF_NODE_CELL_POINTER_SIZE
 
 # free-block constants
 # NOTE: these are relative to start of a free block

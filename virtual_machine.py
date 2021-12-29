@@ -14,10 +14,9 @@ from lang_parser.sqlhandler import SqlFrontEnd
 
 class VirtualMachine(Visitor):
     """
-    This will interpret/execute the prepared statements on some
+    Execute prepared statements corresponding to some sql statements, on some
     state. The state is encoded as a catalog (which maps to the table
     containing information of all objects (tables + indices).
-
     """
     def __init__(self, state_manager: StateManager, output_pipe: 'Pipe'):
         self.state_manager = state_manager
@@ -76,7 +75,11 @@ class VirtualMachine(Visitor):
         """
         result = []
         for stmt in program.statements:
-            result.append(self.execute(stmt))
+            try:
+                result.append(self.execute(stmt))
+            except Exception:
+                print(f"ERROR: virtual machine failed on: [{stmt}]")
+                raise
 
     def execute(self, stmnt: 'Symbol'):
         """
@@ -123,7 +126,7 @@ class VirtualMachine(Visitor):
         # NOTE: for now using page_num as unique int key
         pkey = page_num
         sql_text = schema_to_ddl(table_schema)
-        print(f'generated DDL: {sql_text}')
+        print(f'visit_create_stmnt: generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
         response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
         if not response.success:
