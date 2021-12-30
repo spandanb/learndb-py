@@ -1,3 +1,7 @@
+"""
+todo: port tests to btree_tests2.py and nuke
+"""
+
 import os
 import pytest
 

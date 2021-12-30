@@ -132,15 +132,12 @@ def execute_statement(program: Program, virtmachine: VirtualMachine) -> Response
     return Response(True)
 
 
-def input_handler(input_buffer: str, virtmachine: VirtualMachine):
+def input_handler(input_buffer: str, virtmachine: VirtualMachine) -> Response:
     """
-    handle input
-
-    The API needs to be cleaned up; but crucially, there
-    are 3 entities- input_buffer (user intention), table (state), vm (stateless compute)
+    receive input, parse input, and execute vm.
 
     :param input_buffer:
-    :param table: This should be something like context, or database the entity, i.e. an embodiment of state
+    :param virtmachine:
     :return:
     """
     if is_meta_command(input_buffer):
@@ -156,7 +153,7 @@ def input_handler(input_buffer: str, virtmachine: VirtualMachine):
     if not p_resp.success:
         if p_resp.status == PrepareResult.UnrecognizedStatement:
             print(f"Unrecognized keyword at start of '{input_buffer}'")
-            return Response(False, status=PrepareResult.UnrecognizedStatement)
+        return Response(False, status={p_resp.status}, error_message=p_resp.error_message)
 
     # handle non-meta command
     # execute statement can be handled by the interpreter
@@ -170,22 +167,72 @@ def input_handler(input_buffer: str, virtmachine: VirtualMachine):
         return Response(False, error_message=e_resp.error_message)
 
 
+class LearnDB:
+    """
+    This encapsulates functionality over core db functions-
+    exposed via a thin wrapper.
+    """
+
+    def __init__(self, db_filepath: str):
+        """
+        pass
+        """
+        self.db_filepath = db_filepath
+        self.state_manager = None
+        self.pipe = None
+        self.virtual_machine = None
+        self.reset()
+
+    def reset(self):
+        self.state_manager = StateManager(self.db_filepath)
+        self.pipe = Pipe()
+        self.virtual_machine = VirtualMachine(self.state_manager, self.pipe)
+
+    def nuke_dbfile(self):
+        """
+        remove db file; requires state_manager be shutdown, since it
+        holds a ref to file
+        :return:
+        """
+        self.close()
+        if os.path.exists(self.db_filepath):
+            os.remove(self.db_filepath)
+        self.reset()
+
+    def get_pipe(self) -> Pipe:
+        return self.pipe
+
+    def close(self):
+        """
+        must be called before exiting, to persist data to disk
+        :return:
+        """
+        self.state_manager.close()
+
+    def handle_input(self, input_buffer: str) -> Response:
+        """
+        handle input- parse and execute
+
+        :param input_buffer:
+        :return:
+        """
+        return input_handler(input_buffer, self.virtual_machine)
+
+
 def repl():
     """
     repl
     """
 
-    # create state manager
-    state_manager = StateManager(DB_FILE)
+    # create db client
+    db = LearnDB(DB_FILE)
 
-    # create virtual machine
-    # output pipe
-    pipe = Pipe()
-    virtmachine = VirtualMachine(state_manager, pipe)
+    # get output pipe
+    pipe = db.get_pipe()
 
     while True:
         input_buffer = input("db > ")
-        input_handler(input_buffer, virtmachine)
+        db.handle_input(input_buffer)
         if pipe.has_msgs():
             print(pipe.read())
 
@@ -195,44 +242,22 @@ def devloop():
     this works through the entire intialize process
     :return:
     """
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
 
-    # create state manager
-    state_manager = StateManager(DB_FILE)
+    db = LearnDB(DB_FILE)
+    db.nuke_dbfile()
 
     # output pipe
-    pipe = Pipe()
+    pipe = db.get_pipe()
 
-    # config logger
-    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
-    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
-
-    # create virtual machine
-    virtmachine = VirtualMachine(state_manager, pipe)
-
-    # create table
-    cmds0 = [
-        "create table foo ( colA integer primary key, colB text)",
-        # "select pkey, root_pagenum from catalog",
-        #"insert into foo (colA, colB) values (0, 'hellew words')",
-        "insert into foo (colA, colB) values (1, 'hellew words')",
-        "insert into foo (colA, colB) values (89, 'hellew words foo')",
-        "insert into foo (colA, colB) values (90, 'hellew words foo')",
-        "insert into foo (colA, colB) values (91, 'hellew words foo')",
-        "insert into foo (colA, colB) values (92, 'hellew words foo')",
-        "insert into foo (colA, colB) values (4, 'hellew words foo')",
-        "insert into foo (colA, colB) values (2, 'hellew words foo')",
-        "select colA, colB  from foo"
-    ]
+    # create random records
+    keys = list(set(randint(1, 1000) for i in range(50)))
+    # keys = [0, 1, 89, 90, 92, 4, 2]
+    # keys = [625, 582, 200, 301, 40, 354, 228, 797, 90, 245]
+    # keys = [236, 301, 602, 522, 449, 742, 252, 333, 768, 261, 619, 87, 854, 851, 332, 360]
 
     cmds = [
         "create table foo ( colA integer primary key, colB text)",
     ]
-    # create random records
-    keys = list(set(randint(1, 1000) for i in range(100)))
-    # keys = [625, 582, 200, 301, 40, 354, 228, 797, 90, 245]
-    # keys = [236, 301, 602, 522, 449, 742, 252, 333, 768, 261, 619, 87, 854, 851, 332, 360]
 
     for key in keys:
         cmds.append(f"insert into foo (colA, colB) values ({key}, 'hellew words foo')")
@@ -243,13 +268,7 @@ def devloop():
 
     for cmd in cmds:
         logging.info(f"handling [{cmd}]")
-        p_resp = prepare_statement(cmd)
-        if not p_resp.success:
-            print(f"failure due to {p_resp.error_message}")
-            return EXIT_FAILURE
-
-        virtmachine.run(p_resp.body)
-        # state_manager.print_tree("foo")
+        db.handle_input(cmd)
 
         # print anything in the output buffer
         while pipe.has_msgs():
@@ -258,14 +277,14 @@ def devloop():
             print(f'pipe read: {record}')
             result_keys.append(key)
 
-        state_manager.validate_tree("foo")
-        state_manager.print_tree("foo")
+        db.state_manager.validate_tree("foo")
+        db.state_manager.print_tree("foo")
         print('*'*100)
 
     assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
 
-    # close statemanager to push changed state to disk
-    state_manager.close()
+    # close db to push changed state to disk
+    db.close()
 
 
 def parse_args_and_start(args: list):
@@ -300,4 +319,7 @@ python learndb.py file <filepath>
 
 
 if __name__ == '__main__':
+    # config logger
+    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
+    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
     parse_args_and_start(sys.argv[1:])

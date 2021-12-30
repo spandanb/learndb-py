@@ -177,7 +177,7 @@ class VirtualMachine(Visitor):
             resp = deserialize_cell(cell, schema)
             assert resp.success
             record = resp.body
-            print(f"printing record: {record}")
+            # print(f"printing record: {record}")
             self.output_pipe.write(record)
             cursor.advance()
 
