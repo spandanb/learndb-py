@@ -59,7 +59,7 @@ The following are some parts of a DBMS (In no particular order):
 - Requires > python 3.10 and pytest
 
 - Run btree tests:
-`python -m pytest -s btree_tests.py`
+`python -m pytest -s btree_tests2.py`
 
 - Run end-to-end tests:
 `... e2e_tests.py`
@@ -154,3 +154,6 @@ Reproduced from `lang_parser/sqlparser.py`
         IDENTIFIER    -> {_a-zA-z0-9}+
 
 ```
+
+## Misc Notes
+- LEAF_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CELLS control how many max children each node type can support

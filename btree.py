@@ -1177,7 +1177,6 @@ class Tree:
             self.check_update_parent_ref_in_children(page_num)
             self.pager.return_page(child_page_num)
 
-
     # section: logic helpers - delete helpers
 
     @staticmethod
