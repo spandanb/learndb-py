@@ -202,7 +202,8 @@ class Tree:
         key = get_cell_key(cell)
         page_num, cell_num = self.find(key)
         node = self.pager.get_page(page_num)
-        if self.leaf_node_key(node, cell_num) == key:
+        # if insertion is an occupied cell, check for duplicate key
+        if self.leaf_node_num_cells(node) > cell_num and self.leaf_node_key(node, cell_num) == key:
             return TreeInsertResult.DuplicateKey
 
         self.leaf_node_insert(page_num, cell_num, cell)
@@ -2217,6 +2218,7 @@ class Tree:
         :param cell_num: a contiguous integer (0-based), indicating the relative position
         :return:
         """
+        assert cell_num < Tree.leaf_node_num_cells(node), "cell at cell_num greater than number of cells requested"
         cell_offset = Tree.leaf_node_cell_offset(node, cell_num)
         return get_cell_key_in_page(node, cell_offset)
 
