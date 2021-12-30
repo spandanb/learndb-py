@@ -1,6 +1,6 @@
 # from __future__ import annotations
 from cursor import Cursor
-from btree import Tree
+from btree import Tree, TreeInsertResult, TreeDeleteResult
 from table import Table
 from statemanager import StateManager
 from schema import Record, create_record, create_catalog_record, generate_schema, schema_to_ddl
@@ -204,7 +204,8 @@ class VirtualMachine(Visitor):
         assert resp.success, f"serialize record failed due to {resp.error_message}"
 
         cell = resp.body
-        tree.insert(cell)
+        resp = tree.insert(cell)
+        assert resp == TreeInsertResult.Success, f"Insert op failed with status: {resp}"
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
         pass
