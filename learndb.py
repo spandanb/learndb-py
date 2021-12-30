@@ -212,19 +212,34 @@ def devloop():
     virtmachine = VirtualMachine(state_manager, pipe)
 
     # create table
-    cmds = [
+    cmds0 = [
         "create table foo ( colA integer primary key, colB text)",
         # "select pkey, root_pagenum from catalog",
         #"insert into foo (colA, colB) values (0, 'hellew words')",
         "insert into foo (colA, colB) values (1, 'hellew words')",
-        #"insert into foo (colA, colB) values (89, 'hellew words foo')",
-        #"insert into foo (colA, colB) values (90, 'hellew words foo')",
-        #"insert into foo (colA, colB) values (91, 'hellew words foo')",
-        #"insert into foo (colA, colB) values (92, 'hellew words foo')",
-        #"insert into foo (colA, colB) values (4, 'hellew words foo')",
-        #"insert into foo (colA, colB) values (2, 'hellew words foo')",
-        #"select colA, colB  from foo"
+        "insert into foo (colA, colB) values (89, 'hellew words foo')",
+        "insert into foo (colA, colB) values (90, 'hellew words foo')",
+        "insert into foo (colA, colB) values (91, 'hellew words foo')",
+        "insert into foo (colA, colB) values (92, 'hellew words foo')",
+        "insert into foo (colA, colB) values (4, 'hellew words foo')",
+        "insert into foo (colA, colB) values (2, 'hellew words foo')",
+        "select colA, colB  from foo"
     ]
+
+    cmds = [
+        "create table foo ( colA integer primary key, colB text)",
+    ]
+    # create random records
+    keys = list(set(randint(1, 1000) for i in range(100)))
+    # keys = [625, 582, 200, 301, 40, 354, 228, 797, 90, 245]
+    # keys = [236, 301, 602, 522, 449, 742, 252, 333, 768, 261, 619, 87, 854, 851, 332, 360]
+
+    for key in keys:
+        cmds.append(f"insert into foo (colA, colB) values ({key}, 'hellew words foo')")
+
+    cmds.append("select colA, colB  from foo")
+
+    result_keys = []
 
     for cmd in cmds:
         logging.info(f"handling [{cmd}]")
@@ -238,10 +253,16 @@ def devloop():
 
         # print anything in the output buffer
         while pipe.has_msgs():
-            pipe.read()
+            record = pipe.read()
+            key = record.get("cola")
+            print(f'pipe read: {record}')
+            result_keys.append(key)
 
+        state_manager.validate_tree("foo")
         state_manager.print_tree("foo")
         print('*'*100)
+
+    assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
 
     # close statemanager to push changed state to disk
     state_manager.close()

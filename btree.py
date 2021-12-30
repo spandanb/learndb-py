@@ -460,7 +460,6 @@ class Tree:
             old_max_key = Tree.leaf_node_key(node, cell_num - 1)
             new_max_key = get_cell_key(cell)
             self.update_parent_on_new_right_child(page_num, old_max_key, new_max_key)
-            # self.check_update_parent_key(page_num)
 
     def leaf_node_split_and_insert(self, page_num: int, new_cell_num: int, new_cell: bytes):
         """
@@ -672,12 +671,7 @@ class Tree:
         # to be updated upto root node, i.e. arbitrary depth; unlike
         # the child page nums refs, which are only held by the parent
 
-        # 7.a. right child was split; but we don't know whether a new max key was inserted
-        # this definitely works
-        #if right_child_updated:
-        #    self.check_update_parent_key(parent_page_num)
-
-        # 7.b. recursively update parent key for children
+        # 7.1. recursively update parent key for children
         # untested
         # if old child was right child and we have a new max key
         if old_child_num == INTERNAL_NODE_MAX_CELLS and old_child_max_key < right_child_max_key:
@@ -704,9 +698,6 @@ class Tree:
         :return:
         """
 
-        logging.debug(f'old_child_page_num: {old_child_page_num}, left_child_page_num: {left_child_page_num}, '
-                      f'right_child_page_num: {right_child_page_num}, middle_child_page_num: {middle_child_page_num}')
-
         # 1. setup
         old_child = self.pager.get_page(old_child_page_num)
         parent_page_num = self.get_parent_page_num(old_child)
@@ -732,7 +723,6 @@ class Tree:
         total_children = num_keys + 1 + (1 if middle_child_page_num is None else 2)
         right_split_count = total_children // 2
         left_split_count = total_children - right_split_count
-        logging.debug(f"total-children: {total_children}, num_keys: {num_keys} left_split_count: {left_split_count}, right_split_count: {right_split_count}")
 
         # 1.4. track which children have to be inserted
         new_children = deque()
@@ -743,14 +733,8 @@ class Tree:
 
         # 2. place existing children- internal and right, and new
         # children onto the parent splits
-        # when it sees the child_num of old_child - it starts a
-        # sub-iteration over the new children- and places the new children there
-        # NOTE: the old child is recycled
 
-        # I'm trying to write the logic below in the clearest way
-        # possible- but it's complicated
-
-        # the new children will go where old child was
+        # 2.1. prepare iteration
         old_child_num = self.internal_node_find(parent_page_num, old_child_max_key)
         # distribute children from old parent, and new splits
         # evenly onto left_ and right_parent.
@@ -760,94 +744,81 @@ class Tree:
         # flag to determine whether to write to left or right split
         write_to_left = True
 
-        # 2.1. handle inner children
-        while src_child_num < num_keys:
-            # determine src child
-            # logging.debug(f'old_child_num: {old_child_num} src_child_num: {src_child_num}')
-            if src_child_num == old_child_num and len(new_children) != 0:
-                # place new child(ren) at old child's location
-                child_page_num = new_children.popleft()
-            elif src_child_num == old_child_num:
-                # no more new children to place, skip over old node
-                src_child_num += 1
-                continue
+        while src_child_num <= num_keys:
+            # 2.2. determine src child page num
+            # src child is picked based on src_child_num in parent
+            # if src_child_num is where old_child was, then we insert the
+            # new children starting there, and until all nodes are placed
+            src_child_page_num = None
+            if src_child_num == num_keys:
+                # src is right child
+                if old_child_num == INTERNAL_NODE_MAX_CELLS:
+                    # src are new splits
+                    src_child_page_num = new_children.popleft()
+                    # no more new children, incr
+                    if len(new_children) == 0:
+                        src_child_num += 1
+                else:
+                    src_child_page_num = Tree.internal_node_right_child(parent)
+                    src_child_num += 1
             else:
-                # place existing child
-                child_page_num = Tree.internal_node_child(parent, src_child_num)
-                src_child_num += 1
+                # inner child
+                if src_child_num == old_child_num:
+                    # place new child(ren) at old child's location instead of old location
+                    src_child_page_num = new_children.popleft()
+                    # no more new children, incr
+                    if len(new_children) == 0:
+                        src_child_num += 1
+                else:
+                    # place existing child
+                    src_child_page_num = Tree.internal_node_child(parent, src_child_num)
+                    src_child_num += 1
 
-            # materialize src child
-            child_node = self.pager.get_page(child_page_num)
+            # 2.3. materialize src child
+            child_node = self.pager.get_page(src_child_page_num)
             child_key = self.get_node_max_key(child_node)
 
-            logging.debug(f'dest_child_num is {dest_child_num}, write_to_left is {write_to_left}, child_page: {child_page_num}, child_key: {child_key}')
-
-            # determine destination node and position
+            # 2.4. determine destination node and position
             # copy src to destination
             if write_to_left:
                 # destination is left node
                 if dest_child_num == left_split_count - 1:
                     # src is the right child of left parent
-                    Tree.set_internal_node_right_child(left_parent, child_page_num)
+                    Tree.set_internal_node_right_child(left_parent, src_child_page_num)
                     # write to node
                     # left node is full; subsequent writes will go to right nodes
                     write_to_left = False
                     dest_child_num = 0
                 else:
                     # src is an inner child
-                    # child_key = self.get_node_max_key(child_node)
                     Tree.set_internal_node_key(left_parent, dest_child_num, child_key)
-                    Tree.set_internal_node_child(left_parent, dest_child_num, child_page_num)
+                    Tree.set_internal_node_child(left_parent, dest_child_num, src_child_page_num)
                     dest_child_num += 1
                 # update child's parent ref to new parent
                 Tree.set_parent_page_num(child_node, left_parent_page_num)
             else:
                 # destination is right node
                 if dest_child_num == right_split_count - 1:
-                    Tree.set_internal_node_right_child(right_parent, child_page_num)
+                    Tree.set_internal_node_right_child(right_parent, src_child_page_num)
                 else:
                     # src is an inner child
-                    # child_key = self.get_node_max_key(child_node)
-                    Tree.set_internal_node_child(right_parent, dest_child_num, child_page_num)
+                    Tree.set_internal_node_child(right_parent, dest_child_num, src_child_page_num)
                     Tree.set_internal_node_key(right_parent, dest_child_num, child_key)
                     dest_child_num += 1
                 # update child's parent ref to new parent
                 Tree.set_parent_page_num(child_node, right_parent_page_num)
 
-        # 2.2. handle right child from original node
-        if old_child_num == INTERNAL_NODE_MAX_CELLS:
-            # old child was the right child, then the right-most split of child will be new right child
-            assert len(new_children) == 1, f'Expected 1 new child remaining, received {len(new_children)}'
-            right_parent_right_child_page_num = new_children.pop()
-            Tree.set_internal_node_right_child(right_parent, right_parent_right_child_page_num)
-            child_node = self.pager.get_page(right_parent_right_child_page_num)
-            Tree.set_parent_page_num(child_node, right_parent_page_num)
-        else:
-            # right child of new right parent is old right child
-            right_parent_right_child_page_num = Tree.internal_node_right_child(parent)
-            Tree.set_internal_node_right_child(right_parent, right_parent_right_child_page_num)
-            child_node = self.pager.get_page(right_parent_right_child_page_num)
-            Tree.set_parent_page_num(child_node, right_parent_page_num)
-
         # 3. update counts
         Tree.set_internal_node_num_keys(left_parent, left_split_count - 1)
         Tree.set_internal_node_num_keys(right_parent, right_split_count - 1)
-
-        #logging.debug("printing left parent")
-        #self.print_tree(left_parent_page_num, depth=1)
-        #logging.debug("printing right parent")
-        #self.print_tree(right_parent_page_num, depth=1)
 
         # 4. recycle old_child_num
         self.pager.return_page(old_child_page_num)
 
         # 5. update parent
         if self.is_node_root(parent):
-            # logging.debug('ascending to create_new_root')
             self.create_new_root(left_parent_page_num, right_parent_page_num)
-
         else:
-            # logging.debug('ascending to internal_node_insert')
             self.internal_node_insert(parent_page_num, left_parent_page_num, right_parent_page_num)
 
     def create_new_root(self, left_child_page_num: int, right_child_page_num: int,
@@ -920,7 +891,6 @@ class Tree:
         # update all of left node's children to refer to new left page
         self.check_update_parent_ref_in_children(left_child_page_num)
 
-
     # section: logic helpers - insert helpers
 
     @staticmethod
@@ -975,7 +945,6 @@ class Tree:
 
         # copy cell contents onto node
         # the cell will be copied starting at the new alloc_ptr location
-        # print(f'writing cell to {new_alloc_ptr}')
         Tree.set_leaf_node_cell(node, new_alloc_ptr, cell)
 
         # update the alloc ptr
@@ -984,10 +953,6 @@ class Tree:
         # update cell count
         num_cells = Tree.leaf_node_num_cells(node)
         Tree.set_leaf_node_num_cells(node, num_cells + 1)
-
-        # logging.debug(f'cell-count {Tree.leaf_node_num_cells(node)}')
-        # Tree.print_leaf_node(node)
-        # logging.debug(f'finished printing node')
 
     # section: logic helpers - delete core
 
