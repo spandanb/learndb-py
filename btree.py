@@ -973,18 +973,21 @@ class Tree:
 
         # 2. check if compaction is possible
         if not Tree.is_node_root(node):
-            left_sib = self.get_left_sibling(page_num)  # nullable
-            right_sib = self.get_right_sibling(page_num)
+            left_sib_page_num = self.get_left_sibling(page_num)
+            right_sib_page_num = self.get_right_sibling(page_num)
+
             num_sibs = 1
             num_children = num_cells
             cell = Tree.leaf_node_cell(node, cell_num)
-            total_space_needed = Tree.leaf_node_cell_cellptr_space(node) - len(cell)
+            total_space_needed = Tree.leaf_node_cell_cellptr_space(node) - len(cell) - LEAF_NODE_CELL_POINTER_SIZE
 
-            if left_sib:
+            if left_sib_page_num:
+                left_sib = self.pager.get_page(left_sib_page_num)
                 num_sibs += 1
                 num_children += Tree.leaf_node_num_cells(left_sib)
                 total_space_needed = Tree.leaf_node_cell_cellptr_space(left_sib)
-            if right_sib:
+            if right_sib_page_num:
+                right_sib = self.pager.get_page(right_sib_page_num)
                 num_sibs += 1
                 num_children += Tree.leaf_node_num_cells(right_sib)
                 total_space_needed = Tree.leaf_node_cell_cellptr_space(right_sib)
@@ -998,8 +1001,9 @@ class Tree:
         # 3. handle deletion
         # 3.1. deallocate cell (must be done before deleting cellptr)
         Tree.leaf_node_deallocate_cell(node, cell_num)
-        # 3.2. move cellptr left over deleted cellptr
-        Tree.set_leaf_node_cellptrs_starting_at(node, cell_num, Tree.leaf_node_cells_starting_at(node, cell_num+1))
+        # 3.2. move cellptr left over deleted cellptr, if there is anything right of deleted
+        if cell_num < num_cells - 1:
+            Tree.set_leaf_node_cellptrs_starting_at(node, cell_num, Tree.leaf_node_cellptrs_starting_at(node, cell_num+1))
         # 3.3. decrement count
         Tree.set_leaf_node_num_cells(node, num_cells - 1)
 
@@ -1012,15 +1016,17 @@ class Tree:
 
     def leaf_node_compact_and_delete(self, page_num: int, cell_num: int):
         """
+        compact nodes and delete child at `child_num`
 
         :param page_num:
-        :param cell_num:
+        :param cell_num: location of cell to be deleted
         :return:
         """
         # 1. setup
         # 1.1. get all src nodes
         node = self.pager.get_page(page_num)
         assert self.is_node_root(node) is False, "Expected non-root for compaction"
+        cell_to_delete = Tree.leaf_node_cell(node, cell_num)
 
         left_sib_page_num = self.get_left_sibling(page_num)
         right_sib_page_num = self.get_right_sibling(page_num)
@@ -1044,13 +1050,13 @@ class Tree:
 
         # 1.4. determine how many dest nodes we need and number of cells on each node
         # attempt to spread cell count evenly on fewest number of nodes possible
-        total_space_needed = Tree.leaf_node_cell_cellptr_space(node) - len(cell)
+        total_space_needed = Tree.leaf_node_cell_cellptr_space(node) - len(cell_to_delete)
         total_cells = Tree.leaf_node_num_cells(node) - 1
-        if left_sib:
+        if left_sib_page_num:
             total_cells += Tree.leaf_node_num_cells(left_sib)
             total_space_needed = Tree.leaf_node_cell_cellptr_space(left_sib)
-        if right_sib:
-            total_cells += Tree.leaf_node_nums_cells(right_sib)
+        if right_sib_page_num:
+            total_cells += Tree.leaf_node_num_cells(right_sib)
             total_space_needed = Tree.leaf_node_cell_cellptr_space(right_sib)
 
         quot, rem = divmod(total_space_needed, LEAF_NODE_NON_HEADER_SPACE)
@@ -1065,13 +1071,16 @@ class Tree:
         # each dest_node will get min_num_dest_cells, and num_extra_cells will get 1 extra
         min_num_dest_cells, extra_dest_cell_count = divmod(total_cells, num_dest_nodes)
 
+        logging.debug(f'min_num_dest_cells: {min_num_dest_cells}, extra_dest_cell_count: {extra_dest_cell_count}, total_cells: {total_cells}, num_dest_nodes: {num_dest_nodes}')
+
         # 2. perform compaction
         # iterate over all siblings, left to right, and for each
         # node, iterate over each child and place it on the current dest node
         # dest nodes
         # if the current node can't fit it; provision a new node
-        src_node = src_nodes.popleft()
-        while src_node:
+
+        # src_node = src_nodes.popleft()
+        while src_nodes:
             # 2.1. place all cells from src_node onto dest_node
             src_node = src_nodes.popleft()
             for src_cell_num in range(Tree.leaf_node_num_cells(src_node)):
@@ -1111,18 +1120,23 @@ class Tree:
                 dest_cell_num += 1
 
                 if dest_cell_num == min_num_dest_cells:
+                    # assert extra_dest_cell_count > 0
                     extra_dest_cell_count -= 1
 
         # 3. update parent with new children
         new_left_sib_page_num = new_page_nums[0]
         new_right_sib_page_num = new_page_num[1] if len(new_page_nums) > 1 else None
+
+        # compaction is only called on non-root leafs
+        # internal node op should handle deleting unnecessary tree levels
         self.internal_node_delete(left_sib_page_num, page_num, right_sib_page_num, new_left_sib_page_num,
-                                  new_right_sib_page_num)
+                                      new_right_sib_page_num)
 
     def internal_node_delete(self, old_left_child_page_num: Optional[int], old_middle_child_page_num: int,
-                         old_right_child_page_num: Optional[int], new_left_child_page_num: int,
-                         new_right_child_page_num: Optional[int]):
+                             old_right_child_page_num: Optional[int], new_left_child_page_num: int,
+                             new_right_child_page_num: Optional[int]):
         """
+
 
         :param old_left_child_page_num:
         :param old_middle_child_page_num:
@@ -1132,9 +1146,12 @@ class Tree:
         :return:
         """
 
+        # after this op, check if the node has only one child and is root
+        # delete root, and reduce tree depth by 1
+
     def internal_node_compact_and_delete(self, old_left_child_page_num: Optional[int], old_middle_child_page_num: int,
-                         old_right_child_page_num: Optional[int], new_left_child_page_num: int,
-                         new_right_child_page_num: Optional[int]):
+                                         old_right_child_page_num: Optional[int], new_left_child_page_num: int,
+                                         new_right_child_page_num: Optional[int]):
         """
 
         :param old_left_child_page_num:
@@ -1208,7 +1225,7 @@ class Tree:
         offset = cellptr
         # 2.2. set block size
         block_size = len(cell)
-        block_size_value = block_size.to_bytes(FREE_BLOCK_SIZE_SIZE)     # encoded value
+        block_size_value = block_size.to_bytes(FREE_BLOCK_SIZE_SIZE, sys.byteorder)     # encoded value
         block_size_offset = offset + FREE_BLOCK_SIZE_OFFSET
         node[block_size_offset: block_size_offset + FREE_BLOCK_SIZE_SIZE] = block_size_value
 
@@ -1219,7 +1236,8 @@ class Tree:
             Tree.set_leaf_node_free_list_head(node, cellptr)
             next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
             # set next ptr to null
-            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = NULLPTR
+            node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = \
+                NULLPTR.to_bytes(FREE_BLOCK_NEXT_BLOCK_SIZE, sys.byteorder)
         else:
             # insert to head of list
             # make current head, new cell's next
@@ -1232,7 +1250,49 @@ class Tree:
         # 2.4. set free list total space
         Tree.set_leaf_node_total_free_list_space(node, Tree.leaf_node_total_free_list_space(node) + len(cell))
 
+    def get_left_sibling(self, page_num: int) -> Optional[int]:
+        """
 
+        :param page_num:
+        :return: Optional[int] left sibling page_num
+        """
+
+        node = self.pager.get_page(page_num)
+        if Tree.is_node_root(node):
+            return None
+
+        node_key = self.get_node_max_key(node)
+        parent_page_num = Tree.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+
+        child_num = self.internal_node_find(parent_page_num, node_key)
+        if child_num == INTERNAL_NODE_MAX_CELLS:
+            # child is right child, left sibling is last inner cell
+            return self.internal_node_child(parent, self.internal_node_num_keys(parent)-1)
+        elif child_num > 0:
+            return self.internal_node_child(parent, child_num-1)
+        else:
+            # node is leftmost
+            return None
+
+    def get_right_sibling(self, page_num: int) -> Optional[int]:
+        node = self.pager.get_page(page_num)
+        if Tree.is_node_root(node):
+            return None
+
+        node_key = self.get_node_max_key(node)
+        parent_page_num = Tree.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+
+        child_num = self.internal_node_find(parent_page_num, node_key)
+        if child_num == INTERNAL_NODE_MAX_CELLS:
+            # node is right most
+            return None
+        elif child_num == self.internal_node_num_keys(parent)-1:
+            # node is right-most inner cell
+            return self.internal_node_right_child(parent)
+        else:
+            return self.internal_node_child(parent, child_num + 1)
 
     # section: old delete - nuke
 
@@ -2207,6 +2267,30 @@ class Tree:
         return node[cellptr: cellptr + cell_size]
 
     @staticmethod
+    def leaf_node_cell_size(node: bytes, cell_num: int) -> int:
+        """
+        Get size of cell at `cell_num`
+        :param node:
+        :param cell_num:
+        :return:
+        """
+        cellptr = Tree.leaf_node_cellptr(node, cell_num)
+        # get cell size
+        return get_cell_size(node, cellptr)
+
+    @staticmethod
+    def leaf_node_cell_cellptr_space(node: bytes) -> int:
+        """
+        return the total space used by cells and cellptrs
+        this seems fairly expensive, so I might want to cache the node value
+        :return:
+        """
+        space = 0
+        for cell_num in range(Tree.leaf_node_num_cells(node)):
+            space += Tree.leaf_node_cell_size(node, cell_num) + LEAF_NODE_CELL_POINTER_SIZE
+        return space
+
+    @staticmethod
     def leaf_node_num_cells(node: bytes) -> int:
         """
         `node` is exactly equal to a `page`. However,`node` is in the domain
@@ -2270,6 +2354,7 @@ class Tree:
         :param child_num:
         :return:
         """
+        raise Exception("do not use leaf_node_cells_starting_at")
         assert cell_num <= Tree.leaf_node_num_cells(node) - 1, f"out of bounds cell [{cell_num}] lookup [total: {Tree.leaf_node_num_cells(node)}]"
         offset = Tree.leaf_node_cell_offset_old(cell_num)
         num_keys = Tree.leaf_node_num_cells(node)

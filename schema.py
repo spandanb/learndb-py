@@ -59,6 +59,18 @@ class Schema:
     def __repr__(self):
         return str(self)
 
+    def get_primary_key_column(self) -> str:
+        """
+        return column name of primary key column
+        :return:
+        """
+        for column in self.columns:
+            if column.is_primary_key:
+                return column.name
+
+        return None
+
+
 
 class CatalogSchema(Schema):
     """

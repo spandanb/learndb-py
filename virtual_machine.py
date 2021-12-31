@@ -1,4 +1,6 @@
 # from __future__ import annotations
+import logging
+
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from table import Table
@@ -8,6 +10,7 @@ from serde import serialize_record, deserialize_cell
 from dataexchange import Response, ExecuteResult, Statement, Row
 
 from lang_parser.visitor import Visitor
+from lang_parser.tokens import TokenType
 from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr, InsertStmnt, DeleteStmnt
 from lang_parser.sqlhandler import SqlFrontEnd
 
@@ -208,7 +211,62 @@ class VirtualMachine(Visitor):
         assert resp == TreeInsertResult.Success, f"Insert op failed with status: {resp}"
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
-        pass
+        """
+        NOTE: the delete condition can cover multiple rows
+        for now where cond is restricted to equality condition
+
+        :param stmnt:
+        :return:
+        """
+        # identifier are case sensitive, so don't convert
+        table_name = stmnt.table_name.literal
+        # check table is not catalog
+        assert table_name.lower() != 'catalog', "cannot delete table from catalog; use drop table"
+
+        # get tree and schema
+        tree = self.state_manager.get_tree(table_name)
+        schema = self.state_manager.get_schema(table_name)
+
+        # scan table and determine which keys to delete, based on where condition
+        cursor = Cursor(self.state_manager.get_pager(), tree)
+        # keys to delete based on where condition
+        del_keys = []
+
+        # for now will restrict where cond to be a single equality
+        assert stmnt.where_clause is not None
+        assert len(stmnt.where_clause.and_clauses) == 1
+        and_clause = stmnt.where_clause.and_clauses[0]
+        assert len(and_clause.predicates) == 1
+        predicate = and_clause.predicates[0]
+        assert predicate.op.token_type == TokenType.EQUAL
+        pred_column = predicate.first.value.literal
+        pred_value = predicate.second.value.literal
+
+        logging.debug(f'in delete pred-col: {pred_column}, pred-val: {pred_value}')
+
+        # get primary key column name
+        primary_key_col = schema.get_primary_key_column()
+
+        # iterate cursor
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
+            # NOTE: if the condition is only on the primary key,
+            # an optimization could be to only deserialize the key and not the entire record
+            resp = deserialize_cell(cell, schema)
+            assert resp.success
+            record = resp.body
+
+            # only support equality condition
+            if record.get(pred_column) == pred_value:
+                del_key = record.get(primary_key_col)
+                del_keys.append(del_key)
+
+            cursor.advance()
+        
+        # delete matching keys
+        for del_key in del_keys:
+            resp = tree.delete(del_key)
+            assert resp == TreeDeleteResult.Success, f"delete failed for key {del_key}"
 
     # section : handler helpers
     # special helpers for catalog
