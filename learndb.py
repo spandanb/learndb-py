@@ -9,7 +9,7 @@ import logging
 from typing import Union, List, Any
 from dataclasses import dataclass
 from enum import Enum, auto
-from random import randint  # for testing
+from random import randint, shuffle  # for testing
 from pipe import Pipe
 
 from constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
@@ -250,8 +250,8 @@ def devloop():
     pipe = db.get_pipe()
 
     # create random records
-    keys = list(set(randint(1, 1000) for i in range(50)))
-    # keys = [0, 1, 89, 90, 92, 4, 2]
+    # keys = list(set(randint(1, 1000) for i in range(50)))
+    keys = [0, 1, 89, 90, 92, 4, 2]
     # keys = [625, 582, 200, 301, 40, 354, 228, 797, 90, 245]
     # keys = [236, 301, 602, 522, 449, 742, 252, 333, 768, 261, 619, 87, 854, 851, 332, 360]
 
@@ -262,13 +262,26 @@ def devloop():
     for key in keys:
         cmds.append(f"insert into foo (colA, colB) values ({key}, 'hellew words foo')")
 
+    shuffle(keys)
+
+    for key in keys:
+        cmds.append(f"delete from foo where colA = {key}")
+
+    #cmds.append(f"insert into foo (colA, colB) values (1, 'hellow words foo')")
+    #cmds.append(f"insert into foo (colA, colB) values (2, 'hellow words foo')")
+    #cmds.append(f"insert into foo (colA, colB) values (3, 'hellow words foo')")
+    #cmds.append("delete from foo where colA = 2")
+
     cmds.append("select colA, colB  from foo")
 
     result_keys = []
 
     for cmd in cmds:
         logging.info(f"handling [{cmd}]")
-        db.handle_input(cmd)
+        resp = db.handle_input(cmd)
+        if not resp.success:
+            print(f"cmd {cmd} failed with {resp.status} {resp.error_message}")
+            return EXIT_SUCCESS
 
         # print anything in the output buffer
         while pipe.has_msgs():
@@ -277,11 +290,11 @@ def devloop():
             print(f'pipe read: {record}')
             result_keys.append(key)
 
-        db.state_manager.validate_tree("foo")
         db.state_manager.print_tree("foo")
+        db.state_manager.validate_tree("foo")
         print('*'*100)
 
-    assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
+    # assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
 
     # close db to push changed state to disk
     db.close()
