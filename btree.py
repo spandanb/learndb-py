@@ -1079,11 +1079,16 @@ class Tree:
         # dest nodes
         # if the current node can't fit it; provision a new node
 
-        # src_node = src_nodes.popleft()
         while src_nodes:
-            # 2.1. place all cells from src_node onto dest_node
+            # 2.1. place all cells from src_node onto dest_node, except cell to delete
             src_node = src_nodes.popleft()
+            # whether to skip the cell_num to be deleted
+            skip_del_cell = src_node == node
             for src_cell_num in range(Tree.leaf_node_num_cells(src_node)):
+                if skip_del_cell and src_cell_num == cell_num:
+                    # skip copying the cell to delete, effectively deleting it
+                    continue
+
                 # 2.1.1. get src cell
                 src_cell = Tree.leaf_node_cell(src_node, src_cell_num)
 
@@ -1130,50 +1135,271 @@ class Tree:
         # compaction is only called on non-root leafs
         # internal node op should handle deleting unnecessary tree levels
         self.internal_node_delete(left_sib_page_num, page_num, right_sib_page_num, new_left_sib_page_num,
-                                      new_right_sib_page_num)
+                                  new_right_sib_page_num)
 
     def internal_node_delete(self, old_left_child_page_num: Optional[int], old_middle_child_page_num: int,
                              old_right_child_page_num: Optional[int], new_left_child_page_num: int,
                              new_right_child_page_num: Optional[int]):
         """
+        Invoked when children nodes are compacted into fewer nodes (3 or 2 are compacted into 1 or 2)
+        Removes references to old children, and update to new children.
 
+        Then recycle old node- this is the consistent with insert where
+        parent is responsible for recycling children
 
         :param old_left_child_page_num:
-        :param old_middle_child_page_num:
+        :param old_middle_child_page_num: is located contiguously with left and right children in parent
         :param old_right_child_page_num:
         :param new_left_child_page_num:
         :param new_right_child_page_num:
         :return:
         """
+        # 1. validate input
+        num_old_nodes = (1 if old_left_child_page_num else 0) + 1 + (1 if old_right_child_page_num else 0)
+        num_new_nodes = 1 + (1 if new_right_child_page_num else 0)
+        assert num_old_nodes > num_new_nodes, f"expected internal node delete to have fewer new [{num_new_nodes}] than old nodes [{num_old_nodes}]"
+        assert 2 <= num_old_nodes <= 3, f"expected 2 or 3 old nodes, got {num_old_nodes}"
+        assert 1 <= num_new_nodes <= 2, f"expected 1 or 2 old nodes, got {num_new_nodes}"
 
-        # after this op, check if the node has only one child and is root
-        # delete root, and reduce tree depth by 1
+        # 2. setup
+        old_middle_child = self.pager.get_page(old_middle_child_page_num)
+        old_middle_child_key = self.get_node_max_key(old_middle_child)
+        parent_page_num = self.get_parent_page_num(old_middle_child)
+        parent = self.pager.get_page(parent_page_num)
+        parent_num_keys = self.internal_node_num_keys(parent)
+        parent_num_new_keys = parent_num_keys - (num_old_nodes - num_new_nodes)
 
-    def internal_node_compact_and_delete(self, old_left_child_page_num: Optional[int], old_middle_child_page_num: int,
-                                         old_right_child_page_num: Optional[int], new_left_child_page_num: int,
-                                         new_right_child_page_num: Optional[int]):
+        # 3. determine the start and end locations of src nodes
+        # there can be 3 or 2 src nodes- this should be reflected in some args being None
+        # and the center's position being inner or extremal
+        old_child_num = self.internal_node_find(parent_page_num, old_middle_child_key)
+        # 3.1. left of old_child_num if it exists
+        first_old_child_num = old_child_num if old_child_num == 0 else old_child_num - 1
+        # 3.2. right of old_child_num if it exists
+        last_old_child_num = None
+        if old_child_num == INTERNAL_NODE_MAX_CELLS:
+            last_old_child_num = old_child_num
+        elif old_child_num == parent_num_keys - 1:
+            last_old_child_num = INTERNAL_NODE_MAX_CELLS
+        else:
+            last_old_child_num = old_child_num + 1
+
+        # 3.3. prepare new children to be inserted
+        new_child = self.pager.get_page(new_left_child_page_num)
+        new_child_key = self.get_node_max_key(new_child)
+        new_children = deque([(new_left_child_page_num, new_child_key)])
+        Tree.set_parent_page_num(new_child, parent_page_num)
+        # max key amongst all new children
+        new_max_key = self.get_node_max_key(new_child)
+        if new_right_child_page_num:
+            new_child = self.pager.get_page(new_right_child_page_num)
+            new_child_key = self.get_node_max_key(new_child)
+            new_children.append((new_right_child_page_num, new_child_key))
+            Tree.set_parent_page_num(new_child, parent_page_num)
+            new_max_key = self.get_node_max_key(new_child)
+
+        # 4. place new nodes where old_nodes were
+        # 4.1. if right child was compacted
+        if last_old_child_num == INTERNAL_NODE_MAX_CELLS:
+            # place rightmost new child at right
+            new_child_page_num, _ = new_children.pop()
+            Tree.set_internal_node_right_child(parent, new_child_page_num)
+            if new_children:
+                new_child_page_num, new_child_key = new_children.popleft()
+                # if there is another child, place it to the left most position of the compacted children
+                Tree.set_internal_node_child(parent, first_old_child_num, new_child_page_num)
+                Tree.set_internal_node_key(parent, first_old_child_num, new_child_key)
+        # 4.2. if inner children were compacted
+        else:
+            # place leftmost new child at leftmost old child's location
+            new_child_page_num, new_child_key = new_children.popleft()
+            Tree.set_internal_node_child(parent, first_old_child_num, new_child_page_num)
+            Tree.set_internal_node_key(parent, first_old_child_num, new_child_key)
+            # where right siblings will be move to
+            right_bound = first_old_child_num + 1
+            if new_children:
+                # if there is another child, place it to the left of that
+                new_child_page_num, new_child_key = new_children.popleft()
+                Tree.set_internal_node_child(parent, right_bound, new_child_page_num)
+                Tree.set_internal_node_key(parent, right_bound, new_child_key)
+                right_bound += 1
+            # move any inner children to the right over the empty cells
+            if last_old_child_num < parent_num_keys - 1:
+                right_children = self.internal_node_children_starting_at(parent, last_old_child_num + 1)
+                self.set_internal_node_children_starting_at(parent, right_children, right_bound)
+
+        # 5. update parent count
+        Tree.set_internal_node_num_keys(parent, parent_num_new_keys)
+
+        # 6. update ancestor(s) if there is a new max key on right child
+        if last_old_child_num == INTERNAL_NODE_MAX_CELLS:
+            old_rightmost = self.pager.get_page(old_right_child_page_num or old_middle_child_page_num)
+            old_max_key = self.get_node_max_key(old_rightmost)
+            if old_max_key != new_max_key:
+                self.update_parent_on_new_right_child(parent_page_num, old_max_key, new_max_key)
+
+        # 7. recycle old nodes
+        self.pager.return_page(old_middle_child_page_num)
+        if old_left_child_page_num:
+            self.pager.return_page(old_left_child_page_num)
+        if old_right_child_page_num:
+            self.pager.return_page(old_right_child_page_num)
+
+        # 8. check if compaction is possible
+        # handle case where node has 0 children
+        if not Tree.is_node_root(parent):
+            left_sib_page_num = self.get_left_sibling(parent_page_num)
+            right_sib_page_num = self.get_right_sibling(parent_page_num)
+            sib_count = 1
+            total_children_count = self.internal_node_num_children(parent)
+
+            if left_sib_page_num:
+                left_sib = self.pager.get_page(left_sib_page_num)
+                sib_count += 1
+                total_children_count += self.internal_node_num_children(left_sib)
+            if right_sib_page_num:
+                right_sib = self.pager.get_page(right_sib_page_num)
+                sib_count += 1
+                total_children_count += self.internal_node_num_children(right_sib)
+
+            # compact if we can fit siblings' children on at least one fewer node
+            if total_children_count <= (sib_count - 1) * INTERNAL_NODE_MAX_CHILDREN:
+                return self.internal_node_compact(parent_page_num)
+
+        # 9. check if tree depth can be reduced
+        if self.is_node_root(parent):
+            # if parent has only one child (right child), delete parent
+            if parent_num_new_keys == 0:
+                self.delete_root()
+
+    def internal_node_compact(self, page_num: Optional[int]):
         """
+        This is invoked after an internal node has some elements deleted, and
+        node at `page_num` can be compacted with its siblings.
 
-        :param old_left_child_page_num:
-        :param old_middle_child_page_num:
-        :param old_right_child_page_num:
-        :param new_left_child_page_num:
-        :param new_right_child_page_num:
+        NOTE: this is different from deletion/compaction for leaves- which
+        is done in one operation. The main reason is that internal node deletion and compaction
+        may have variable number of children compacted into a variable number of children.
+        Thus doing compaction along with deletes is quiet tricky.
+
+        Algo:
+            - get parent of child (page_num is one of the compacted nodes)
+            - get siblings of parent
+            - determine how many total children there are
+            - determine how many children each parent gets
+            - distribute src children to dest
+            - update parents
+
+        :param self:
+        :param page_num: one of the siblings to be compacted
         :return:
         """
 
-    def check_delete_root(self, page_num: int):
+        # 1.1. get parent of compacted nodes
+        node = self.pager.get_page(page_num)
+        parent_page_num = self.get_parent_page_num(node)
+        parent = self.pager.get_page(parent_page_num)
+
+        # 1.2. get siblings
+        left_sib_page_num = self.get_left_sibling(page_num)
+        right_sib_page_num = self.get_right_sibling(page_num)
+        left_sib = left_sib_page_num and self.pager.get_page(left_sib_page_num)
+        right_sib = right_sib_page_num and self.pager.get_page(right_sib_page_num)
+
+        # 1.3. determine total children
+        total_children = Tree.internal_node_num_children(parent)
+        if left_sib_page_num:
+            total_children += Tree.internal_node_num_children(left_sib)
+        if right_sib_page_num:
+            total_children += Tree.internal_node_num_children(right_sib)
+
+        # 1.4. determine distributions of children onto destinations
+        quot, rem = divmod(total_children, INTERNAL_NODE_MAX_CHILDREN)
+        num_parents = quot + (1 if rem != 0 else 0)
+        # each parent split gets at least `min_num_dest_cells`
+        # and `extra_dest_cell_count` get 1 extra
+        min_num_dest_cells, extra_dest_cell_count = divmod(total_children, num_parents)
+
+        # 1.5. setup src_nodes
+        src_nodes = deque()
+        if left_sib:
+            src_nodes.append(left_sib)
+        src_nodes.append(parent)
+        if right_sib:
+            src_nodes.append(right_sib)
+
+        # 1.6. prepare destination nodes
+        dest_page_num = self.pager.get_unused_page_num()
+        new_page_nums = [dest_page_num]  # track new pages
+        dest_node = self.pager.get_page(dest_page_num)
+        dest_cell_num = 0
+        self.initialize_internal_node(dest_node, node_is_root=False, parent_page_num=parent_page_num)
+
+        # 2. place all src children
+        while src_nodes:
+            # 2.1. place all children from src_node onto dest_node
+            src_node = src_nodes.popleft()
+            src_node_num_children = Tree.internal_node_num_children(src_node)
+            # copy each src child onto the dest
+            for src_child_num in range(src_node_num_children):
+                # determine child referenced is right or inner child
+                if src_child_num == src_node_num_children - 1:
+                    src_child_page_num = self.internal_node_right_child(src_node)
+                else:
+                    src_child_page_num = self.internal_node_child(src_node, src_child_num)
+
+                src_node = self.pager.get_page(src_child_page_num)
+                src_child_key = self.get_node_max_key(src_node)
+
+                # determine if src_child will go on current dest node
+                # or we will need to provision another node;
+                # determine whether src_node is right child of dest_node
+                if extra_dest_cell_count == 0:
+                    max_num_dest_cells = dest_cell_num >= min_num_dest_cells
+                    place_at_right = dest_cell_num == min_num_dest_cells - 1
+                else:
+                    max_num_dest_cells = dest_cell_num >= min_num_dest_cells + 1
+                    place_at_right = dest_cell_num == min_num_dest_cells
+
+                # 2.2.4. check if we need to provision a new node
+                if max_num_dest_cells:
+                    # finalize previous split
+                    Tree.set_leaf_node_num_cells(dest_node, dest_cell_num)
+                    # provision new node
+                    dest_page_num = self.pager.get_unused_page_num()
+                    new_page_nums.append(dest_page_num)
+                    dest_node = self.pager.get_page(dest_page_num)
+                    dest_cell_num = 0
+                    self.initialize_internal_node(dest_node, node_is_root=False, parent_page_num=parent_page_num)
+
+                if place_at_right:
+                    self.set_internal_node_right_child(dest_node, src_child_num)
+                    self.set_parent_page_num(src_node, dest_page_num)
+                else:
+                    self.set_internal_node_child(dest_node, dest_cell_num, src_child_num)
+                    self.set_internal_node_key(dest_node, dest_cell_num, src_child_key)
+                    self.set_parent_page_num(src_node, dest_page_num)
+
+                # update bookkeeping vars
+                dest_cell_num += 1
+
+                if dest_cell_num == min_num_dest_cells:
+                    extra_dest_cell_count -= 1
+
+        new_left_sib_page_num = new_page_nums[0]
+        new_right_sib_page_num = dest_page_num[1] if len(new_page_nums) > 1 else None
+        # 3. update ancestor
+        # ancestor will recycle compacted nodes
+        self.internal_node_delete(left_sib_page_num, page_num, right_sib_page_num,
+                                  new_left_sib_page_num, new_right_sib_page_num)
+
+    def delete_root(self):
         """
-        Delete the root at `page_num`
-
-        Note that root_page_num must not change. So we must
-        copy the contents of the new root, onto the page that corresponds to the old
-        root.
-
-        :param page_num: the node to delete
+        this should be invoked when the root has a single child, and thus
+        can be removed, and the tree's depth decreased by 1
         :return:
         """
-        root = self.pager.get_page(page_num)
+        root = self.pager.get_page(self.root_page_num)
         assert self.is_node_root(root)
 
         if self.internal_node_num_keys(root) > 0:
@@ -1190,8 +1416,9 @@ class Tree:
             # copy child onto root page
             root[:PAGE_SIZE] = child
             self.set_node_is_root(root, True)
+            self.set_parent_page_num(root, NULLPTR)
             # update children of root; since parent page_num has changed
-            self.check_update_parent_ref_in_children(page_num)
+            self.check_update_parent_ref_in_children(self.root_page_num)
             self.pager.return_page(child_page_num)
 
     # section: logic helpers - delete helpers
@@ -1429,6 +1656,38 @@ class Tree:
             self.check_delete_root(parent_page_num)
         else:
             self.check_restructure_internal(parent_page_num, del_key)
+
+    def check_delete_root(self, page_num: int):
+        """
+        Delete the root at `page_num`
+
+        Note that root_page_num must not change. So we must
+        copy the contents of the new root, onto the page that corresponds to the old
+        root.
+
+        :param page_num: the node to delete
+        :return:
+        """
+        root = self.pager.get_page(page_num)
+        assert self.is_node_root(root)
+
+        if self.internal_node_num_keys(root) > 0:
+            # the tree has at least two node; nothing to do
+            return
+
+        if not self.internal_node_has_right_child(root):
+            # nothing is left in the tree; reset root to empty leaf node
+            self.initialize_leaf_node(root)
+        else:
+            # tree is unary; delete root and set child to be new root
+            child_page_num = self.internal_node_right_child(root)
+            child = self.pager.get_page(child_page_num)
+            # copy child onto root page
+            root[:PAGE_SIZE] = child
+            self.set_node_is_root(root, True)
+            # update children of root; since parent page_num has changed
+            self.check_update_parent_ref_in_children(page_num)
+            self.pager.return_page(child_page_num)
 
     def post_compaction_helper(self, page_num: int, updated_children: deque[NodeInfo], deleted_children: deque[NodeInfo]):
         """
@@ -2204,6 +2463,11 @@ class Tree:
     def internal_node_num_keys(node: bytes) -> int:
         value = node[INTERNAL_NODE_NUM_KEYS_OFFSET: INTERNAL_NODE_NUM_KEYS_OFFSET + INTERNAL_NODE_NUM_KEYS_SIZE]
         return int.from_bytes(value, sys.byteorder)
+
+    @staticmethod
+    def internal_node_num_children(node: bytes) -> int:
+        """return total number of children in node"""
+        return Tree.internal_node_num_keys(node) + (1 if Tree.internal_node_has_right_child(node) else 0)
 
     @staticmethod
     def internal_node_child(node: bytes, child_num: int) -> int:
