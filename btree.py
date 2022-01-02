@@ -200,8 +200,6 @@ class Tree:
         :return:
         """
         key = get_cell_key(cell)
-        if key == 90:
-            pass
         page_num, cell_num = self.find(key)
         node = self.pager.get_page(page_num)
         # if insertion is an occupied cell, check for duplicate key
@@ -239,6 +237,8 @@ class Tree:
         # find
         page_num, cell_num = self.find(key)
         node = self.pager.get_page(page_num)
+        if key == 60:
+            pass
         if self.leaf_node_key(node, cell_num) != key:
             return TreeDeleteResult.Success
 
@@ -977,7 +977,7 @@ class Tree:
             right_sib_page_num = self.get_right_sibling(page_num)
 
             num_sibs = 1
-            num_children = num_cells
+            num_children = num_cells - 1  # -1 for deleted
             cell = Tree.leaf_node_cell(node, cell_num)
             total_space_needed = Tree.leaf_node_cell_cellptr_space(node) - len(cell) - LEAF_NODE_CELL_POINTER_SIZE
 
@@ -996,6 +996,7 @@ class Tree:
             # fit on one at least 1 fewer node
             if (num_children <= (num_sibs - 1) * LEAF_NODE_MAX_CELLS and
                      total_space_needed <= (num_sibs - 1) * LEAF_NODE_NON_HEADER_SPACE):
+
                 return self.leaf_node_compact_and_delete(page_num, cell_num)
 
         # 3. handle deletion
@@ -1037,6 +1038,7 @@ class Tree:
         new_page_num = self.pager.get_unused_page_num()
         new_page_nums = [new_page_num]  # track new pages
         dest_node = self.pager.get_page(new_page_num)
+        logging.debug(f'allocating new dest node: [{new_page_num}]')
         dest_cell_num = 0
         self.initialize_leaf_node(dest_node, node_is_root=False, parent_page_num=self.get_parent_page_num(node))
 
@@ -1065,13 +1067,13 @@ class Tree:
         quot, rem = divmod(total_cells, LEAF_NODE_MAX_CELLS)
         # number of splits based on cell counts
         count_split_count = quot + (1 if rem != 0 else 0)
-        num_dest_nodes = max(space_split_count, count_split_count)
+        num_dest_nodes = min(space_split_count, count_split_count)
 
         # determine number of cells for each dest_node
         # each dest_node will get min_num_dest_cells, and num_extra_cells will get 1 extra
         min_num_dest_cells, extra_dest_cell_count = divmod(total_cells, num_dest_nodes)
 
-        logging.debug(f'min_num_dest_cells: {min_num_dest_cells}, extra_dest_cell_count: {extra_dest_cell_count}, total_cells: {total_cells}, num_dest_nodes: {num_dest_nodes}')
+        # logging.debug(f'min_num_dest_cells: {min_num_dest_cells}, extra_dest_cell_count: {extra_dest_cell_count}, total_cells: {total_cells}, num_dest_nodes: {num_dest_nodes}')
 
         # 2. perform compaction
         # iterate over all siblings, left to right, and for each
@@ -1115,6 +1117,8 @@ class Tree:
 
                     # provision new dest_node
                     new_page_num = self.pager.get_unused_page_num()
+                    new_page_nums.append(new_page_num)
+                    logging.debug(f'allocating new dest node: [{new_page_num}]')
                     dest_node = self.pager.get_page(new_page_num)
                     dest_cell_num = 0
                     self.initialize_leaf_node(dest_node, node_is_root=False,
@@ -1128,9 +1132,21 @@ class Tree:
                     # assert extra_dest_cell_count > 0
                     extra_dest_cell_count -= 1
 
+        # set final leaf count
+        Tree.set_leaf_node_num_cells(dest_node, dest_cell_num)
+
         # 3. update parent with new children
         new_left_sib_page_num = new_page_nums[0]
-        new_right_sib_page_num = new_page_num[1] if len(new_page_nums) > 1 else None
+        new_right_sib_page_num = new_page_nums[1] if len(new_page_nums) > 1 else None
+
+        #logging.debug(f"post compaction left leaf [{new_left_sib_page_num}] Num children: {Tree.leaf_node_num_cells(dest_node)}::::")
+        #self.print_tree(new_left_sib_page_num)
+        #logging.debug(f"post compaction print whole tree::::")
+
+        #self.print_tree()
+        #if new_right_sib_page_num:
+            #logging.debug(f"post compaction right leaf::::")
+            #self.print_tree(new_left_sib_page_num)
 
         # compaction is only called on non-root leafs
         # internal node op should handle deleting unnecessary tree levels
@@ -1161,6 +1177,10 @@ class Tree:
         assert 2 <= num_old_nodes <= 3, f"expected 2 or 3 old nodes, got {num_old_nodes}"
         assert 1 <= num_new_nodes <= 2, f"expected 1 or 2 old nodes, got {num_new_nodes}"
 
+        #logging.debug(f'old_left_child_page_num: {old_left_child_page_num}, old_middle_child_page_num: {old_middle_child_page_num}, '
+        #              f'old_right_child_page_num: {old_right_child_page_num}, new_left_child_page_numL {new_left_child_page_num}, '
+        #              f'new_right_child_page_num: {new_right_child_page_num}')
+
         # 2. setup
         old_middle_child = self.pager.get_page(old_middle_child_page_num)
         old_middle_child_key = self.get_node_max_key(old_middle_child)
@@ -1169,13 +1189,28 @@ class Tree:
         parent_num_keys = self.internal_node_num_keys(parent)
         parent_num_new_keys = parent_num_keys - (num_old_nodes - num_new_nodes)
 
+        #logging.debug(f"pre fixup compacted node::::-------------------")
+        #self.print_tree(new_left_child_page_num)
+        #logging.debug(f"pre fixup whole tree::::-----------------------")
+        #self.print_tree()
+        #logging.debug("--********************XXXXXXXXXXXXXXXXXXXXX")
+
         # 3. determine the start and end locations of src nodes
         # there can be 3 or 2 src nodes- this should be reflected in some args being None
         # and the center's position being inner or extremal
         old_child_num = self.internal_node_find(parent_page_num, old_middle_child_key)
-        # 3.1. left of old_child_num if it exists
-        first_old_child_num = old_child_num if old_child_num == 0 else old_child_num - 1
-        # 3.2. right of old_child_num if it exists
+
+        # 3.1. get left most child num (amongst compacted siblings)
+        first_old_child_num = None
+        if old_child_num == 0:
+            first_old_child_num = 0
+        elif old_child_num == INTERNAL_NODE_MAX_CELLS:
+            # single right child
+            assert Tree.internal_node_has_right_child(parent)
+        else:
+            first_old_child_num = old_child_num - 1
+
+        # 3.2. get right most child num
         last_old_child_num = None
         if old_child_num == INTERNAL_NODE_MAX_CELLS:
             last_old_child_num = old_child_num
@@ -1245,9 +1280,15 @@ class Tree:
         if old_right_child_page_num:
             self.pager.return_page(old_right_child_page_num)
 
+        #logging.debug(f"post fixup parent [{parent_page_num}]::::")
+        #self.print_tree(parent_page_num)
+        #logging.debug(f"post fixup whole tree::::")
+        #self.print_tree()
+
         # 8. check if compaction is possible
-        # handle case where node has 0 children
-        if not Tree.is_node_root(parent):
+        # only attempt compaction if parent is not root
+        # logging.debug(f'is_node_root: {self.is_node_root(parent)}')
+        if not self.is_node_root(parent):
             left_sib_page_num = self.get_left_sibling(parent_page_num)
             right_sib_page_num = self.get_right_sibling(parent_page_num)
             sib_count = 1
@@ -1264,12 +1305,15 @@ class Tree:
 
             # compact if we can fit siblings' children on at least one fewer node
             if total_children_count <= (sib_count - 1) * INTERNAL_NODE_MAX_CHILDREN:
+                #logging.debug('compacting....')
                 return self.internal_node_compact(parent_page_num)
 
+        # logging.debug(f'is_node_root: {self.is_node_root(parent)}')
         # 9. check if tree depth can be reduced
         if self.is_node_root(parent):
             # if parent has only one child (right child), delete parent
             if parent_num_new_keys == 0:
+                #logging.debug('parent is root, deleting root')
                 self.delete_root()
 
     def internal_node_compact(self, page_num: Optional[int]):
@@ -1300,6 +1344,9 @@ class Tree:
         parent_page_num = self.get_parent_page_num(node)
         parent = self.pager.get_page(parent_page_num)
 
+        #logging.debug(f"precompaction whole tree::::")
+        #self.print_tree()
+
         # 1.2. get siblings
         left_sib_page_num = self.get_left_sibling(page_num)
         right_sib_page_num = self.get_right_sibling(page_num)
@@ -1307,7 +1354,7 @@ class Tree:
         right_sib = right_sib_page_num and self.pager.get_page(right_sib_page_num)
 
         # 1.3. determine total children
-        total_children = Tree.internal_node_num_children(parent)
+        total_children = Tree.internal_node_num_children(node)
         if left_sib_page_num:
             total_children += Tree.internal_node_num_children(left_sib)
         if right_sib_page_num:
@@ -1323,10 +1370,19 @@ class Tree:
         # 1.5. setup src_nodes
         src_nodes = deque()
         if left_sib:
-            src_nodes.append(left_sib)
-        src_nodes.append(parent)
+            src_nodes.append(left_sib_page_num)
+            #logging.debug(f'printing left sib [{left_sib_page_num}]...')
+            #self.print_tree(left_sib_page_num, depth=1)
+        src_nodes.append(page_num)
+        #logging.debug(f'printing middle sib [{page_num}]...')
+        #self.print_tree(page_num, depth=1)
         if right_sib:
-            src_nodes.append(right_sib)
+            src_nodes.append(right_sib_page_num)
+            #logging.debug(f'printing right sib...[{right_sib_page_num}]')
+            #self.print_tree(right_sib_page_num, depth=1)
+
+        #logging.debug(f'printing whole treeee..........................')
+        #self.print_tree()
 
         # 1.6. prepare destination nodes
         dest_page_num = self.pager.get_unused_page_num()
@@ -1338,7 +1394,10 @@ class Tree:
         # 2. place all src children
         while src_nodes:
             # 2.1. place all children from src_node onto dest_node
-            src_node = src_nodes.popleft()
+            src_node_page_num = src_nodes.popleft()
+            src_node = self.pager.get_page(src_node_page_num)
+            #logging.debug(f'popping src node, src_node_page_num: {src_node_page_num} 66666666666666666666')
+            # self.print_tree(src_node_page_num, depth=1)
             src_node_num_children = Tree.internal_node_num_children(src_node)
             # copy each src child onto the dest
             for src_child_num in range(src_node_num_children):
@@ -1348,8 +1407,11 @@ class Tree:
                 else:
                     src_child_page_num = self.internal_node_child(src_node, src_child_num)
 
-                src_node = self.pager.get_page(src_child_page_num)
-                src_child_key = self.get_node_max_key(src_node)
+                # logging.debug(f'src_node_num_children: {src_node_num_children}, src_child_num: {src_child_num} src_child_page_num: {src_child_page_num}')
+                #self.print_tree(src_node_page_num, depth=1)
+
+                src_child_node = self.pager.get_page(src_child_page_num)
+                src_child_key = self.get_node_max_key(src_child_node)
 
                 # determine if src_child will go on current dest node
                 # or we will need to provision another node;
@@ -1361,10 +1423,14 @@ class Tree:
                     max_num_dest_cells = dest_cell_num >= min_num_dest_cells + 1
                     place_at_right = dest_cell_num == min_num_dest_cells
 
+                # logging.debug(f'max_num_dest_cells: {max_num_dest_cells}')
+
                 # 2.2.4. check if we need to provision a new node
                 if max_num_dest_cells:
-                    # finalize previous split
-                    Tree.set_leaf_node_num_cells(dest_node, dest_cell_num)
+                    # finalize previous split- set count
+                    # dest_cell_num is the count since it increments by 1 for each child placed
+                    Tree.set_internal_children_count(dest_node, dest_cell_num)
+                    # Tree.set_internal_node_num_keys(dest_node, dest_cell_num)
                     # provision new node
                     dest_page_num = self.pager.get_unused_page_num()
                     new_page_nums.append(dest_page_num)
@@ -1372,13 +1438,16 @@ class Tree:
                     dest_cell_num = 0
                     self.initialize_internal_node(dest_node, node_is_root=False, parent_page_num=parent_page_num)
 
+                # logging.debug(f'placing src[{src_child_num}, key: {src_child_key}] at dest cell: {dest_cell_num} src_node_num_children: {src_node_num_children}')
+
                 if place_at_right:
-                    self.set_internal_node_right_child(dest_node, src_child_num)
-                    self.set_parent_page_num(src_node, dest_page_num)
+                    self.set_internal_node_right_child(dest_node, src_child_page_num)
+                    self.set_parent_page_num(src_child_node, dest_page_num)
                 else:
-                    self.set_internal_node_child(dest_node, dest_cell_num, src_child_num)
+                    self.set_internal_node_child(dest_node, dest_cell_num, src_child_page_num)
+                    assert src_child_key is not None, "wut"
                     self.set_internal_node_key(dest_node, dest_cell_num, src_child_key)
-                    self.set_parent_page_num(src_node, dest_page_num)
+                    self.set_parent_page_num(src_child_node, dest_page_num)
 
                 # update bookkeeping vars
                 dest_cell_num += 1
@@ -1386,12 +1455,33 @@ class Tree:
                 if dest_cell_num == min_num_dest_cells:
                     extra_dest_cell_count -= 1
 
+        # all src child node have been placed
+        # ensure dest node has right number of children
+        Tree.set_internal_children_count(dest_node, dest_cell_num)
+        #logging.debug(f'dest-node has {self.internal_node_num_children(dest_node)} total children; dest_cell_num: {dest_cell_num}-----------')
+
+        #logging.debug(f"postcompaction whole tree::::")
+        #self.print_tree()
+        #logging.debug(f"postcompaction whole tree::::")
+
         new_left_sib_page_num = new_page_nums[0]
-        new_right_sib_page_num = dest_page_num[1] if len(new_page_nums) > 1 else None
+        new_right_sib_page_num = new_page_nums[1] if len(new_page_nums) > 1 else None
+
+        #logging.debug(f'postcompaction left sib^^^^^^^^^^^^^^^^')
+        #self.print_tree(new_left_sib_page_num)
+
+        #if new_right_sib_page_num:
+            #logging.debug(f'postcompaction right sib')
+            #self.print_tree(new_left_sib_page_num)
+
+        #logging.debug(f'Tail calling internal_node_delete5555555555555555555')
+
         # 3. update ancestor
         # ancestor will recycle compacted nodes
-        self.internal_node_delete(left_sib_page_num, page_num, right_sib_page_num,
+        return self.internal_node_delete(left_sib_page_num, page_num, right_sib_page_num,
                                   new_left_sib_page_num, new_right_sib_page_num)
+
+
 
     def delete_root(self):
         """
@@ -1468,7 +1558,7 @@ class Tree:
         else:
             # insert to head of list
             # make current head, new cell's next
-            next_ptr = head.to_bytes(FREE_BLOCK_NEXT_BLOCK_SIZE)
+            next_ptr = head.to_bytes(FREE_BLOCK_NEXT_BLOCK_SIZE, sys.byteorder)
             next_ptr_offset = offset + FREE_BLOCK_NEXT_BLOCK_OFFSET
             node[next_ptr_offset: next_ptr_offset + FREE_BLOCK_NEXT_BLOCK_SIZE] = next_ptr
             # set new node as head
@@ -2258,7 +2348,7 @@ class Tree:
         indent = self.depth_to_indent(depth)
         # root of invocation; not necessarily global root
         root = self.pager.get_page(root_page_num)
-        parent_num = "NOPAR" if self.is_node_root(root) else self.get_parent_page_num(root)
+        parent_num = "NULLPTR" if self.is_node_root(root) else self.get_parent_page_num(root)
         if self.get_node_type(root) == NodeType.NodeLeaf:
             body = f"printing leaf node at page num: [{root_page_num}]. parent: [{parent_num}]"
             divider = f"{indent}{len(body) * '.'}"
@@ -2267,8 +2357,10 @@ class Tree:
             self.print_leaf_node(root, depth=depth)
             print(divider)
         else:
-            body = f"printing internal node at page num: [{root_page_num}]. parent: [{parent_num}]"
+            body = f".. printing internal node at page num: [{root_page_num}]. parent: [{parent_num}] .."
             divider = f"{indent}{len(body) * '.'}"
+
+            print(divider)
             print(f"{indent}{body}")
             print(divider)
             self.print_internal_node(root, recurse=True, depth=depth)
@@ -2299,6 +2391,8 @@ class Tree:
         for i in range(num_cells):
             key = Tree.internal_node_key(node, i)
             ptr = Tree.internal_node_child(node, i)
+            #logging.debug(f'page_num is {ptr}, key is {key} child_num: {i}')
+
             children.append(ptr)
             print(f"{indent}{i}-key: {key}, child: {ptr}")
 
@@ -2398,10 +2492,12 @@ class Tree:
                     child_upper_bound = self.internal_node_key(node, child_num)
                     stack.append((child_page_num, child_lower_bound, child_upper_bound))
 
-                # validate right is the max key
-                inner_max_key = self.internal_node_key(node, self.internal_node_num_keys(node)-1)
-                right_key = self.get_node_max_key(self.pager.get_page(self.internal_node_right_child(node)))
-                assert inner_max_key < right_key, f"Expected right child key [{right_key}] to be strictly greater than max-inner-key: {inner_max_key}"
+                # validate right is the max key, if inner children exist
+                num_keys = self.internal_node_num_keys(node)
+                if num_keys > 0:
+                    inner_max_key = self.internal_node_key(node, num_keys-1)
+                    right_key = self.get_node_max_key(self.pager.get_page(self.internal_node_right_child(node)))
+                    assert inner_max_key < right_key, f"Expected right child key [{right_key}] to be strictly greater than max-inner-key: {inner_max_key}"
 
                 # add right child
                 child_page_num = self.internal_node_right_child(node)
@@ -2474,7 +2570,9 @@ class Tree:
         """return child ptr, i.e. page number"""
         offset = Tree.internal_node_child_offset(child_num)
         value = node[offset: offset + INTERNAL_NODE_CHILD_SIZE]
-        return int.from_bytes(value, sys.byteorder)
+        ret = int.from_bytes(value, sys.byteorder)
+        # logging.debug(f'internal_node_child is {child_num} [num_keys: {Tree.internal_node_num_keys(node)}] for node {id(node)} retval is val {ret}')
+        return ret
 
     @staticmethod
     def internal_node_right_child(node: bytes) -> int:
@@ -2777,6 +2875,22 @@ class Tree:
     def set_internal_node_num_keys(node: bytes, num_keys: int):
         value = num_keys.to_bytes(INTERNAL_NODE_NUM_KEYS_SIZE, sys.byteorder)
         node[INTERNAL_NODE_NUM_KEYS_OFFSET: INTERNAL_NODE_NUM_KEYS_OFFSET + INTERNAL_NODE_NUM_KEYS_SIZE] = value
+
+    @staticmethod
+    def set_internal_children_count(node: bytes, num_children: int):
+        """
+        Set internal children count, including:
+            1) whether right child is set
+            2) number of inner children
+
+        :param node:
+        :param num_children:
+        :return:
+        """
+        if num_children > 0:
+            Tree.set_internal_node_has_right_child(node, True)
+            num_children -= 1
+        Tree.set_internal_node_num_keys(node, num_children)
 
     @staticmethod
     def set_internal_node_right_child(node: bytes, right_child_page_num: int):

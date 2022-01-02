@@ -4,6 +4,7 @@ btree functionality via the frontend. I prefer this, as this simplifies
 the testing; otherwise, I'll have to import serde logic to generate formatted cells
 """
 import pytest
+import random
 
 from learndb import LearnDB
 from constants import TEST_DB_FILE
@@ -48,6 +49,9 @@ def small_test_cases():
 
 def test_inserts(test_cases):
     """
+    iterate over test cases, insert keys
+    - validate tree
+    - scan table and ensure keys are sorted version of inputted keys
 
     :param test_cases: fixture
     :return:
@@ -62,24 +66,86 @@ def test_inserts(test_cases):
         db.handle_input("create table foo ( colA integer primary key, colB text)")
 
         # insert keys
+        for idx, key in enumerate(test_case):
+            db.handle_input(f"insert into foo (colA, colB) values ({key}, 'hello world')")
+
+            # select rows
+            db.handle_input("select colA, colB  from foo")
+            pipe = db.get_pipe()
+            assert pipe.has_msgs(), "expected rows"
+            # collect keys into a list
+            result_keys = []
+            while pipe.has_msgs():
+                record = pipe.read()
+                key = record.get("cola")
+                result_keys.append(key)
+
+            db.state_manager.validate_tree("foo")
+            sorted_test_case = [k for k in sorted(test_case[:idx+1])]
+            assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
+
+        db.close()
+        del db
+
+
+def test_deletes(test_cases):
+    """
+    iterate over test cases- insert all keys
+    then delete keys and ensure:
+    - tree is consistent
+    - has expected keys
+
+    :param test_cases:
+    :return:
+    """
+
+    #import itertools
+    #for perm_test_case in itertools.permutations(test_case):
+    #    pass
+
+    for test_case in test_cases:
+        db = LearnDB(TEST_DB_FILE)
+        # delete old file
+        db.nuke_dbfile()
+
+        # test interfaces via db frontend
+        # create table before inserting
+        db.handle_input("create table foo ( colA integer primary key, colB text)")
+
+        # insert keys
         for key in test_case:
             db.handle_input(f"insert into foo (colA, colB) values ({key}, 'hello world')")
 
-        # select rows
-        db.handle_input("select colA, colB  from foo")
-        pipe = db.get_pipe()
-        assert pipe.has_msgs(), "expected rows"
-        # collect keys into a list
-        result_keys = []
-        while pipe.has_msgs():
-            record = pipe.read()
-            key = record.get("cola")
-            result_keys.append(key)
+        # shuffle keys in repeatable order
+        random.seed(1)
+        del_keys = test_case[:]
+        random.shuffle(del_keys)
 
-        db.state_manager.validate_tree("foo")
+        for idx, key in enumerate(del_keys):
+            try:
+                # delete key
+                db.handle_input(f"delete from foo where colA = {key}")
+                # validate input
 
-        sorted_test_case = [k for k in sorted(test_case)]
-        assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
+                # select rows
+                db.handle_input("select colA, colB  from foo")
+                pipe = db.get_pipe()
+
+                # collect keys into a list
+                result_keys = []
+                while pipe.has_msgs():
+                    record = pipe.read()
+                    key = record.get("cola")
+                    result_keys.append(key)
+
+                try:
+                    db.state_manager.validate_tree("foo")
+                except Exception as e:
+                    raise Exception(f"validate tree failed for {idx} {del_keys} with {e}")
+                sorted_test_case = [k for k in sorted(del_keys[idx+1:])]
+                assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
+            except Exception as e:
+                raise Exception(f"Delete test case [{test_case}][{idx}] {del_keys} with {e}")
 
         db.close()
         del db
