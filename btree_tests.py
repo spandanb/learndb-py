@@ -1,16 +1,13 @@
 """
-todo: port tests to btree_tests2.py and nuke
+These are the new btree tests. These indirectly test the
+btree functionality via the frontend. I prefer this, as this simplifies
+the testing; otherwise, I'll have to import serde logic to generate formatted cells
 """
-
-import os
 import pytest
+import random
 
-from learndb import db_open, input_handler, validate_existence
-
-
-# section : constants
-
-DB_FILE = "db.test.file"
+from learndb import LearnDB
+from constants import TEST_DB_FILE
 
 
 @pytest.fixture
@@ -50,106 +47,101 @@ def small_test_cases():
         ]
 
 
-# section : helpers
-
-def clean_db(db_file: str):
-    """
-    helper to drop database
-    """
-    if os.path.exists(db_file):
-        os.remove(db_file)
-
-
-# section : tests
-
 def test_inserts(test_cases):
     """
+    iterate over test cases, insert keys
+    - validate tree
+    - scan table and ensure keys are sorted version of inputted keys
 
     :param test_cases: fixture
     :return:
     """
     for test_case in test_cases:
-        # clean db; create table
-        clean_db(DB_FILE)
-        table = db_open(DB_FILE)
+        db = LearnDB(TEST_DB_FILE)
+        # delete old file
+        db.nuke_dbfile()
 
-        # print(f"running: {test_case}")
-        insert_helper(test_case, table)
+        # test interfaces via db frontend
+        # create table before inserting
+        db.handle_input("create table foo ( colA integer primary key, colB text)")
 
-        # check_existence(test_case, table)
-        select = input_handler('select', table)
-        validate_existence(select.body, test_case)
-        del table
+        # insert keys
+        for idx, key in enumerate(test_case):
+            db.handle_input(f"insert into foo (colA, colB) values ({key}, 'hello world')")
+
+            # select rows
+            db.handle_input("select colA, colB  from foo")
+            pipe = db.get_pipe()
+            assert pipe.has_msgs(), "expected rows"
+            # collect keys into a list
+            result_keys = []
+            while pipe.has_msgs():
+                record = pipe.read()
+                key = record.get("cola")
+                result_keys.append(key)
+
+            db.state_manager.validate_tree("foo")
+            sorted_test_case = [k for k in sorted(test_case[:idx+1])]
+            assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
+
+        db.close()
+        del db
 
 
-def insert_helper(keys: list, table):
+def test_deletes(test_cases):
     """
-    This tests inserts all `values` into the
-    database and validates the tree after the operation
-    :param keys:
+    iterate over test cases- insert all keys
+    then delete keys and ensure:
+    - tree is consistent
+    - has expected keys
+
+    :param test_cases:
     :return:
     """
 
-    for key in keys:
-        resp = input_handler(f'insert {key}', table)
-        assert resp.success is True
-        input_handler('.validate', table)
-
-
-def test_deletes(test_cases, small_test_cases):
-    """
-    delete
-    :return:
-    """
     for test_case in test_cases:
-        # clean db; create table
-        clean_db(DB_FILE)
-        table = db_open(DB_FILE)
+        db = LearnDB(TEST_DB_FILE)
+        # delete old file
+        db.nuke_dbfile()
 
-        delete_helper(test_case, table)
-        del table
+        # test interfaces via db frontend
+        # create table before inserting
+        db.handle_input("create table foo ( colA integer primary key, colB text)")
 
+        # insert keys
+        for key in test_case:
+            db.handle_input(f"insert into foo (colA, colB) values ({key}, 'hello world')")
 
-def delete_helper(keys: list, table):
-    """
-    Assume this table has `values`
-    :return:
-    """
-    # first insert all the keys
-    # not validating this since the correctness of inserts is
-    # verified in insert tests
-    for key in keys:
-        input_handler(f'insert {key}', table)
+        # shuffle keys in repeatable order
+        random.seed(1)
+        del_keys = test_case[:]
+        random.shuffle(del_keys)
 
-    # then attempt delete
-    for idx, key in enumerate(keys):
-        # delete key
-        resp = input_handler(f'delete {key}', table)
-        assert resp.success is True
-        input_handler('.validate', table)
-        input_handler('.btree', table)
-        # ensure deleted key does not exist in tree
-        remaining = keys[idx + 1:]
-        select = input_handler("select", table)
-        # validate all expected keys exist
-        validate_existence(select.body, remaining)
+        for idx, key in enumerate(del_keys):
+            try:
+                # delete key
+                db.handle_input(f"delete from foo where colA = {key}")
+                # validate input
 
+                # select rows
+                db.handle_input("select colA, colB  from foo")
+                pipe = db.get_pipe()
 
-def test_duplicate_inserts():
-    """
-    validate duplicate insert fails
-    :return:
-    """
-    clean_db(DB_FILE)
-    table = db_open(DB_FILE)
-    resp = input_handler(f'insert 5', table)
-    assert resp.success is True
-    resp = input_handler(f'insert 5', table)
-    assert resp.success is False
+                # collect keys into a list
+                result_keys = []
+                while pipe.has_msgs():
+                    record = pipe.read()
+                    key = record.get("cola")
+                    result_keys.append(key)
 
+                try:
+                    db.state_manager.validate_tree("foo")
+                except Exception as e:
+                    raise Exception(f"validate tree failed for {idx} {del_keys} with {e}")
+                sorted_test_case = [k for k in sorted(del_keys[idx+1:])]
+                assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
+            except Exception as e:
+                raise Exception(f"Delete test case [{test_case}][{idx}] {del_keys} with {e}")
 
-def test_stress():
-    """
-    do randomized inserts and deletes
-    :return:
-    """
+        db.close()
+        del db
