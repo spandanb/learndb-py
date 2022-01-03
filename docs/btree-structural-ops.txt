@@ -1,4 +1,10 @@
-The goal of this doc is to explain the btree node split algorithm.
+The goal of this doc is to explain how the btree structure changes when keys are inserted
+and deleted.
+
+The ops in questions are insert, split, delete, and compact operations, and create and delete root
+operations on leaf and internal node
+
+# Insert And Split
 
 Given a new cell (and an included key), we find the node and cell_num on the tree
 where the new cell can be placed.
@@ -21,3 +27,5 @@ If, the total free space on a cell does not satisfy. Then we must "split" the no
 
 The children nodes must be passed to parent insert method, i.e. internal_node_insert_node will have to be updated to handle
 2 or 3 children.
+
+# todo: complete me

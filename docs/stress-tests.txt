@@ -1,0 +1,27 @@
+This document outlines stress testing.
+
+Unit tests provide a sanity check on the code. But there are often many code paths, logical states that
+are unexplored. To explore these, we could use some kind of randomized search. Specifically, first define a
+directed graph, where by nodes represent a precedence relationship in terms of which ops are valid on a database, e.g.
+1) create database
+2) create table
+3) insert a record
+4) delete a record
+
+Consider, specifically, we can only create a table, once we have created a database.
+
+The graph could be modelled like a Markov process, whereby, e.g. state 1 (database created), randomly transitions
+to a valid op, e.g. create table, with some probability. The probabilities could be changed to incentive certain path
+explorations.
+
+In addition, each node, i.e. each op will in some case generate random output, e.g. insert key {rand_int}, here rand_int
+ being a random int.
+
+This should allow exploration of paths that explicit tests don't explore
+
+This exploration would be bound be time or number of steps.
+Validations can be applied at various frequencies. Validations can be applied at each time step, at the end of the entire stress op,
+or perhaps somewhat randomly, like a sample.
+
+Validations could extend the current btree validations. Specifically, we would also want to consider changes
+to the catalog- and other non-btree objects.

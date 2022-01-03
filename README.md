@@ -33,16 +33,15 @@ The following are some parts of a DBMS (In no particular order):
 - Transactions and Concurrency
   - how do multiple users concurrently use the system?
   - how does the system ensure concurrent access doesn't leave the system in an inconsistent state?
+  - how does the system ensure system failures, e.g. power failure don't leave in an unrecoverable/inconsistent state
   - what is an inconsistent state?
+  - what is a recoverable state?
+  - How are ACID properties guaranteed
 
-
-## Completed
-
-- Btree implementation
-- DB REPL
 
 ## Todo
-- Use a parse generator (pyparser) to build out logical frontend.
+- immanent work/issues are tracked in `tasks.md`
+- long-term ideas are tracked in `docs/future-work.md`
 
 ## References consulted
 
@@ -63,7 +62,7 @@ The following are some parts of a DBMS (In no particular order):
 
 - Run end-to-end tests:
 `... e2e_tests.py`
-  
+
 - Run serde tests:
 `... serde_tests.py`
 
@@ -73,7 +72,11 @@ The following are some parts of a DBMS (In no particular order):
 - Run specific test:
 `python -m pytest tests.py -k test_name`
 
-- Run REPL: `python learndb.py`
+- Run REPL: `python learndb.py repl`
+
+## Generate Docs
+
+e.g. ` python -m pydoc -w .\btree.py`
 
 ## Getting Started- Tutorial
 
