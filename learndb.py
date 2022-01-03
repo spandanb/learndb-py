@@ -4,6 +4,7 @@ Python prototype/reference implementation
 """
 import os.path
 import sys
+import random
 import logging
 
 from typing import Union, List, Any
@@ -54,6 +55,9 @@ def parse_delete(command: str) -> int:
 
 def validate_existence(rows: List[Row], expected_keys: List[int]):
     """
+
+    todo: I think this can be nuked
+
     check `rows` match `expected_keys`
     NB: This implements a slow N^2 search
     :param rows:
@@ -237,67 +241,115 @@ def repl():
             print(pipe.read())
 
 
+
 def devloop():
     """
     this works through the entire intialize process
     :return:
     """
 
-    db = LearnDB(DB_FILE)
-    db.nuke_dbfile()
-
-    # output pipe
-    pipe = db.get_pipe()
-
-    # create random records
-    # keys = list(set(randint(1, 1000) for i in range(50)))
-    keys = [0, 1, 89, 90, 92, 4, 2]
-    # keys = [625, 582, 200, 301, 40, 354, 228, 797, 90, 245]
-    # keys = [236, 301, 602, 522, 449, 742, 252, 333, 768, 261, 619, 87, 854, 851, 332, 360]
-
-    cmds = [
-        "create table foo ( colA integer primary key, colB text)",
+    test_cases = [[1, 2, 3, 4],
+        [64, 5, 13, 82],
+        [82, 13, 5, 2, 0],
+        [10, 20, 30, 40, 50, 60, 70],
+        [72, 79, 96, 38, 47],
+        [432, 507, 311, 35, 246, 950, 956, 929, 769, 744, 994, 438],
+          [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516],
+          [159, 597, 520, 189, 822, 725, 504, 397],
+          [960, 267, 947, 400, 795, 327, 464, 884, 667, 870, 92],
+          [793, 651, 165, 282, 177, 439, 593],
+          [229, 653, 248, 298, 801, 947, 63, 619, 475, 422, 856, 57, 38],
+          [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305],
+          [114, 464, 55, 450, 729, 646, 95, 649, 59, 412, 546, 340, 667, 274, 477, 363, 333, 897, 772, 508, 182,
+           305, 428,
+           180, 22],
+          [15, 382, 653, 668, 139, 70, 828, 17, 891, 121, 175, 642, 491, 281, 920],
+          [967, 163, 791, 938, 939, 196, 104, 465, 886, 355, 58, 251, 928, 758, 535, 737, 357, 125, 171, 838,
+           572, 745,
+           999, 417, 393, 458, 292, 904, 158, 286, 900, 859, 668, 183],
+          [726, 361, 583, 121, 908, 789, 842, 67, 871, 461, 522, 394, 225, 637, 792, 393, 656, 748, 39, 696],
+          [54, 142, 440, 783, 619, 273, 95, 961, 692, 369, 447, 825, 555, 908, 483, 356, 40, 110, 519, 599],
+          [413, 748, 452, 666, 956, 926, 94, 813, 245, 237, 264, 709, 706, 872, 535, 214, 561, 882, 646]
     ]
 
-    for key in keys:
-        cmds.append(f"insert into foo (colA, colB) values ({key}, 'hellew words foo')")
+    # random.seed(1)
 
-    shuffle(keys)
+    # cmds to initialize db
 
-    for key in keys:
-        cmds.append(f"delete from foo where colA = {key}")
+    #insert_keys = keys
+    #del_keys = keys[:]
+    #shuffle(del_keys)
 
-    #cmds.append(f"insert into foo (colA, colB) values (1, 'hellow words foo')")
-    #cmds.append(f"insert into foo (colA, colB) values (2, 'hellow words foo')")
-    #cmds.append(f"insert into foo (colA, colB) values (3, 'hellow words foo')")
-    #cmds.append("delete from foo where colA = 2")
+    #insert_keys = [103, 394, 484, 380, 834, 677, 604, 611, 952, 71, 568, 291, 433, 305]
+    #del_keys =    [433, 380, 394, 71, 677, 604, 611, 834, 568, 291, 103, 952, 305, 484]
 
-    cmds.append("select colA, colB  from foo")
+    #insert_keys = [159, 597, 520, 189, 822, 725, 504, 397, 218, 134, 516]
+    #del_keys =    [504, 218, 516, 397, 725, 189, 159, 822, 597, 134, 520]
 
-    result_keys = []
+    for test_case in test_cases:
 
-    for cmd in cmds:
+        db = LearnDB(DB_FILE)
+        db.nuke_dbfile()
+
+        insert_keys = test_case
+        del_keys = test_case[:]
+        random.shuffle(del_keys)
+
+        print(f'running test case: {insert_keys}')
+
+        cmd = "create table foo ( colA integer primary key, colB text)"
         logging.info(f"handling [{cmd}]")
         resp = db.handle_input(cmd)
-        if not resp.success:
-            print(f"cmd {cmd} failed with {resp.status} {resp.error_message}")
-            return EXIT_SUCCESS
 
-        # print anything in the output buffer
-        while pipe.has_msgs():
-            record = pipe.read()
-            key = record.get("cola")
-            print(f'pipe read: {record}')
-            result_keys.append(key)
+        # insert
+        for key in insert_keys:
+            cmd = f"insert into foo (colA, colB) values ({key}, 'hellew words foo')"
+            logging.info(f"handling [{cmd}]")
+            resp = db.handle_input(cmd)
 
+        logging.debug("printing tree.......................")
         db.state_manager.print_tree("foo")
-        db.state_manager.validate_tree("foo")
-        print('*'*100)
 
-    # assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
+        # delete and validate
+        for idx, key in enumerate(del_keys):
+            cmd = f"delete from foo where colA = {key}"
+            logging.info(f"handling [{cmd}]")
+            resp = db.handle_input(cmd)
+            if not resp.success:
+                print(f"cmd {cmd} failed with {resp.status} {resp.error_message}")
+                return EXIT_SUCCESS
 
-    # close db to push changed state to disk
-    db.close()
+            resp = db.handle_input("select cola, colb from foo")
+            assert resp.success
+
+            # output pipe
+            pipe = db.get_pipe()
+
+            result_keys = []
+            # print anything in the output buffer
+            logging.debug(f'pipe has msgs: {pipe.has_msgs()}')
+            while pipe.has_msgs():
+                record = pipe.read()
+                key = record.get("cola")
+                print(f'pipe read: {record}')
+                result_keys.append(key)
+
+            # assert result_keys == [k for k in sorted(keys)], f"result {result_keys} doesn't not match {[k for k in sorted(keys)]}"
+
+            logging.debug("printing tree.......................")
+            db.state_manager.print_tree("foo")
+            # ensure tree is valid
+            db.state_manager.validate_tree("foo")
+
+            # check if all keys we expect are there in result
+            expected = [key for key in sorted(del_keys[idx+1:])]
+            actual = [key for key in sorted(set(result_keys))]
+            assert actual == expected, f"expected: {expected}; received {actual}"
+
+            print('*'*100)
+
+        # close db to push changed state to disk
+        db.close()
 
 
 def parse_args_and_start(args: list):
