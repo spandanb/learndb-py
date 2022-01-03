@@ -237,8 +237,6 @@ class Tree:
         # find
         page_num, cell_num = self.find(key)
         node = self.pager.get_page(page_num)
-        if key == 189:
-            pass
         if self.leaf_node_key(node, cell_num) != key:
             return TreeDeleteResult.Success
 
@@ -977,6 +975,10 @@ class Tree:
             left_sib_page_num = self.get_left_sibling(page_num)
             right_sib_page_num = self.get_right_sibling(page_num)
 
+            # this indicates an inconsistency in code
+            assert left_sib_page_num != page_num
+            assert right_sib_page_num != page_num
+
             num_sibs = 1
             num_children = num_cells - 1  # -1 for deleted
             cell = Tree.leaf_node_cell(node, cell_num)
@@ -1278,6 +1280,7 @@ class Tree:
                 self.set_internal_node_children_starting_at(parent, right_children, right_bound)
 
         # 5. update parent count
+        # logging.debug(f"parent_num_new_keys: {parent_num_new_keys}, old_num: {parent_num_keys}, num_old_nodes: {num_old_nodes}, num_new_nodes: {num_new_nodes}")
         Tree.set_internal_node_num_keys(parent, parent_num_new_keys)
 
         # 6. update ancestor(s) if there is a new max key on right child
@@ -1603,14 +1606,23 @@ class Tree:
         parent = self.pager.get_page(parent_page_num)
 
         child_num = self.internal_node_find(parent_page_num, node_key)
+        sib_page_num = None
         if child_num == INTERNAL_NODE_MAX_CELLS:
-            # child is right child, left sibling is last inner cell
-            return self.internal_node_child(parent, self.internal_node_num_keys(parent)-1)
+            # child is right child, left sibling is last inner cell if it exists
+            parent_num_keys = self.internal_node_num_keys(parent)
+            if parent_num_keys == 0:
+                # handle unary
+                sib_page_num = None
+            else:
+                sib_page_num = self.internal_node_child(parent, parent_num_keys-1)
         elif child_num > 0:
-            return self.internal_node_child(parent, child_num-1)
+            sib_page_num = self.internal_node_child(parent, child_num-1)
         else:
             # node is leftmost
-            return None
+            sib_page_num = None
+
+        assert sib_page_num != page_num, f"expected left sibling [{sib_page_num}] to different from arg [{page_num}]"
+        return sib_page_num
 
     def get_right_sibling(self, page_num: int) -> Optional[int]:
         node = self.pager.get_page(page_num)
@@ -1622,14 +1634,19 @@ class Tree:
         parent = self.pager.get_page(parent_page_num)
 
         child_num = self.internal_node_find(parent_page_num, node_key)
+        sib_page_num = None
         if child_num == INTERNAL_NODE_MAX_CELLS:
             # node is right most
-            return None
+            sib_page_num = None
         elif child_num == self.internal_node_num_keys(parent)-1:
             # node is right-most inner cell
-            return self.internal_node_right_child(parent)
+            sib_page_num = self.internal_node_right_child(parent)
         else:
-            return self.internal_node_child(parent, child_num + 1)
+            sib_page_num = self.internal_node_child(parent, child_num + 1)
+
+        assert sib_page_num != page_num, f"expected right sibling [{sib_page_num}] to different from arg [{page_num}]"
+        return sib_page_num
+
 
     # section: old delete - nuke
 
