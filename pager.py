@@ -4,6 +4,10 @@ import sys
 from constants import TABLE_MAX_PAGES, PAGE_SIZE, EXIT_FAILURE
 
 
+class InvalidPageAccess(Exception):
+    pass
+
+
 class Pager:
     """
     Manages pages in memory (cache) and on file
@@ -81,8 +85,7 @@ class Pager:
         get `page` given `page_num`
         """
         if page_num >= TABLE_MAX_PAGES:
-            print(f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})")
-            sys.exit(EXIT_FAILURE)
+            raise InvalidPageAccess(f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})")
 
         if self.pages[page_num] is None:
             # cache miss. Allocate memory and load from file.
