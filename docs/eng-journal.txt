@@ -307,3 +307,24 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     more copy ops- not empirically validated). Although this op, should happen rarely on a full btree- so the amortized
     cost should be low.
 
+12/27
+    Some reflections on sub-iterations vs. mapped iterators
+    Context: btree internal_node_split_and_insert
+        #currently we iterate over all children- internal and right
+        # when it sees the child_num of old_child - it starts a
+        # sub-iteration over the new children.
+        # sub-iteration over the new children.
+        # The alternative to sub-iterators, is to materialize
+        # sub-iterator into mapping of each src child and dest node and pos, e.g.
+        # shifted_cell in prev impl of internal_node_split, which encodes this location,
+        # although in a way less comprehensible than nested loops
+
+12/28
+    Two key decisions I want to document here:
+    First, w.r.t. the btree, all structure changing ops will be out-of-place, e.g. a split op will not reuses
+    the node that was split- as before, but provision new nodes. The main reason for this is simplicity. In-place ops
+    tend to be trickier, since you need to be mindful of what already exists. On the flip side, the performance cost
+    seems low, since on a btree this should happen rarely. And perhaps, there may be some gains, e.g. under weaker
+    serializability levels.
+
+    Second, free list is unsorted; later I can get fancy with sorting the list, but for now this is good.
