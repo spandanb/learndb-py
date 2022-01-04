@@ -137,7 +137,7 @@ Create table
 > create table customers ( cust_id integer primary key, cust_name text, cust_height float)
 
 Insert records
-> insert into customers ( cust_id, cust_name, cust_height) values (1, "Bob Maharaj", 162.5 )
+> insert into customers ( cust_id, cust_name, cust_height) values (1, 'Bob Maharaj', 162.5 )
 
 Select some rows, only supports equality predicate
 > select cust_name, cust_height from customers
