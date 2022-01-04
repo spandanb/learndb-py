@@ -71,7 +71,6 @@ class Schema:
         return None
 
 
-
 class CatalogSchema(Schema):
     """
     Hardcoded schema object for the catalog table.

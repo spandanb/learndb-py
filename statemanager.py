@@ -3,14 +3,10 @@ class representing a logical-database
 support API to read/write data via Table
 and creating tables etc.
 """
-import os.path
 
-from table import Table
 from btree import Tree
 from pager import Pager
-from schema import Schema, CatalogSchema, generate_schema, Record, create_record
-
-from dataexchange import Response
+from schema import Schema, CatalogSchema
 
 
 class StateManager:
