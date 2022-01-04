@@ -86,26 +86,40 @@ def is_meta_command(command: str) -> bool:
     return command[0] == '.'
 
 
-def do_meta_command(command: str, virtual_machine) -> Response:
-    state_manager = virtual_machine.state_manager
+def do_meta_command(command: str, db: LearnDB) -> Response:
+    """
+    handle execution of meta command
+    :param command:
+    :param db:
+    :return:
+    """
     if command == ".quit":
-        state_manager.close()
-        # reconsider exiting thus
+        print("goodbye")
+        db.close()
         sys.exit(EXIT_SUCCESS)
-    elif command == ".btree":
+    elif command.startswith(".btree"):
+        # .btree expects table-name
+        splits = command.split(" ")
+        if len(splits) == 2:
+            print("Invalid argument to .btree| Usage: > .btree <table-name>")
+            return Response(False, status=MetaCommandResult.InvalidArgument)
+        tree_name = splits[1]
         print("Printing tree" + "-"*50)
-        state_manager.print_tree()
+        db.state_manager.print_tree(tree_name)
         print("Finished printing tree" + "-"*50)
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".validate":
-        # TODO: get table name
         print("Validating tree....")
-        state_manager.validate_tree()
+        splits = command.split(" ")
+        if len(splits) == 2:
+            print("Invalid argument to .validate| Usage: > .validate <table-name>")
+            return Response(False, status=MetaCommandResult.InvalidArgument)
+        tree_name = splits[1]
+        db.state_manager.validate_tree(tree_name)
         print("Validation succeeded.......")
         return Response(True, status=MetaCommandResult.Success)
     elif command == ".nuke":
-        # NB: doesn't work; the file is in use
-        os.remove(DB_FILE)
+        db.nuke_dbfile()
     elif command == ".help":
         print(USAGE)
         return Response(True, status=MetaCommandResult.Success)
@@ -206,6 +220,10 @@ class LearnDB:
         self.reset()
 
     def get_pipe(self) -> Pipe:
+        """
+        NOTE: get pipe; pipes are recycled if LearnDB.reset is invoked
+        :return:
+        """
         return self.pipe
 
     def close(self):
@@ -405,6 +423,8 @@ python learndb.py file <filepath>
     elif runmode == 'devloop':
         devloop()
     elif runmode == 'file':
+        # todo support input and output file
+        # if no output file, write to console
         pass
     else:
         print(f"Error: Invalid run mode [{runmode}]")

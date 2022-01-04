@@ -1,51 +1,17 @@
+# operational constants
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
-
-PAGE_SIZE = 4096
-WORD = 4
-
-TABLE_MAX_PAGES = 100
 
 DB_FILE = 'db.file'
 TEST_DB_FILE = 'testdb.file'
 
-# TODO: nuke consts for a fixed schema
-# serialized data layout (row)
-ID_SIZE = 6  # length in bytes
-BODY_SIZE = 58
-ROW_SIZE = ID_SIZE + BODY_SIZE
-ID_OFFSET = 0
-BODY_OFFSET = ID_OFFSET + ID_SIZE
-ROWS_PER_PAGE = PAGE_SIZE // ROW_SIZE
-
-USAGE = '''
-Supported commands:
--------------------
-insert 3 into tree
-> insert 3
-
-select and output all rows (no filtering support for now)
-> select
-
-delete 3 from tree
-> delete 3
-
-Supported meta-commands:
-------------------------
-print usage
-.help
-
-quit REPl
-> .quit
-
-print btree
-> .btree
-
-performs internal consistency checks on tree
-> .validate
-'''
+# storage constants
+PAGE_SIZE = 4096
+WORD = 4
 
 # btree constants
+TABLE_MAX_PAGES = 100
+
 # represents a null value in header
 NULLPTR = 0
 
@@ -78,7 +44,8 @@ INTERNAL_NODE_CHILD_SIZE = WORD
 INTERNAL_NODE_CELL_SIZE = INTERNAL_NODE_CHILD_SIZE + INTERNAL_NODE_KEY_SIZE
 INTERNAL_NODE_SPACE_FOR_CELLS = PAGE_SIZE - INTERNAL_NODE_HEADER_SIZE
 # INTERNAL_NODE_MAX_CELLS =  INTERNAL_NODE_SPACE_FOR_CELLS / INTERNAL_NODE_CELL_SIZE
-# todo: nuke after testing
+
+# NOTE: this is limited for debugging/dev
 # NOTE: this should not dip below 3 due to the constraint of unary trees
 # cells, i.e. key, child ptr in the body
 INTERNAL_NODE_MAX_CELLS = 3
@@ -138,46 +105,45 @@ FREE_BLOCK_NEXT_BLOCK_SIZE = WORD
 FREE_BLOCK_NEXT_BLOCK_OFFSET = FREE_BLOCK_SIZE_OFFSET + FREE_BLOCK_SIZE_SIZE
 FREE_BLOCK_HEADER_SIZE = FREE_BLOCK_SIZE_SIZE + FREE_BLOCK_NEXT_BLOCK_SIZE
 
-# limit for debugging
+# NOTE: this is limited for debugging/dev
 LEAF_NODE_MAX_CELLS = 3
-
-
-# TODO: most of the leaf_node constants below are unused and should be removed
-# commenting out below
-"""
-# Leaf node body layout
-LEAF_NODE_KEY_SIZE = WORD
-LEAF_NODE_KEY_OFFSET = 0
-
-# NOTE: nodes should not cross the page boundary; thus ROW_SIZE is upper
-# bounded by remaining space in page
-# NOTE: ROW_SIZE includes the key
-LEAF_NODE_VALUE_SIZE = ROW_SIZE
-LEAF_NODE_VALUE_OFFSET = LEAF_NODE_KEY_OFFSET + LEAF_NODE_KEY_SIZE
-LEAF_NODE_CELL_SIZE = LEAF_NODE_KEY_SIZE + LEAF_NODE_VALUE_SIZE
-LEAF_NODE_SPACE_FOR_CELLS = PAGE_SIZE - LEAF_NODE_HEADER_SIZE
-# LEAF_NODE_MAX_CELLS = LEAF_NODE_SPACE_FOR_CELLS / LEAF_NODE_CELL_SIZE
-
-# when a node is split, off number of cells, left will get one more
-LEAF_NODE_RIGHT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) // 2
-LEAF_NODE_LEFT_SPLIT_COUNT = (LEAF_NODE_MAX_CELLS + 1) - LEAF_NODE_RIGHT_SPLIT_COUNT
-"""
-
-
-# this initialize the catalog/metadata table
-# todo: nuke if unused
-INIT_CATALOG_SQL = '''
-create table catalog (
-        type  text,
-        name text,
-        tbl_name text,
-        rootpage integer,
-        sql text
-    )
-'''
 
 
 # serde constants
 # length of encoded bytes
 INTEGER_SIZE = WORD
 FLOAT_SIZE = WORD
+
+USAGE = '''
+Supported meta-commands:
+------------------------
+print usage
+.help
+
+quit REPl
+> .quit
+
+print btree for table <table-name>
+> .btree <table-name>
+
+performs internal consistency checks on table <table-name>
+> .validate <table-name>
+
+Supported commands:
+-------------------
+The following lists supported commands, and an example. For a complete grammar see docs/sql-lang.txt
+
+Create table
+> create table customers ( cust_id integer primary key, cust_name text, cust_height float)
+
+Insert records
+> insert into customers ( cust_id, cust_name, cust_height) values (1, "Bob Maharaj", 162.5 )
+
+Select some rows, only supports equality predicate
+> select cust_name, cust_height from customers
+
+Delete (only single equality predicate supported)
+> delete from customers where cust_name = "Bob Maharaj"
+'''
+
+
