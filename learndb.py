@@ -45,7 +45,7 @@ def do_meta_command(command: str, db: LearnDB) -> Response:
     elif command.startswith(".btree"):
         # .btree expects table-name
         splits = command.split(" ")
-        if len(splits) == 2:
+        if len(splits) != 2:
             print("Invalid argument to .btree| Usage: > .btree <table-name>")
             return Response(False, status=MetaCommandResult.InvalidArgument)
         tree_name = splits[1]
@@ -56,7 +56,7 @@ def do_meta_command(command: str, db: LearnDB) -> Response:
     elif command == ".validate":
         print("Validating tree....")
         splits = command.split(" ")
-        if len(splits) == 2:
+        if len(splits) != 2:
             print("Invalid argument to .validate| Usage: > .validate <table-name>")
             return Response(False, status=MetaCommandResult.InvalidArgument)
         tree_name = splits[1]
@@ -97,7 +97,7 @@ def execute_statement(program: Program, virtmachine: VirtualMachine) -> Response
     return Response(True)
 
 
-def input_handler(input_buffer: str, virtmachine: VirtualMachine) -> Response:
+def input_handler(input_buffer: str, db: LearnDB) -> Response:
     """
     receive input, parse input, and execute vm.
 
@@ -106,7 +106,7 @@ def input_handler(input_buffer: str, virtmachine: VirtualMachine) -> Response:
     :return:
     """
     if is_meta_command(input_buffer):
-        m_resp = do_meta_command(input_buffer, virtmachine)
+        m_resp = do_meta_command(input_buffer, db)
         if m_resp.success == MetaCommandResult.Success:
             return Response(True, status=MetaCommandResult.Success)
 
@@ -123,7 +123,7 @@ def input_handler(input_buffer: str, virtmachine: VirtualMachine) -> Response:
     # handle non-meta command
     # execute statement can be handled by the interpreter
     program = p_resp.body
-    e_resp = execute_statement(program, virtmachine)
+    e_resp = execute_statement(program, db.virtual_machine)
     if e_resp.success:
         print(f"Execution of command '{input_buffer}' succeeded")
         return Response(True, body=e_resp.body)
@@ -185,7 +185,7 @@ class LearnDB:
         :param input_buffer:
         :return:
         """
-        return input_handler(input_buffer, self.virtual_machine)
+        return input_handler(input_buffer, self)
 
 
 def repl():
@@ -196,6 +196,8 @@ def repl():
     # create db client
     db = LearnDB(DB_FILE)
 
+    print("Welcome to learndb")
+    print("For help use .help")
     while True:
         input_buffer = input("db > ")
         db.handle_input(input_buffer)

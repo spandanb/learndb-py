@@ -58,3 +58,4 @@
 ## Bugs
   - duplicate key not erroring
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
+  - create table def , requires space after final column and final ')'
