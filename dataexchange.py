@@ -15,6 +15,7 @@ from enum import Enum, auto
 class MetaCommandResult(Enum):
     Success = auto()
     UnrecognizedCommand = auto()
+    InvalidArgument = auto()
 
 
 class PrepareResult(Enum):

@@ -8,6 +8,8 @@
 ## Storage (btree)
 - support deletion/free-list  
   - support defragmentation of unallocated space
+- allocating on fragmented node (with enough space) should trigger 
+  single-node-in-place compaction
 
 ## VM
 - select statement
@@ -18,6 +20,11 @@
     - complex: use generator object to avoid materializing entire result set 
   - what is interface for select
     - user executes select and is returned a pipe object
+- name resolution
+  - many vm methods operate directly on parsed tokens
+  - a separate name resolution phase should check whether identifier map to any objects, and if create a mapping, which is useable vm operates
+  - this checks whether names are valid and defined
+  - this could vm methods
 
 ## Pager
 - pager
@@ -30,10 +37,12 @@
  - in addition to LearnDB do I want to support:
   - cursor?
   - python db api, i.e. natively supported ?
+  - repl should have help message at beginning
+    - have an additional/secondary command to output sql example/primer
 
 ## documentation/refactoring
-- add architecture.md
-- add future-work.md  
+- complete architecture.md
+- complete future-work.md  
     - should contain high-level roadmap and interesting areas of future work
 - add tutorial
 - complete btree-structural-ops.txt
@@ -44,10 +53,7 @@
 - update commits ref email
 - run black
 - run mypy
-- replace btree::check_update_parent_key -> update_parent_on_new_greater_right_child
-- remove utils.py- replace with debugger.logging
-  -   should print_tree and friends check log level 
-- remove btree- unused methods 
+
 
 ## Bugs
   - duplicate key not erroring

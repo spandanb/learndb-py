@@ -5,19 +5,13 @@ Contains the implementation of the btree
 import sys
 import logging
 
-from collections import namedtuple, deque
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections import deque
 from enum import Enum, auto
-from typing import Optional, List
-from itertools import chain
+from typing import Optional
 
 from serde import get_cell_key, get_cell_key_in_page, get_cell_size
-from utils import debug
 
-from constants import (WORD,
-                       # ROW_SIZE,
-                       NULLPTR,
+from constants import (NULLPTR,
                        PAGE_SIZE,
                        # common
                        NODE_TYPE_SIZE,
@@ -26,7 +20,6 @@ from constants import (WORD,
                        IS_ROOT_OFFSET,
                        PARENT_POINTER_SIZE,
                        PARENT_POINTER_OFFSET,
-                       COMMON_NODE_HEADER_SIZE,
                        # internal node
                        INTERNAL_NODE_NUM_KEYS_SIZE,
                        INTERNAL_NODE_NUM_KEYS_OFFSET,
@@ -39,10 +32,8 @@ from constants import (WORD,
                        INTERNAL_NODE_CHILD_SIZE,
                        INTERNAL_NODE_CELL_SIZE,
                        INTERNAL_NODE_SPACE_FOR_CELLS,
-                       INTERNAL_NODE_MAX_CELLS,
+                       INTERNAL_NODE_MAX_CELLS,  # for debugging
                        INTERNAL_NODE_MAX_CHILDREN,
-                       INTERNAL_NODE_RIGHT_SPLIT_CHILD_COUNT,
-                       INTERNAL_NODE_LEFT_SPLIT_CHILD_COUNT,
                        # leaf node header layout
                        LEAF_NODE_NUM_CELLS_SIZE,
                        LEAF_NODE_NUM_CELLS_OFFSET,
@@ -51,19 +42,11 @@ from constants import (WORD,
 
                        LEAF_NODE_MAX_CELL_SIZE,
                        LEAF_NODE_MAX_CELLS,  # for debugging
-                       # todo: nuke these
-                       #LEAF_NODE_KEY_OFFSET,
-                       #LEAF_NODE_VALUE_SIZE,
-                       #LEAF_NODE_VALUE_OFFSET,
-                       #LEAF_NODE_CELL_SIZE,
-                       #LEAF_NODE_SPACE_FOR_CELLS,
-                       #LEAF_NODE_RIGHT_SPLIT_COUNT,
-                       #LEAF_NODE_LEFT_SPLIT_COUNT,
 
                        # below are newly defined consts
                        LEAF_NODE_CELL_POINTER_START,
                        LEAF_NODE_CELL_POINTER_SIZE,
-                        LEAF_NODE_NON_HEADER_SPACE,
+                       LEAF_NODE_NON_HEADER_SPACE,
 
                        LEAF_NODE_ALLOC_POINTER_OFFSET,
                        LEAF_NODE_ALLOC_POINTER_SIZE,
@@ -96,17 +79,6 @@ class TreeDeleteResult(Enum):
 class NodeType(Enum):
     NodeInternal = 1
     NodeLeaf = 2
-
-
-@dataclass
-class NodeInfo:
-    page_num: int
-    parent_pos: int  # parent's position of this node
-    # give these default values; since these depend on type
-    # of node and hence may need to be populated after `page_num` and `parent_pos`
-    # are determined
-    node: bytearray = None
-    count: int = 0
 
 
 class Tree:
