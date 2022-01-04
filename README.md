@@ -58,7 +58,7 @@ The following are some parts of a DBMS (In no particular order):
 - Requires > python 3.10 and pytest
 
 - Run btree tests:
-`python -m pytest -s btree_tests2.py`
+`python -m pytest -s btree_tests.py`
 
 - Run end-to-end tests:
 `... e2e_tests.py`

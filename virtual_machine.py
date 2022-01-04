@@ -6,7 +6,7 @@ from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
 from schema import create_record, create_catalog_record, generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
-from dataexchange import Response, ExecuteResult
+from dataexchange import Response
 
 from lang_parser.visitor import Visitor
 from lang_parser.tokens import TokenType
@@ -266,98 +266,3 @@ class VirtualMachine(Visitor):
         for del_key in del_keys:
             resp = tree.delete(del_key)
             assert resp == TreeDeleteResult.Success, f"delete failed for key {del_key}"
-
-    # section : handler helpers
-    # special helpers for catalog
-
-    def create_table(self):
-        """
-        helper method to check whether table exists and if not
-        create it in the catalog
-        :return:
-        """
-        # ensure this named table cannot be created
-        catalog = Table("CATALOG")
-
-    def delete_row(self, table_name, key):
-        pass
-
-    def insert_cell(self, cell: bytes):
-        pass
-
-    def insert_row(self, table_name, row):
-        '''
-        row is an in-mem struct containing data
-
-        :param table_name:
-        :param row:
-        :return:
-        '''
-        # table specific serializer
-        table = Table(table_name)
-        # serialize byte string
-        serialized = table.serialize(row)
-
-        # get underlying store, currently tree
-        store = self.get_store(table_name)
-        # create cursor on store
-        cursor = Cursor(store)
-        cursor.insert_serialized_row(serialized)
-
-    def execute_select(self) -> Response:
-        """
-        Execute select
-        :return:
-        """
-
-        print("executing select...")
-
-        rows = []
-        cursor = Cursor(self.database.table)
-
-        while cursor.end_of_table is False:
-            row = cursor.get_row()
-            print(f"printing row: {row}")
-            cursor.advance()
-            rows.append(row)
-
-        return Response(True, body=rows)
-
-    def execute_insert(self, statement: 'Statement', table: 'Table') -> Response:
-        """
-        TODO: change `statement` to key or perhaps entire row objects
-
-        :param statement:
-        :param table:
-        :return:
-        """
-        print("executing insert...")
-        cursor = Cursor(table)
-
-        row_to_insert = statement.row_to_insert
-        print(f"inserting row with id: [{row_to_insert.identifier}]")
-        resp = cursor.insert_row(row_to_insert)
-        if resp.success:
-            print(f"insert [{row_to_insert.identifier}] is successful")
-            return Response(True, status=ExecuteResult.Success)
-        else:
-            print(f"insert [{row_to_insert.identifier}] failed, due to [{resp.body}]")
-            return Response(False, resp.body)
-
-    def execute_delete(self, statement: 'Statement', table: 'Table') -> Response:
-        print("executing delete...")
-        key_to_delete = statement.key_to_delete
-
-        print(f"deleting key: [{key_to_delete}]")
-        # return ExecuteResult.Success
-
-        cursor = Cursor(table)
-        resp = cursor.delete_key(key_to_delete)
-        if resp.success:
-            print(f"delete [{key_to_delete}] is successful")
-            return Response(True, status=ExecuteResult.Success)
-        else:
-            print(f"delete [{key_to_delete}] failed")
-            return Response(False, error_message=f"delete [{key_to_delete}] failed")
-
-
