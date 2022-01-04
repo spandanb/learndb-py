@@ -3,11 +3,10 @@ import logging
 
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
-from table import Table
 from statemanager import StateManager
-from schema import Record, create_record, create_catalog_record, generate_schema, schema_to_ddl
+from schema import create_record, create_catalog_record, generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
-from dataexchange import Response, ExecuteResult, Statement, Row
+from dataexchange import Response, ExecuteResult
 
 from lang_parser.visitor import Visitor
 from lang_parser.tokens import TokenType

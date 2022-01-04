@@ -1,6 +1,8 @@
 from __future__ import annotations
 """
-Python prototype/reference implementation
+This module contains the highest level user-interaction and resource allocation
+i.e. management of entities, like parser, virtual machine, pager, etc. that implement
+the DBMS functionality that is learndb.
 """
 import os.path
 import math  # for testing
@@ -13,71 +15,14 @@ from typing import Union, List, Any
 from dataclasses import dataclass
 from enum import Enum, auto
 from random import randint, shuffle  # for testing
-from pipe import Pipe
 
 from constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
-from dataexchange import Response, Row, MetaCommandResult, ExecuteResult, PrepareResult
-from pager import Pager
-from statemanager import StateManager
-
 from lang_parser.sqlhandler import SqlFrontEnd
 from lang_parser.symbols import Program
-
-from btree import Tree, TreeInsertResult, TreeDeleteResult, NodeType, INTERNAL_NODE_MAX_CELLS
+from dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
+from pipe import Pipe
+from statemanager import StateManager
 from virtual_machine import VirtualMachine
-
-# section: parsing logic
-
-
-def parse_insert(command: str) -> Row:
-    """
-    parse insert statement, formatted like: insert `key`
-    :param command:
-    :return: row to insert
-    """
-    tokens = command.split(" ")
-    # for now, can only handle commands of the form: insert 3
-    assert len(tokens) == 2
-    key = int(tokens[1])
-    return Row(key, "hello database")
-
-
-def parse_delete(command: str) -> int:
-    """
-    parse delete statement, formatted like: delete `key`
-    :param command:
-    :return: key to delete
-    """
-    tokens = command.split(" ")
-    # for now, can only handle commands of the form: insert 3
-    assert len(tokens) == 2
-    key = int(tokens[1])
-    return key
-
-
-def validate_existence(rows: List[Row], expected_keys: List[int]):
-    """
-
-    todo: I think this can be nuked
-
-    check `rows` match `expected_keys`
-    NB: This implements a slow N^2 search
-    :param rows:
-    :param expected_keys:
-    :return:
-    """
-    for row in rows:
-        assert row.identifier in expected_keys, f"key [{row.identifier}] not expected"
-
-    for key in expected_keys:
-        found = False
-        for row in rows:
-            if row.identifier == key:
-                found = True
-                break
-        assert found is True, f"key [{key}] not found"
-
-    assert len(rows) == len(expected_keys), f"number of rows [{len(rows)}] != expected_keys [{len(expected_keys)}]"
 
 
 # section: core execution/user-interface logic

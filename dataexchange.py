@@ -59,26 +59,4 @@ class Response:
         return self.__str__()
 
 
-@dataclass
-class Row:
-    """
-    NOTE: this assumes a fixed table definition. Fixing the
-    table definition, like in the tutorial to bootstrap the
-    (de)serialize logic.
-    Later when I can handle generic schemas this will need to be
-    made generic
-    """
-    # todo: nuke me
-    identifier: int
-    body: str
-
-
-@dataclass
-class Statement:
-    # todo: nuke me
-    statement_type: StatementType
-    row_to_insert: Row = None
-    key_to_delete: int = None
-
-
 

@@ -1,7 +1,5 @@
 from constants import INTERNAL_NODE_MAX_CELLS
-from dataexchange import Response, Row
-from btree import Tree, NodeType, TreeInsertResult, TreeDeleteResult
-from table import Table
+from btree import Tree, NodeType
 
 
 class Cursor:
@@ -46,32 +44,6 @@ class Cursor:
         node = self.pager.get_page(self.page_num)
         cell = Tree.leaf_node_cell(node, self.cell_num)
         return cell
-
-    def insert_row(self, row: Row) -> Response:
-        """
-        # TODO: nuke me; do this op by directly invoking tree method
-        insert row
-        :return:
-        """
-        serialized = Table.serialize(row)
-        response = self.tree.insert(row.identifier, serialized)
-        if response == TreeInsertResult.Success:
-            return Response(True)
-        else:
-            assert response == TreeInsertResult.DuplicateKey
-            return Response(False, status=TreeInsertResult.DuplicateKey)
-
-    def delete_key(self, key: int) -> Response:
-        """
-        # TODO: nuke me; do this op by directly invoking tree method
-        delete key from table
-
-        :param key:
-        :return:
-        """
-        response = self.tree.delete(key)
-        if response == TreeDeleteResult.Success:
-            return Response(True)
 
     def next_leaf(self):
         """
