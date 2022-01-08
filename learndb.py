@@ -27,111 +27,6 @@ from virtual_machine import VirtualMachine
 
 # section: core execution/user-interface logic
 
-def is_meta_command(command: str) -> bool:
-    return command[0] == '.'
-
-
-def do_meta_command(command: str, db: LearnDB) -> Response:
-    """
-    handle execution of meta command
-    :param command:
-    :param db:
-    :return:
-    """
-    if command == ".quit":
-        print("goodbye")
-        db.close()
-        sys.exit(EXIT_SUCCESS)
-    elif command.startswith(".btree"):
-        # .btree expects table-name
-        splits = command.split(" ")
-        if len(splits) != 2:
-            print("Invalid argument to .btree| Usage: > .btree <table-name>")
-            return Response(False, status=MetaCommandResult.InvalidArgument)
-        tree_name = splits[1]
-        print("Printing tree" + "-"*50)
-        db.state_manager.print_tree(tree_name)
-        print("Finished printing tree" + "-"*50)
-        return Response(True, status=MetaCommandResult.Success)
-    elif command == ".validate":
-        print("Validating tree....")
-        splits = command.split(" ")
-        if len(splits) != 2:
-            print("Invalid argument to .validate| Usage: > .validate <table-name>")
-            return Response(False, status=MetaCommandResult.InvalidArgument)
-        tree_name = splits[1]
-        db.state_manager.validate_tree(tree_name)
-        print("Validation succeeded.......")
-        return Response(True, status=MetaCommandResult.Success)
-    elif command == ".nuke":
-        db.nuke_dbfile()
-    elif command == ".help":
-        print(USAGE)
-        return Response(True, status=MetaCommandResult.Success)
-    return Response(False, status=MetaCommandResult.UnrecognizedCommand)
-
-
-def prepare_statement(command) -> Response:
-    """
-    prepare statement, i.e. parse statement and
-    return it's AST. For now the AST structure is the prepared
-    statement. This may change, e.g. if frontend changes to output bytecode
-
-    :param command:
-    :return:
-    """
-    parser = SqlFrontEnd()
-    parser.parse(command)
-    if not parser.is_success():
-        return Response(False, error_message=f"parse failed due to: [{parser.error_summary()}]")
-    return Response(True, body=parser.get_parsed())
-
-
-def execute_statement(program: Program, virtmachine: VirtualMachine) -> Response:
-    """
-    execute statement;
-    returns return value of child-invocation
-    """
-    print("In execute_statement; ")
-    resp = virtmachine.run(program)
-    return Response(True)
-
-
-def input_handler(input_buffer: str, db: LearnDB) -> Response:
-    """
-    receive input, parse input, and execute vm.
-
-    :param input_buffer:
-    :param virtmachine:
-    :return:
-    """
-    if is_meta_command(input_buffer):
-        m_resp = do_meta_command(input_buffer, db)
-        if m_resp.success == MetaCommandResult.Success:
-            return Response(True, status=MetaCommandResult.Success)
-
-        elif m_resp == MetaCommandResult.UnrecognizedCommand:
-            print("Unrecognized meta command")
-            return Response(False, status=MetaCommandResult.UnrecognizedCommand)
-
-    p_resp = prepare_statement(input_buffer)
-    if not p_resp.success:
-        if p_resp.status == PrepareResult.UnrecognizedStatement:
-            print(f"Unrecognized keyword at start of '{input_buffer}'")
-        return Response(False, status={p_resp.status}, error_message=p_resp.error_message)
-
-    # handle non-meta command
-    # execute statement can be handled by the interpreter
-    program = p_resp.body
-    e_resp = execute_statement(program, db.virtual_machine)
-    if e_resp.success:
-        print(f"Execution of command '{input_buffer}' succeeded")
-        return Response(True, body=e_resp.body)
-    else:
-        print(f"Execution of command '{input_buffer}' failed")
-        return Response(False, error_message=e_resp.error_message)
-
-
 class LearnDB:
     """
     This encapsulates functionality over core db functions-
@@ -185,7 +80,108 @@ class LearnDB:
         :param input_buffer:
         :return:
         """
-        return input_handler(input_buffer, self)
+        return self.input_handler(input_buffer)
+
+    @staticmethod
+    def is_meta_command(command: str) -> bool:
+        return command[0] == '.'
+
+    def do_meta_command(self, command: str) -> Response:
+        """
+        handle execution of meta command
+        :param command:
+        :param db:
+        :return:
+        """
+        if command == ".quit":
+            print("goodbye")
+            self.close()
+            sys.exit(EXIT_SUCCESS)
+        elif command.startswith(".btree"):
+            # .btree expects table-name
+            splits = command.split(" ")
+            if len(splits) != 2:
+                print("Invalid argument to .btree| Usage: > .btree <table-name>")
+                return Response(False, status=MetaCommandResult.InvalidArgument)
+            tree_name = splits[1]
+            print("Printing tree" + "-"*50)
+            self.state_manager.print_tree(tree_name)
+            print("Finished printing tree" + "-"*50)
+            return Response(True, status=MetaCommandResult.Success)
+        elif command == ".validate":
+            print("Validating tree....")
+            splits = command.split(" ")
+            if len(splits) != 2:
+                print("Invalid argument to .validate| Usage: > .validate <table-name>")
+                return Response(False, status=MetaCommandResult.InvalidArgument)
+            tree_name = splits[1]
+            self.state_manager.validate_tree(tree_name)
+            print("Validation succeeded.......")
+            return Response(True, status=MetaCommandResult.Success)
+        elif command == ".nuke":
+            self.nuke_dbfile()
+        elif command == ".help":
+            print(USAGE)
+            return Response(True, status=MetaCommandResult.Success)
+        return Response(False, status=MetaCommandResult.UnrecognizedCommand)
+
+    @staticmethod
+    def prepare_statement(command) -> Response:
+        """
+        prepare statement, i.e. parse statement and
+        return it's AST. For now the AST structure is the prepared
+        statement. This may change, e.g. if frontend changes to output bytecode
+
+        :param command:
+        :return:
+        """
+        parser = SqlFrontEnd()
+        parser.parse(command)
+        if not parser.is_success():
+            return Response(False, error_message=f"parse failed due to: [{parser.error_summary()}]")
+        return Response(True, body=parser.get_parsed())
+
+    def execute_statement(self, program: Program) -> Response:
+        """
+        execute statement;
+        returns return value of child-invocation
+        """
+        # logging.info(f"In execute_statement; ")
+        self.virtual_machine.run(program)
+        return Response(True)
+
+    def input_handler(self, input_buffer: str) -> Response:
+        """
+        receive input, parse input, and execute vm.
+
+        :param input_buffer:
+        :return:
+        """
+        if self.is_meta_command(input_buffer):
+            m_resp = self.do_meta_command(input_buffer)
+            if m_resp.success == MetaCommandResult.Success:
+                return Response(True, status=MetaCommandResult.Success)
+
+            elif m_resp == MetaCommandResult.UnrecognizedCommand:
+                print("Unrecognized meta command")
+                return Response(False, status=MetaCommandResult.UnrecognizedCommand)
+
+        p_resp = self.prepare_statement(input_buffer)
+        if not p_resp.success:
+            if p_resp.status == PrepareResult.UnrecognizedStatement:
+                print(f"Unrecognized keyword at start of '{input_buffer}'")
+            return Response(False, status={p_resp.status}, error_message=p_resp.error_message)
+
+        # handle non-meta command
+        # execute statement can be handled by the interpreter
+        program = p_resp.body
+        e_resp = self.execute_statement(program)
+        if e_resp.success:
+            print(f"Execution of command '{input_buffer}' succeeded")
+            return Response(True, body=e_resp.body)
+        else:
+            print(f"Execution of command '{input_buffer}' failed")
+            return Response(False, error_message=e_resp.error_message)
 
 
 def repl():
@@ -254,7 +250,7 @@ def devloop():
         # there is a large number of perms ~O(n!)
         # and they are generated in a predictable order
         # we'll skip based on fixed step- later, this too should be randomized
-        num_perms = 4
+        num_perms = 1
         total_perms = math.factorial(len(insert_keys))
         del_perms = []
 

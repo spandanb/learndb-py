@@ -37,7 +37,7 @@ class Column:
 class Schema:
     """
     Represents a schema. This includes
-    logical aspects (name, is_primary_key) and physical aspects
+    logical aspects (name) and physical aspects
     (number of bytes of storage, fixed vs. variable length encoding)
 
     Note a schema must be valid. If the schema is invalid, this
