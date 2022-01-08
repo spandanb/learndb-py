@@ -1,18 +1,30 @@
 This outlines the file header for the learndb file.
 
+Motivation
+----------
 The file header is motivated by how free pages are managed. When a node is removed from a btree, the underlying page
 is returned to the pager to be recycled. The pager can reprovision these page numbers, but once the virtual machine is
-shutdown (and the pager recycled) - the page number information is lost, and space is lost.
+shutdown (and the pager recycled) - the page number information is lost, and space is lost- i.e. as unused file blocks that
+cannot be motivated.
 
+Solution
+---------
 To avoid this leak, the interspersed pages, are kept in a single linked list, with the head of the list stored in the
 file header. The other way to avoid this is to compact the file each time it is closed. But this has it's own concerns, i.e.
 performance impact of compaction.
 
-The file header, will also store a version number.
+The file header, will also store a version number. The version is forward thinking and will be useful for distinguishing different incompatible file formats and what version
+a given engine can operate on.
 
- file header -> version_string next_free_page
- version_string  -> "learndb v<majorVar>.<minorVar>.<bugfix>"
+ file header -> version_string next_free_page padding
+ version_string  -> "learndb v<VersionNum>"
  next_free_page -> int, next page_num
 
+VersionNum start at 1 and increments by 1 after every incompatible change.
+
 Non-root free pages will only have the first word byte corresponding to the next free page.
+Specifically, this will be encoded as the absolute page_num, i.e. not byte offset.
+
+The padding will be empty bytes such that the total length of the file header is 100 bytes.
+
 A null value in the linked list is specified with an offset of 0.
