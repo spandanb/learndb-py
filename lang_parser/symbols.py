@@ -48,6 +48,14 @@ class DropStmnt(Symbol):
     table_name: Token
 
 
+# todo: is this inner, outer, left join?
+@dataclass
+class JoinStmnt(Symbol):
+    left_table_name: Token
+    right_table_name: Token
+    on_clause: WhereClause = None
+
+
 @dataclass
 class TruncateStmnt(Symbol):
     table_name: Token
@@ -88,7 +96,8 @@ class Selectable(Symbol):
 
 @dataclass
 class WhereClause(Symbol):
-    and_clauses: List[AndClause]
+    # where cond is a single disjunction (or) of many conjunctions (and)
+    or_clause: List[AndClause]
 
 
 @dataclass

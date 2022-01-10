@@ -1,6 +1,8 @@
 # from __future__ import annotations
 import logging
+from typing import Union
 
+from constants import CATALOG
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
@@ -10,8 +12,25 @@ from dataexchange import Response
 
 from lang_parser.visitor import Visitor
 from lang_parser.tokens import TokenType
-from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr, InsertStmnt, DeleteStmnt
+from lang_parser.symbols import (
+    Symbol,
+    Program,
+    CreateStmnt,
+    SelectExpr,
+    DropStmnt,
+    InsertStmnt,
+    DeleteStmnt,
+    UpdateStmnt,
+    TruncateStmnt,
+    WhereClause
+)
 from lang_parser.sqlhandler import SqlFrontEnd
+
+
+class ExecutionException(Exception):
+    """Some error while VM was running
+    """
+    pass
 
 
 class VirtualMachine(Visitor):
@@ -19,6 +38,14 @@ class VirtualMachine(Visitor):
     Execute prepared statements corresponding to some sql statements, on some
     state. The state is encoded as a catalog (which maps to the table
     containing information of all objects (tables + indices).
+
+    The VM implements different top-level methods corresponding
+    to different sql statement type, e.g. create, update, delete, truncate statements.
+    Each of these ops will typically have some of the following phases:
+        - name resolution
+        - optimize
+        - execute op
+
     """
     def __init__(self, state_manager: StateManager, output_pipe: 'Pipe'):
         self.state_manager = state_manager
@@ -48,7 +75,7 @@ class VirtualMachine(Visitor):
 
             # get schema by parsing sql_text
             sql_text = table_record.get("sql_text")
-            print(f"bootstrapping schema from [{sql_text}]")
+            logging.info(f"bootstrapping schema from [{sql_text}]")
             parser.parse(sql_text)
             assert parser.is_success(), "catalog sql parse failed"
             program = parser.get_parsed()
@@ -69,6 +96,20 @@ class VirtualMachine(Visitor):
 
             cursor.advance()
 
+    @staticmethod
+    def resolve_table_name(symbol: Symbol) -> str:
+        """
+        attempt to resolve table name by inspecting argument symbol
+        :param symbol:
+        :return:
+        """
+
+        if isinstance(symbol, SelectExpr):
+            return symbol.from_location.literal.lower()
+        elif isinstance(symbol, (DeleteStmnt, InsertStmnt, DropStmnt, TruncateStmnt, UpdateStmnt)):
+            return symbol.table_name.literal.lower()
+        return None
+
     def run(self, program):
         """
         run the virtual machine with program on state
@@ -80,7 +121,7 @@ class VirtualMachine(Visitor):
             try:
                 result.append(self.execute(stmt))
             except Exception:
-                print(f"ERROR: virtual machine failed on: [{stmt}]")
+                logging.error(f"ERROR: virtual machine failed on: [{stmt}]")
                 raise
 
     def execute(self, stmnt: 'Symbol'):
@@ -128,7 +169,7 @@ class VirtualMachine(Visitor):
         # NOTE: for now using page_num as unique int key
         pkey = page_num
         sql_text = schema_to_ddl(table_schema)
-        print(f'visit_create_stmnt: generated DDL: {sql_text}')
+        # logging.info(f'visit_create_stmnt: generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
         response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
         if not response.success:
@@ -153,9 +194,12 @@ class VirtualMachine(Visitor):
 
     def visit_select_expr(self, expr: SelectExpr):
         """
-        Handle select expr
-        For now prints rows/ or return entire result set
-        Later I can consider some fancier/performant mechanism like pipes
+        Handle select expr.
+
+        NOTE: this will need to handle 2 things
+            - other clauses, i.e.. join, group by, order by, having
+            - nested select expr
+                -- this will require rethinking how select is exec'ed and results outputted
 
         :param expr:
         :return:
@@ -163,29 +207,44 @@ class VirtualMachine(Visitor):
         print(f"In vm: select expr")
         self.output_pipe.reset()
 
-        table_name = expr.from_location.literal
-        if table_name.lower() == 'catalog':
+        table_name = self.resolve_table_name(expr)
+        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+            raise ExecutionException(f"table [{table_name}] does not exist")
+
+        if table_name == CATALOG:
+            # system table/objects
             tree = self.state_manager.get_catalog_tree()
             schema = self.state_manager.get_catalog_schema()
         else:
+            # user tables/objects
             tree = self.state_manager.get_tree(table_name)
             schema = self.state_manager.get_schema(table_name)
 
         cursor = Cursor(self.state_manager.get_pager(), tree)
 
-        # iterate cursor
+        # iterate cursor over all records
         while cursor.end_of_table is False:
             cell = cursor.get_cell()
             resp = deserialize_cell(cell, schema)
             assert resp.success
             record = resp.body
-            # print(f"printing record: {record}")
-            self.output_pipe.write(record)
+
+            # evaluate where condition and filter non-matching rows
+            if self.evaluate_where_clause(expr.where_clause, record) is True:
+                # write to output if matches condition
+                self.output_pipe.write(record)
+
+            # increment cursor
             cursor.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
-        # identifier are case sensitive, so don't convert
-        table_name = stmnt.table_name.literal
+        """
+        Handle insert stmnt
+
+        :param stmnt:
+        :return:
+        """
+        table_name = self.resolve_table_name(stmnt)
 
         # get schema
         schema = self.state_manager.get_schema(table_name)
@@ -211,6 +270,8 @@ class VirtualMachine(Visitor):
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
         """
+        Handle delete stmnt.
+
         NOTE: the delete condition can cover multiple rows
         for now where cond is restricted to equality condition
 
@@ -218,9 +279,9 @@ class VirtualMachine(Visitor):
         :return:
         """
         # identifier are case sensitive, so don't convert
-        table_name = stmnt.table_name.literal
+        table_name = self.resolve_table_name(stmnt)
         # check table is not catalog
-        assert table_name.lower() != 'catalog', "cannot delete table from catalog; use drop table"
+        assert table_name != CATALOG, "cannot delete table from catalog; use drop table"
 
         # get tree and schema
         tree = self.state_manager.get_tree(table_name)
@@ -230,18 +291,6 @@ class VirtualMachine(Visitor):
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # keys to delete based on where condition
         del_keys = []
-
-        # for now will restrict where cond to be a single equality
-        assert stmnt.where_clause is not None
-        assert len(stmnt.where_clause.and_clauses) == 1
-        and_clause = stmnt.where_clause.and_clauses[0]
-        assert len(and_clause.predicates) == 1
-        predicate = and_clause.predicates[0]
-        assert predicate.op.token_type == TokenType.EQUAL
-        pred_column = predicate.first.value.literal
-        pred_value = predicate.second.value.literal
-
-        logging.debug(f'in delete pred-col: {pred_column}, pred-val: {pred_value}')
 
         # get primary key column name
         primary_key_col = schema.get_primary_key_column()
@@ -255,8 +304,7 @@ class VirtualMachine(Visitor):
             assert resp.success
             record = resp.body
 
-            # only support equality condition
-            if record.get(pred_column) == pred_value:
+            if self.evaluate_where_clause(stmnt.where_clause, record):
                 del_key = record.get(primary_key_col)
                 del_keys.append(del_key)
 
@@ -266,3 +314,89 @@ class VirtualMachine(Visitor):
         for del_key in del_keys:
             resp = tree.delete(del_key)
             assert resp == TreeDeleteResult.Success, f"delete failed for key {del_key}"
+
+    def visit_drop_stmnt(self, stmnt: DropStmnt):
+        """
+        handle drop statement to drop a table from catalog
+        :param stmnt:
+        :return:
+        """
+        table_name = self.resolve_table_name(stmnt)
+
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_schema = self.state_manager.get_catalog_schema()
+        # scan table and determine which keys to delete, based on where condition
+        cursor = Cursor(self.state_manager.get_pager(), catalog_tree)
+        # keys to delete based on where condition
+        # there should only be a single key, i.e. the table with name
+        del_keys = []
+
+        raise NotImplementedError
+
+    def visit_truncate_stmnt(self, stmnt: TruncateStmnt):
+        pass
+
+    def visit_update_stmnt(self, stmnt: UpdateStmnt):
+        pass
+
+    def visit_join_stmnt(self, stmnt: 'JoinStmnt'):
+        pass
+
+    # section : sub-statement handlers
+
+    def evaluate_where_clause(self, where_clause: WhereClause, record) -> bool:
+        """
+        evaluate condition
+
+        on (join) could be implemented similarly
+        :param where_clause:
+        :param record:
+        :return:
+        """
+        if where_clause is None:
+            # no-condition; all results pass
+            return True
+
+        # result of or over all or-clauses
+        or_result = False
+        # NOTE: `where_clause.or_clause` is a list of and'ed predicates
+        # at least one and clause must be true for condition to be true
+        for and_clause in where_clause.or_clause:
+            # result of and over and clauses within or-clause
+            and_result = True
+            for predicate in and_clause.predicates:
+                # decompose predicate
+                # determine if which operand contains value and which contains column name
+                left_token = predicate.first.value
+                right_token = predicate.second.value
+                if left_token.token_type == TokenType.IDENTIFIER:
+                    column = left_token.literal
+                    cond_value = right_token.literal
+                else:
+                    cond_value = left_token.literal
+                    column = right_token.literal
+
+                # determine the record's value for given column
+                record_value = record.get(column)
+                # evaluate predicate
+                if predicate.op.token_type == TokenType.EQUAL:
+                    pred_val = record_value == cond_value
+                elif predicate.op.token_type == TokenType.NOT_EQUAL:
+                    pred_val = record_value != cond_value
+                elif predicate.op.token_type == TokenType.LESS_EQUAL:
+                    pred_val = record_value <= cond_value
+                elif predicate.op.token_type == TokenType.LESS:
+                    pred_val = record_value < cond_value
+                elif predicate.op.token_type == TokenType.GREATER_EQUAL:
+                    pred_val = record_value >= cond_value
+                else:
+                    assert predicate.op.token_type == TokenType.GREATER
+                    pred_val = record_value > cond_value
+
+                and_result = and_result and pred_val
+
+            or_result = or_result or and_result
+            if or_result:
+                # condition is true, eagerly exit
+                return True
+        return False

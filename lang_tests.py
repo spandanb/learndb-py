@@ -15,11 +15,26 @@ def test_select_stmnt():
         assert handler.is_success()
 
 
+def test_other_succ_stmnt():
+    """
+    Collection of misc statements that should
+    succeed successfully
+    - should be moved into statement type specific tests
+
+    :return:
+    """
+    cmds = ["select cola, colb from foo where cola = 1 and colb = 2 or colc = 3",
+            "select cola, colb from foo where cola = 1 and colb = 2 and colc = 3"
+            "select cola, colb from foo where cola = 1 and colb = 2 or colc = 3 and cold = 4"
+            ]
+
+
+
 def test_create_stmnt():
     cmds = [
         "create table foo ( colA integer, colB text)",
         "create table foo ( colA integer primary key, colB text)"
-    ]
+-    ]
     for cmd in cmds:
         handler = SqlFrontEnd()
         handler.parse(cmd)

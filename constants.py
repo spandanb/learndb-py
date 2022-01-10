@@ -131,6 +131,11 @@ LEAF_NODE_MAX_CELLS = 3
 INTEGER_SIZE = WORD
 FLOAT_SIZE = WORD
 
+# Higher-level constanst
+# name of catalog
+CATALOG = 'catalog'
+
+
 USAGE = '''
 Supported meta-commands:
 ------------------------

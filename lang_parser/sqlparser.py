@@ -41,7 +41,8 @@ class Parser:
         selectable    -> (column_name ",")* (column_name)
         column_name   -> IDENTIFIER
         from_location -> IDENTIFIER
-        where_clause  -> (and_clause "or")* (and_clause)
+        where_clause  -> or_clause*
+        or_clause     -> (and_clause "or")* (and_clause)
         and_clause    -> (predicate "and")* (predicate)
         predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
 
@@ -379,13 +380,15 @@ class Parser:
 
     def where_clause(self):
         """
+        where_clause  -> or_clause*
+
         where_clause  -> (and_clause "or")* (and_clause)
         :return:
         """
-        clauses = [self.and_clause()]
+        or_clauses = [self.and_clause()]
         while self.match(TokenType.OR):
-            clauses.append(self.and_clause())
-        return WhereClause(clauses)
+            or_clauses.append(self.and_clause())
+        return WhereClause(or_clauses)
 
     def and_clause(self) -> AndClause:
         """
