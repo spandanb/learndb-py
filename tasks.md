@@ -1,15 +1,19 @@
 # Tasks
 
-## Testing
-- test all permutations of small test cases
-- add stress tests (stress-tests.txt)
-
-
 ## Storage (btree)
 - support deletion/free-list  
   - support defragmentation of unallocated space
+  - when allocating from free list, allocate whole block, 
+    the diff between block size and data size can be accounted for in diff between
+    i.e. don't bother chunking blocks- since we'll have to account for padding anyways since free-list blocks have a min size
+    
 - allocating on fragmented node (with enough space) should trigger 
   single-node-in-place compaction
+
+
+## Testing
+- test all permutations of small test cases
+- add stress tests (stress-tests.txt)
 
 ## VM
 - select statement
@@ -26,12 +30,6 @@
   - this checks whether names are valid and defined
   - this could vm methods
 
-## Pager
-- pager
-  - persist returned page nums
-    - when pager is returned a page- it keeps this in an in-mem structure, that
-      is lost when the program is terminated. To avoid space leak, persist the returned
-      page nums to an on-disk linked list.
 
 ## User API
  - in addition to LearnDB do I want to support:
@@ -46,7 +44,7 @@
     - should contain high-level roadmap and interesting areas of future work
 - add tutorial
 - complete btree-structural-ops.txt
-- Add MIT licence
+- add btree types (pages/nodes) are bytearray (mutable) not bytes (immutable)
 
 ## Cleanliness
 - move all code into /learndb ?
@@ -59,3 +57,16 @@
   - duplicate key not erroring
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
   - create table def , requires space after final column and final ')'
+
+## Release Requirements
+  - support join (inner, left?, outer?), group by, having
+  - complete docs
+  - complete tutorial
+
+stmnts to support:
+  - select cola, colb from foo
+  - select cola, colb from foo where cola >= 32 and colb = 'hello world'
+  - select cola, colb 
+    from foo f
+    join bar b
+      on (f.cola = b.colb and ...)
