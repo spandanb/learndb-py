@@ -13,6 +13,7 @@ from dataexchange import Response
 from lang_parser.visitor import Visitor
 from lang_parser.tokens import TokenType
 from lang_parser.symbols import (
+    Token,
     Symbol,
     Program,
     CreateStmnt,
@@ -22,6 +23,8 @@ from lang_parser.symbols import (
     DeleteStmnt,
     UpdateStmnt,
     TruncateStmnt,
+    Joining,
+    AliasableSource,
     WhereClause
 )
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -31,6 +34,28 @@ class ExecutionException(Exception):
     """Some error while VM was running
     """
     pass
+
+
+class RecordSet:
+    """
+    A iterable set of rows.
+    """
+    def __init__(self):
+        # index of iteration
+        self.iteridx = 0
+        self.records = []
+
+    def is_at_end(self):
+        return self.iteridx >= len(self.records)
+
+    def get_record(self):
+        return self.records[self.iteridx]
+
+    def advance(self):
+        self.iteridx += 1
+
+    def append(self, record):
+        self.records.append(record)
 
 
 class VirtualMachine(Visitor):
@@ -105,6 +130,7 @@ class VirtualMachine(Visitor):
         """
 
         if isinstance(symbol, SelectExpr):
+            # TODO: is this clause needed?
             return symbol.from_location.literal.lower()
         elif isinstance(symbol, (DeleteStmnt, InsertStmnt, DropStmnt, TruncateStmnt, UpdateStmnt)):
             return symbol.table_name.literal.lower()
@@ -192,6 +218,72 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
+    def materialize_source(self, source: AliasableSource) -> RecordSet:
+        """
+        This should handle the materialization of source,
+        and return a set of rows
+
+        For now, I need to handle:
+            - single tables
+            - joined tables
+        eventually, will also have to handle nested select expr,
+        both correlated and uncorrelated.
+
+        For single and joined tables, this will create cursor
+        over each of the source tables and loop/iterate and add
+        the record
+
+        For tables this should be just a list of deser objects
+
+        Not sure if where condition should be handled here.
+        My leaning is that, it should- that will simplify the
+        logic around correlated subqueries.
+
+        :return:
+        """
+        rset = RecordSet()
+        # 1. handle single source
+        if isinstance(source.source_name, Token):
+            table_name = source.source_name.literal
+            if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+                raise ExecutionException(f"table [{table_name}] does not exist")
+
+            if table_name == CATALOG:
+                # system table/objects
+                tree = self.state_manager.get_catalog_tree()
+                schema = self.state_manager.get_catalog_schema()
+            else:
+                # user tables/objects
+                tree = self.state_manager.get_tree(table_name)
+                schema = self.state_manager.get_schema(table_name)
+
+            # iterate cursor and add to result set
+            cursor = Cursor(self.state_manager.get_pager(), tree)
+            while cursor.end_of_table is False:
+                cell = cursor.get_cell()
+                resp = deserialize_cell(cell, schema)
+                assert resp.success
+                record = resp.body
+                rset.append(record)
+                cursor.advance()
+
+            return rset
+
+        # 2. handle joined sources
+        stack = []
+        # materialize the most nested element in the joining
+        while isinstance(source.source_name, Joining):
+            # recurse
+            stack.append(source.source_name)
+            source = source.source_name
+
+        # now walk up the recursive stack
+        while stack:
+            # TODO: handle joined source
+            partial_src = stack.pop()
+
+        return rset
+
     def visit_select_expr(self, expr: SelectExpr):
         """
         Handle select expr.
@@ -204,38 +296,19 @@ class VirtualMachine(Visitor):
         :param expr:
         :return:
         """
-        print(f"In vm: select expr")
+        # print(f"In vm: select expr")
         self.output_pipe.reset()
 
-        table_name = self.resolve_table_name(expr)
-        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
-            raise ExecutionException(f"table [{table_name}] does not exist")
+        record_set = self.materialize_source(expr)
 
-        if table_name == CATALOG:
-            # system table/objects
-            tree = self.state_manager.get_catalog_tree()
-            schema = self.state_manager.get_catalog_schema()
-        else:
-            # user tables/objects
-            tree = self.state_manager.get_tree(table_name)
-            schema = self.state_manager.get_schema(table_name)
-
-        cursor = Cursor(self.state_manager.get_pager(), tree)
-
-        # iterate cursor over all records
-        while cursor.end_of_table is False:
-            cell = cursor.get_cell()
-            resp = deserialize_cell(cell, schema)
-            assert resp.success
-            record = resp.body
-
+        # iterate record set over all records
+        while record_set.is_at_end() is False:
+            record = record_set.get_record()
             # evaluate where condition and filter non-matching rows
             if self.evaluate_where_clause(expr.where_clause, record) is True:
                 # write to output if matches condition
                 self.output_pipe.write(record)
-
-            # increment cursor
-            cursor.advance()
+            record_set.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
         """
