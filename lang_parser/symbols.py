@@ -2,10 +2,20 @@ from __future__ import annotations
 """
 Contains symbol classes used by parser
 """
+from enum import Enum, auto
 
-from typing import Any, List, Union
+from typing import Any, List, Optional, Union
 from dataclasses import dataclass
 from .tokens import Token
+from .visitor import  Visitor
+
+
+class JoinType(Enum):
+    Inner = auto()
+    LeftOuter = auto()
+    RightOuter = auto()
+    FullOuter = auto()
+    Cross = auto()
 
 
 @dataclass
@@ -15,7 +25,7 @@ class Symbol:
     Comparable to how tokens compose the tokenizer's output, i.e. a stream of tokens,
     Symbols compose the parser's output, i.e. the AST
     """
-    def accept(self, visitor: 'Visitor') -> Any:
+    def accept(self, visitor: Visitor) -> Any:
         return visitor.visit(self)
 
 
@@ -38,6 +48,47 @@ class InsertStmnt(Symbol):
 
 
 @dataclass
+class SelectExpr(Symbol):
+    """
+    NOTE: Expr produce one or more value(s) but do not change the system;
+    Stmnt change the state of the system; and may or may not
+    return value
+    """
+    selectable: Selectable
+    from_location: AliasableSource
+    where_clause: WhereClause = None
+    group_by_clause: Any = None
+    having_clause: Any = None
+    order_by_clause: Any = None
+    limit_clause: Any = None
+
+
+@dataclass
+class Joining(Symbol):
+    """
+    Represents a join between two data sources
+    """
+    left_source: AliasableSource
+    right_source: AliasableSource
+    join_type: JoinType
+    on_clause: OnClause = None
+
+
+@dataclass
+class AliasableSource(Symbol):
+    """
+    Represents a source of data that can have an alias
+    This could be:
+     - a single table,
+     - a single view,
+     - two or more joined objects
+     - subquery
+    """
+    source_name: Union[Token, Joining]
+    alias_name: Optional[Token] = None
+
+
+@dataclass
 class DeleteStmnt(Symbol):
     table_name: Token
     where_clause: Any = None
@@ -46,14 +97,6 @@ class DeleteStmnt(Symbol):
 @dataclass
 class DropStmnt(Symbol):
     table_name: Token
-
-
-# todo: is this inner, outer, left join?
-@dataclass
-class JoinStmnt(Symbol):
-    left_table_name: Token
-    right_table_name: Token
-    on_clause: WhereClause = None
 
 
 @dataclass
@@ -78,18 +121,6 @@ class ColumnDef(Symbol):
 
 
 @dataclass
-class SelectExpr(Symbol):
-    """
-    NOTE: Expr produce one or more value(s) but do not change the system;
-    Stmnt change the state of the system; and may or may not
-    return value
-    """
-    selectable: Selectable
-    from_location: Token
-    where_clause: Any = None  # optional
-
-
-@dataclass
 class Selectable(Symbol):
     selectables: List
 
@@ -97,6 +128,12 @@ class Selectable(Symbol):
 @dataclass
 class WhereClause(Symbol):
     # where cond is a single disjunction (or) of many conjunctions (and)
+    or_clause: List[AndClause]
+
+
+@dataclass
+class OnClause(Symbol):
+    # identical structure to `WhereClause`
     or_clause: List[AndClause]
 
 

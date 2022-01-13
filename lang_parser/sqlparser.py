@@ -12,6 +12,10 @@ from .symbols import (Symbol,
                       ColumnDef,
                       SelectExpr,
                       Selectable,
+                      AliasableSource,
+                      Joining,
+                      JoinType,
+                      OnClause,
                       WhereClause,
                       AndClause,
                       Predicate,
@@ -37,38 +41,41 @@ class Parser:
                 | delete_stmnt
                 | truncate_stmnt
 
-        select_expr  -> "select" selectable "from" from_item "where" where_clause
-        selectable    -> (column_name ",")* (column_name)
-        column_name   -> IDENTIFIER
-        from_location -> IDENTIFIER
-        where_clause  -> or_clause*
-        or_clause     -> (and_clause "or")* (and_clause)
-        and_clause    -> (predicate "and")* (predicate)
-        predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
+        select_expr      -> "select" selectable "from" from_item "where" where_clause
+        selectable       -> (column_name ",")* (column_name)
+        column_name      -> IDENTIFIER
+        from_location    -> table_name/view_name source_alias? | source_alias? | joined_objects | ( select_expr ) source_alias ?
+        joined_objects   -> from_location ( "inner" | "left" | "right" | "outer" )
+                            "join" from_location
+                            "on" predicate
+        where_clause     -> or_clause*
+        or_clause        -> (and_clause "or")* (and_clause)
+        and_clause       -> (predicate "and")* (predicate)
+        predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
 
-        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
-        column_def_list -> (column_def ",")* column_def
-        column_def -> column_name datatype ("primary key")? ("not null")?
-        table_name -> IDENTIFIER
+        create_stmnt     -> "create" "table" table_name "(" column_def_list ")"
+        column_def_list  -> (column_def ",")* column_def
+        column_def       -> column_name datatype ("primary key")? ("not null")?
+        table_name       -> IDENTIFIER
 
-        drop_stmnt -> "drop" "table" table_name
+        drop_stmnt       -> "drop" "table" table_name
 
-        insert_stmnt -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
+        insert_stmnt     -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
         column_name_list -> (column_name ",")* column_name
         value_list -> (value ",")* value
 
-        delete_stmnt -> "delete" "from" table_name ("where" where_clause)?
+        delete_stmnt     -> "delete" "from" table_name ("where" where_clause)?
 
-        update_stmnt -> "update" table_name "set" column_name = value ("where" where_clause)?
+        update_stmnt     -> "update" table_name "set" column_name = value ("where" where_clause)?
 
-        truncate_stmnt -> "truncate" table_name
+        truncate_stmnt   -> "truncate" table_name
 
-        term          -> NUMBER | STRING | IDENTIFIER
+        term             -> NUMBER | STRING | IDENTIFIER
 
-        INTEGER_NUMBER        -> {0-9}+
-        FLOAT_NUMBER          -> {0-9}+(.{0-9}+)?
-        STRING        -> '.*'
-        IDENTIFIER    -> {_a-zA-z0-9}+
+        INTEGER_NUMBER   -> {0-9}+
+        FLOAT_NUMBER     -> {0-9}+(.{0-9}+)?
+        STRING           -> '.*'
+        IDENTIFIER       -> {_a-zA-z0-9}+
     """
     def __init__(self, tokens: List, raise_exception=True):
         self.tokens = tokens
@@ -96,9 +103,17 @@ class Parser:
         raise ParseError(self.peek(), message)
 
     def peek(self) -> Token:
+        """
+        Peek next token
+        :return:
+        """
         return self.tokens[self.current]
 
     def peekpeek(self) -> Optional[Token]:
+        """
+        Peek past next token
+        :return:
+        """
         if self.current + 1 > len(self.tokens):
             return None
         return self.tokens[self.current + 1]
@@ -130,7 +145,7 @@ class Parser:
         old_current = self.current
         # check point; we need parser to raise error so
         # we may backtrack
-        old_raise_error_state = self.raise_exception
+        old_raise_exc_state = self.raise_exception
         self.raise_exception = True
 
         # determine method that will attempt to parse the symbol
@@ -145,16 +160,19 @@ class Parser:
             self.current = old_current
             resp = False, None
         # restore raise_error
-        self.raise_exception = old_raise_error_state
+        self.raise_exception = old_raise_exc_state
         return resp
 
-    def check(self, token_type: TokenType):
+    def check(self, *types: TokenType) -> bool:
         """
         return True if `token_type` matches current token
         """
         if self.is_at_end():
             return False
-        return self.peek().token_type == token_type
+        for token_type in types:
+            if self.peek().token_type == token_type:
+                return True
+        return False
 
     def report_error(self, message: str, token: Token = None):
         """
@@ -375,14 +393,97 @@ class Parser:
     def column_name(self) -> Token:
         return self.consume(TokenType.IDENTIFIER, "expected identifier for column name")
 
-    def from_location(self) -> Token:
-        return self.consume(TokenType.IDENTIFIER, "expected identifier for from location")
+    def from_location(self) -> AliasableSource:
+        """
+        from_location    -> table_name source_alias? | view_name source_alias? | joined_objects | ( select_expr ) source_alias ?
+        joined_objects   -> from_location ( "inner" | "left" "outer"? | "right" "outer"? | "cross" )
+                            "join" from_location
+                            "on" predicate
 
-    def where_clause(self):
+        This can either be a single logical source (table, view, or nested select expr) or
+        a joined source
+
+        # TODO: supported nested select
+        :return:
+        """
+        # old
+        # return self.consume(TokenType.IDENTIFIER, "expected identifier for from location")
+
+        source = None
+        # 1. read first source
+        if self.peek().token_type == TokenType.LEFT_PAREN:
+            # 1.1. check if this is a nested sub-query
+            raise NotImplementedError
+        else:
+            #
+            source_name = self.consume(TokenType.IDENTIFIER, "expected identifier for from location")
+            alias_name = None
+            # check if there is an alias
+            if self.match(TokenType.IDENTIFIER):
+                alias_name = self.peek()
+            source = AliasableSource(source_name, alias_name)
+
+        # 2. check for other joined sources
+        # 2.1. loop until we see either "where" token or reach end of token stream
+        while self.is_at_end() is False and self.peek().token_type != TokenType.WHERE:
+            # handle join clause
+            if self.match(TokenType.INNER, TokenType.CROSS):
+                self.previous()
+                join_type = JoinType.Inner
+            elif self.match(TokenType.LEFT):
+                join_type = JoinType.LeftOuter
+                # check for optional "outer" keyword
+                if self.check(TokenType.OUTER):
+                    self.advance()
+            elif self.match(TokenType.RIGHT):
+                join_type = JoinType.RightOuter
+                if self.check(TokenType.OUTER):
+                    self.advance()
+            else:
+                self.consume(TokenType.CROSS, "expected join")
+                join_type = JoinType.Cross
+
+            # handle right source
+            if self.peek().token_type == TokenType.LEFT_PAREN:
+                raise NotImplementedError
+            else:
+                source_name = self.consume(TokenType.IDENTIFIER, "expected identifier for from location")
+                alias_name = None
+                # check if there is an alias
+                if self.match(TokenType.IDENTIFIER):
+                    alias_name = self.peek()
+                right_source = AliasableSource(source_name, alias_name)
+
+            # if exists, handle on-clause
+            on_clause = None
+            if self.match(TokenType.ON):
+                on_clause = self.on_clause()
+
+            if join_type == JoinType.Cross:
+                assert on_clause is None, "cross join cannot have on clause"
+            else:
+                assert on_clause is not None, "join requires on clause"
+
+            # 2.2. combine and left and right into a single joined source
+            source = Joining(source, right_source, join_type, on_clause)
+
+        return source
+
+    def where_clause(self) -> WhereClause:
         """
         where_clause  -> or_clause*
 
         where_clause  -> (and_clause "or")* (and_clause)
+        :return:
+        """
+        return WhereClause(self.conjunctive_disjunction())
+
+    def on_clause(self) -> OnClause:
+        return OnClause(self.conjunctive_disjunction())
+
+    def conjunctive_disjunction(self) -> List[AndClause]:
+        """
+        Or (conjunction) of ands (disjunction)
         :return:
         """
         or_clauses = [self.and_clause()]
