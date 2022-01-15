@@ -24,6 +24,7 @@ from lang_parser.symbols import (
     UpdateStmnt,
     TruncateStmnt,
     Joining,
+    JoinType,
     AliasableSource,
     WhereClause
 )
@@ -34,6 +35,36 @@ class ExecutionException(Exception):
     """Some error while VM was running
     """
     pass
+
+
+class SerializedRecordIter:
+    """
+    This is an iterator of serialized records.
+    This should encapsulate the entire logic around
+    cursor advancing and yielding records.
+
+    The reason for creating and naming this, is so that
+    there can be uniform API around DeserializedRecordIter,
+    which would contain in-memory record objects, e.g. from a join
+    op.
+    """
+    def __init__(self, cursor, schema):
+        self.cursor = cursor
+        self.schema = schema
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.cursor.end_of_table:
+            raise StopIteration
+
+        cell = self.cursor.get_cell()
+        resp = deserialize_cell(cell, self.schema)
+        assert resp.success
+        record = resp.body
+        self.cursor.advance()
+        return record
 
 
 class RecordSet:
@@ -218,6 +249,21 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
+    def get_record_iter(self, source: AliasableSource):
+        """
+        This should return an iterator over the record.
+        NOTE: The source can be either a table or joined/materialized
+        recordset. This should handle both
+
+        :return: TODO: this should return an iterator, i.e. an object that has __next__
+        """
+        # 1. handle source is a single unmaterialized/serialized table
+        if is_single_table:
+            return SerializedRecordIter(cursor, schema)
+        else:
+            # 2. handle table is an existing rowset
+            # TODO: this would require that the generated rowset is accessible here
+
     def materialize_source(self, source: AliasableSource) -> RecordSet:
         """
         This should handle the materialization of source,
@@ -248,6 +294,8 @@ class VirtualMachine(Visitor):
             if table_name != CATALOG and not self.state_manager.table_exists(table_name):
                 raise ExecutionException(f"table [{table_name}] does not exist")
 
+            # todo: remove special handling of catalog here
+            # perhaps statemanager is aware of catalog
             if table_name == CATALOG:
                 # system table/objects
                 tree = self.state_manager.get_catalog_tree()
@@ -269,18 +317,80 @@ class VirtualMachine(Visitor):
 
             return rset
 
+        assert isinstance(source.source_name, Joining)
         # 2. handle joined sources
         stack = []
-        # materialize the most nested element in the joining
+        # materialize the most nested element in the joining first
         while isinstance(source.source_name, Joining):
+            # check if joining has a nested joining
+            child = source.source_name
             # recurse
-            stack.append(source.source_name)
-            source = source.source_name
+            stack.append(child)
+            # the parser nests joins s.t. left source is the child join
+            source = child.left_source
 
-        # now walk up the recursive stack
+        # 3. perform join by walking up the recursive stack
+        is_innermost_join = True
         while stack:
-            # TODO: handle joined source
-            partial_src = stack.pop()
+            joining = stack.pop()
+            # get left source
+            # NOTE: in most nested joining, left source will be a table
+            # however, after that, it will be a previously joined recordSet
+            if is_innermost_join:
+                left_record_iter = self.get_record_iter(joining.left_source)
+            else:
+                left_record_iter = rset
+
+            # get right source
+            right_src = joining.right_source
+
+            # rset created for next join
+            next_rset = RecordSet()
+            # `get_record_iter` transparently handles both cursor and
+            # prematerialized sources
+            for left_record in left_record_iter:
+                for right_record in self.get_record_iter(right_src):
+                    # add joined record if cross join or on condition is true
+                    if joining.join_type == JoinType.Cross or \
+                        self.evaluate_on_clause(left_record, right_record, joining.on_clause):
+                            # perform join op and add to temp set
+                            joined_record = self.join_records(left_record, right_record)
+                            next_rset.append(joined_record)
+
+            # prepare for next join op
+            # inner_most join is only True one
+            is_innermost_join = False
+            rset = next_rset
+
+
+            # below is old code
+
+            # todo: move: 1) resolving name, 2) creating cursor into `get_record_iter`
+            left_src_name = self.resolve_name(left_src)
+            left_tree = self.state_manager.get_tree(left_src_name)
+            left_cursor = Cursor(self.state_manager.get_pager(), left_tree)
+
+            # we need to do a nested for loop, i.e. compare each left record
+            # with each right record and see if on-clause holds ~ O(N**2)
+            # iterate over records in left source
+            while left_cursor.end_of_table is False:
+
+                # note the left source could be a table or recordSet
+                # todo: how to handle different type
+                left_record = ...
+
+                #   get right source
+                right_src = joining.right_source  # aliasable_src
+                right_src_name = self.resolve_name(right_src)
+                right_tree = self.state_manager.get_tree(right_src_name)
+                right_cursor = Cursor(self.state_manager.get_pager(), right_tree)
+                # iterate over records in right source
+                while right_cursor.end_of_table is False:
+                    right_record = ...
+                    #   if evaluate on condition is True:
+                    #       add combined record to result set
+                    right_cursor.advance()
+                left_cursor.advance()
 
         return rset
 
