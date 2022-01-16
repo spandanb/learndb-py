@@ -6,7 +6,7 @@ from constants import CATALOG
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
-from schema import create_record, create_catalog_record, generate_schema, schema_to_ddl
+from schema import create_record, create_catalog_record, generate_schema, join_records, Record, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 from dataexchange import Response
 
@@ -25,6 +25,7 @@ from lang_parser.symbols import (
     TruncateStmnt,
     Joining,
     JoinType,
+    OnClause,
     AliasableSource,
     WhereClause
 )
@@ -35,6 +36,25 @@ class ExecutionException(Exception):
     """Some error while VM was running
     """
     pass
+
+
+class RecordSetIter:
+    """
+    This is an iterator over a RecordSet
+    """
+    def __init__(self, record_set: 'RecordSet'):
+        self.record_set = record_set
+        self.recordidx = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.recordidx >= len(self.record_set):
+            raise StopIteration
+        value = self.record_set[self.recordidx]
+        self.recordidx += 1
+        return value
 
 
 class SerializedRecordIter:
@@ -69,21 +89,19 @@ class SerializedRecordIter:
 
 class RecordSet:
     """
-    A iterable set of rows.
+    A iterable set of records.
     """
     def __init__(self):
-        # index of iteration
-        self.iteridx = 0
         self.records = []
 
-    def is_at_end(self):
-        return self.iteridx >= len(self.records)
+    def __len__(self):
+        return len(self.records)
 
-    def get_record(self):
-        return self.records[self.iteridx]
+    def __getitem__(self, idx: int):
+        return self.records[idx]
 
-    def advance(self):
-        self.iteridx += 1
+    def get_record(self, idx: int):
+        return self.records[idx]
 
     def append(self, record):
         self.records.append(record)
@@ -257,12 +275,14 @@ class VirtualMachine(Visitor):
 
         :return: TODO: this should return an iterator, i.e. an object that has __next__
         """
+
         # 1. handle source is a single unmaterialized/serialized table
         if is_single_table:
             return SerializedRecordIter(cursor, schema)
         else:
             # 2. handle table is an existing rowset
             # TODO: this would require that the generated rowset is accessible here
+            return RecordSetIter(record_set)
 
     def materialize_source(self, source: AliasableSource) -> RecordSet:
         """
@@ -337,64 +357,51 @@ class VirtualMachine(Visitor):
             # NOTE: in most nested joining, left source will be a table
             # however, after that, it will be a previously joined recordSet
             if is_innermost_join:
-                left_record_iter = self.get_record_iter(joining.left_source)
+                left_src = joining.left_source
+                left_record_iter = self.get_record_iter(left_src)
+                assert left_src.alias_name and left_src.alias_name.literal is not None, "alias is required"
+                left_alias = left_src.alias_name.literal
             else:
-                left_record_iter = rset
-
+                left_record_iter = RecordSetIter(rset)
+                left_alias = None
             # get right source
             right_src = joining.right_source
+            assert right_src.alias_name and right_src.alias_name.literal is not None, "alias is required"
 
             # rset created for next join
             next_rset = RecordSet()
             # `get_record_iter` transparently handles both cursor and
-            # prematerialized sources
+            # pre-joined sources
             for left_record in left_record_iter:
                 for right_record in self.get_record_iter(right_src):
                     # add joined record if cross join or on condition is true
-                    if joining.join_type == JoinType.Cross or \
-                        self.evaluate_on_clause(left_record, right_record, joining.on_clause):
-                            # perform join op and add to temp set
-                            joined_record = self.join_records(left_record, right_record)
-                            next_rset.append(joined_record)
+
+                    # check if the on clause evaluates to true
+                    # TODO: the below call may need to be passed the table aliases
+                    evaluation = self.evaluate_on_clause(joining.on_clause, left_record, right_record)
+                    if evaluation:
+                        # on-cond evaluated true; add joined record
+                        # to result set
+                        joined_record = join_records(left_record, right_record,
+                                                     left_alias=left_alias, right_alias=right_src.alias_name.literal)
+                        next_rset.append(joined_record)
+                    elif joining.join_type == JoinType.LeftOuter:
+                        # for left- and right outer join, if evaluation fails, there should be at least one record
+                        # with other side column set to null
+                        raise NotImplementedError
+                    elif joining.join_type == JoinType.RightOuter:
+                        raise NotImplementedError
+                    elif joining.join_type == JoinType.FullOuter:
+                        raise NotImplementedError
 
             # prepare for next join op
             # inner_most join is only True one
             is_innermost_join = False
             rset = next_rset
 
-
-            # below is old code
-
-            # todo: move: 1) resolving name, 2) creating cursor into `get_record_iter`
-            left_src_name = self.resolve_name(left_src)
-            left_tree = self.state_manager.get_tree(left_src_name)
-            left_cursor = Cursor(self.state_manager.get_pager(), left_tree)
-
-            # we need to do a nested for loop, i.e. compare each left record
-            # with each right record and see if on-clause holds ~ O(N**2)
-            # iterate over records in left source
-            while left_cursor.end_of_table is False:
-
-                # note the left source could be a table or recordSet
-                # todo: how to handle different type
-                left_record = ...
-
-                #   get right source
-                right_src = joining.right_source  # aliasable_src
-                right_src_name = self.resolve_name(right_src)
-                right_tree = self.state_manager.get_tree(right_src_name)
-                right_cursor = Cursor(self.state_manager.get_pager(), right_tree)
-                # iterate over records in right source
-                while right_cursor.end_of_table is False:
-                    right_record = ...
-                    #   if evaluate on condition is True:
-                    #       add combined record to result set
-                    right_cursor.advance()
-                left_cursor.advance()
-
         return rset
 
-    def visit_select_expr(self, expr: SelectExpr):
+    def visit_select_expr(self, expr: SelectExpr, parent_context = None):
         """
         Handle select expr.
 
@@ -404,21 +411,20 @@ class VirtualMachine(Visitor):
                 -- this will require rethinking how select is exec'ed and results outputted
 
         :param expr:
+        :param parent_context: unused- would be needed for correlated queries
         :return:
         """
-        # print(f"In vm: select expr")
         self.output_pipe.reset()
 
-        record_set = self.materialize_source(expr)
+        record_set = self.materialize_source(expr.from_location)
+        record_set_iter = RecordSetIter(record_set)
 
         # iterate record set over all records
-        while record_set.is_at_end() is False:
-            record = record_set.get_record()
+        for record in record_set_iter:
             # evaluate where condition and filter non-matching rows
             if self.evaluate_where_clause(expr.where_clause, record) is True:
                 # write to output if matches condition
                 self.output_pipe.write(record)
-            record_set.advance()
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
         """
@@ -522,12 +528,68 @@ class VirtualMachine(Visitor):
     def visit_update_stmnt(self, stmnt: UpdateStmnt):
         pass
 
-    def visit_join_stmnt(self, stmnt: 'JoinStmnt'):
-        pass
-
     # section : sub-statement handlers
 
-    def evaluate_where_clause(self, where_clause: WhereClause, record) -> bool:
+    def evaluate_on_clause(self, on_clause: OnClause, left_record, right_record) -> bool:
+        """
+        evaluate on condition
+
+        :return:
+        """
+        if on_clause is None:
+            # no-condition; all results pass
+            return True
+
+        # result of or over all or-clauses
+        or_result = False
+        # NOTE: `on_clause.or_clause` is a list of and'ed predicates
+        # at least one and clause must be true for condition to be true
+        for and_clause in on_clause.or_clause:
+            # result of and over and clauses within or-clause
+            and_result = True
+            for predicate in and_clause.predicates:
+                # decompose predicate
+                # the predicate contains 2 operands: left and right;
+                # the predicate could refer to one or more of left_, right_ record, or value
+                left_token = predicate.first.value
+                right_token = predicate.second.value
+
+                # TODO: revolve value of left_token in is column_ref ; likewise for right_token
+                # below code needs to be updated
+
+                if left_token.token_type == TokenType.IDENTIFIER:
+                    column = left_token.literal
+                    cond_value = right_token.literal
+                else:
+                    cond_value = left_token.literal
+                    column = right_token.literal
+
+                # determine the record's value for given column
+                record_value = record.get(column)
+                # evaluate predicate
+                if predicate.op.token_type == TokenType.EQUAL:
+                    pred_val = record_value == cond_value
+                elif predicate.op.token_type == TokenType.NOT_EQUAL:
+                    pred_val = record_value != cond_value
+                elif predicate.op.token_type == TokenType.LESS_EQUAL:
+                    pred_val = record_value <= cond_value
+                elif predicate.op.token_type == TokenType.LESS:
+                    pred_val = record_value < cond_value
+                elif predicate.op.token_type == TokenType.GREATER_EQUAL:
+                    pred_val = record_value >= cond_value
+                else:
+                    assert predicate.op.token_type == TokenType.GREATER
+                    pred_val = record_value > cond_value
+
+                and_result = and_result and pred_val
+
+            or_result = or_result or and_result
+            if or_result:
+                # condition is true, eagerly exit
+                return True
+        return False
+
+    def evaluate_where_clause(self, where_clause: WhereClause, record: Record) -> bool:
         """
         evaluate condition
 
@@ -549,7 +611,7 @@ class VirtualMachine(Visitor):
             and_result = True
             for predicate in and_clause.predicates:
                 # decompose predicate
-                # determine if which operand contains value and which contains column name
+                # determine which operand contains value and which contains column name
                 left_token = predicate.first.value
                 right_token = predicate.second.value
                 if left_token.token_type == TokenType.IDENTIFIER:

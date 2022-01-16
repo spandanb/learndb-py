@@ -52,7 +52,6 @@ class Schema:
         self.columns = columns
 
     def __str__(self):
-        # return 'Schema()'
         body = ' '.join([col.name for col in self.columns])
         return f'Schema({str(self.name)}, {str(body)})'
 
@@ -141,6 +140,7 @@ class Record:
     def __init__(self, values: dict = None, schema: Schema = None):
         # unordered mapping from: column-name -> column-value
         self.values = values
+        # schema is needed for serializing record
         self.schema = schema
 
     def __str__(self):
@@ -152,14 +152,48 @@ class Record:
     def __repr__(self):
         return str(self)
 
-    def get(self, key: str):
+    def get(self, column: str):
         """
         column names are internally represented as lowercase versions
-        of their names; thus the key must be lowercased for the lookup
-        :param key:
+        of their names; thus the column must be lowercased for the lookup
+        :param column:
         :return:
         """
-        return self.values[key.lower()]
+        return self.values[column.lower()]
+
+    def contains(self, column: str) -> bool:
+        """
+        check whether record has column
+
+        :param column:
+        :return:
+        """
+        return column.lower() in self.values
+
+
+
+def join_records(left_record: Record, right_record: Record, left_alias: str = None, right_alias: str = None) -> Record:
+    """
+    Join Records and return joined record
+
+    :param left_record:
+    :param right_record:
+    :param left_alias:
+    :param right_alias:
+    :return:
+    """
+    # joined record column names are stores as <alias>.<column name>
+    joined = {}
+    for key in left_record.values:
+        scoped_key = f'{left_alias}.{key}' if left_alias else key
+        joined[scoped_key] = left_record.values[key]
+
+    for key in right_record.values:
+        scoped_key = f'{right_alias}.{key}' if right_alias else key
+        joined[scoped_key] = right_record.values[key]
+
+    # NOTE: this does not create a joined schema
+    return Record(joined)
 
 
 def validate_schema(schema: Schema) -> Response:

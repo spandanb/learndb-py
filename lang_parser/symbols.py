@@ -84,6 +84,9 @@ class AliasableSource(Symbol):
      - two or more joined objects
      - subquery
     """
+    # todo: rename to source
+    # the union refers to the fact that source can be a single source
+    # or a joined source
     source_name: Union[Token, Joining]
     alias_name: Optional[Token] = None
 
