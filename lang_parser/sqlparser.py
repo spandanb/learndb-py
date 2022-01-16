@@ -420,14 +420,14 @@ class Parser:
             alias_name = None
             # check if there is an alias
             if self.match(TokenType.IDENTIFIER):
-                alias_name = self.peek()
+                alias_name = self.previous()
             source = AliasableSource(source_name, alias_name)
 
         # 2. check for other joined sources
         # 2.1. loop until we see either "where" token or reach end of token stream
         while self.is_at_end() is False and self.peek().token_type != TokenType.WHERE:
             # handle join clause
-            if self.match(TokenType.INNER, TokenType.CROSS):
+            if self.match(TokenType.JOIN, TokenType.INNER, TokenType.CROSS):
                 self.previous()
                 join_type = JoinType.Inner
             elif self.match(TokenType.LEFT):
@@ -489,7 +489,7 @@ class Parser:
         or_clauses = [self.and_clause()]
         while self.match(TokenType.OR):
             or_clauses.append(self.and_clause())
-        return WhereClause(or_clauses)
+        return or_clauses
 
     def and_clause(self) -> AndClause:
         """
