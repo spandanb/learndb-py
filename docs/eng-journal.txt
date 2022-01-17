@@ -328,3 +328,12 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     serializability levels.
 
     Second, free list is unsorted; later I can get fancy with sorting the list, but for now this is good.
+
+1/16
+    A lot of records objects are being created, e.g. when doing joins. Also, the joins are implemented
+    via scans over the entire joined record sets. These result in high space and time usage respectively. Some of
+    this usage could be reduced; but the code would get trickier. Right now, I'm optimizing for code completion and
+    correctness- space and time concerns should be addressed after running proper benchmarks; and only once I know
+    what correct code and behavior looks like. Further, if I do end up writing more optimized handlers, I will have
+    a reference implementation - which while inefficient should be easier to reason about.
+

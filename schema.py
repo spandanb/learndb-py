@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 This contain structures to generate and manipulate
 schema- including the logical schema (column name, column type),
@@ -10,7 +11,7 @@ The physical encoding is the file format.
 """
 
 
-from typing import List
+from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
 from lang_parser.tokens import TokenType
@@ -171,29 +172,79 @@ class Record:
         return column.lower() in self.values
 
 
-
-def join_records(left_record: Record, right_record: Record, left_alias: str = None, right_alias: str = None) -> Record:
+class MultiRecord:
     """
-    Join Records and return joined record
+    Represents multiple records from multiple sources
+    """
+    def __init__(self):
+        # keeps mapping of table alias -> record
+        self.record_map = {}
 
-    :param left_record:
-    :param right_record:
-    :param left_alias:
-    :param right_alias:
+    def __str__(self):
+        if self.record_map is None:
+            return "MRecord(-)"
+        body = []
+        for table_alias, record in self.record_map.items():
+            for k, v in record.values.items():
+                child = f"{table_alias}.{k}: {v}"
+                body.append(child)
+        joined = ", ".join(body)
+        return f"MRecord({joined})"
+
+    def add_record(self, alias: str, record: Record):
+        """
+
+        :param alias:
+        :param record:
+        :return:
+        """
+        assert alias not in self.record_map
+        self.record_map[alias] = record
+
+    def add_multi_record(self, record: MultiRecord):
+        """
+
+        :param record:
+        :return:
+        """
+        # add each child of arg `record` to this self
+        for name, child_record in record.record_map.items():
+            assert name not in self.record_map
+            self.record_map[name] = child_record
+
+    def contains(self, table_alias: str, column_name: str):
+        return table_alias in self.record_map and self.record_map[table_alias].contains(column_name)
+
+    def get(self, table_alias: str, column_name: str):
+        assert self.contains(table_alias, column_name), f"column with reference [{table_alias}.{column_name}] does not exist"
+        self.record_map[table_alias].get(column_name)
+
+
+def join_records(left_record: Union[Record, MultiRecord], right_record: Union[Record, MultiRecord],
+                 left_alias: Optional[str], right_alias: Optional[str],
+                 left_empty: bool = False, right_empty: bool = False):
+    """
+    join records and return a multi-record
+    left_, right_empty are used to handle left, right outer joined records
+
+    TODO: handle `left_empty`
     :return:
     """
-    # joined record column names are stores as <alias>.<column name>
-    joined = {}
-    for key in left_record.values:
-        scoped_key = f'{left_alias}.{key}' if left_alias else key
-        joined[scoped_key] = left_record.values[key]
 
-    for key in right_record.values:
-        scoped_key = f'{right_alias}.{key}' if right_alias else key
-        joined[scoped_key] = right_record.values[key]
+    joined = MultiRecord()
+    if isinstance(left_record, Record):
+        joined.add_record(left_alias, left_record)
+    else:
+        assert isinstance(left_record, MultiRecord)
+        joined.add_multi_record(left_record)
 
-    # NOTE: this does not create a joined schema
-    return Record(joined)
+    if isinstance(right_record, Record):
+        joined.add_record(right_alias, right_record)
+    else:
+        assert isinstance(right_record, MultiRecord)
+        joined.add_multi_record(right_record)
+
+    return joined
 
 
 def validate_schema(schema: Schema) -> Response:

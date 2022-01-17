@@ -55,7 +55,7 @@ class SelectExpr(Symbol):
     return value
     """
     selectable: Selectable
-    from_location: AliasableSource
+    from_location: Union[AliasableSource, Joining]
     where_clause: WhereClause = None
     group_by_clause: Any = None
     having_clause: Any = None
