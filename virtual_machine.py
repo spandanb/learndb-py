@@ -1,12 +1,21 @@
-# from __future__ import annotations
+from __future__ import annotations
 import logging
-from typing import Union
+from typing import Optional, Tuple, Union
 
 from constants import CATALOG
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
-from schema import create_record, create_catalog_record, generate_schema, join_records, Record, schema_to_ddl
+from schema import (
+    create_record,
+    create_catalog_record,
+    generate_schema,
+    join_records,
+    MultiRecord,
+    Record,
+    Schema,
+    schema_to_ddl
+)
 from serde import serialize_record, deserialize_cell
 from dataexchange import Response
 
@@ -32,11 +41,24 @@ from lang_parser.symbols import (
 from lang_parser.sqlhandler import SqlFrontEnd
 
 
-class ExecutionException(Exception):
-    """Some error while VM was running
+# section: exceptions
+
+
+class NameResolutionError(Exception):
+    """
+    Unable to resolve name
     """
     pass
 
+
+class ExecutionException(Exception):
+    """
+    Some error while VM was running
+    """
+    pass
+
+
+# section: helper classes
 
 class RecordSetIter:
     """
@@ -107,6 +129,51 @@ class RecordSet:
         self.records.append(record)
 
 
+class RecordAccessor:
+    """
+    Transparently provides a uniform access to column values in Record
+    and MultiRecord objects.
+    This is primarily intended to simplify how values are accessed
+    when evaluating select clause
+
+    """
+    def __init__(self):
+        # map of table name -> record
+        self.records = {}
+        self.multi_records = []
+
+    def add_record(self, alias: str, record: Record):
+        assert alias not in self.records
+        self.records[alias] = record
+
+    def add_multi_record(self, mrecord: MultiRecord):
+        self.multi_records.append(mrecord)
+
+    def get(self, name: str):
+        """
+        resolve name and return value corresponding to name
+        first attempt to resolve from records dict; then multi_records
+        name is in format <table alias>.<column name>
+        :param name:
+        :return:
+        """
+        assert '.' in name
+        name_parts = name.split('.')
+        assert len(name_parts) == 2
+        table_alias, column_name = name_parts
+        if table_alias in self.records:
+            return self.records[table_alias].get(column_name)
+
+        for mrecord in self.multi_records:
+            if mrecord.contains(table_alias, column_name):
+                return mrecord.get(table_alias, column_name)
+
+        raise NameResolutionError(f"Unable to resolve [{name}]")
+
+
+# section: VM
+
+
 class VirtualMachine(Visitor):
     """
     Execute prepared statements corresponding to some sql statements, on some
@@ -170,21 +237,6 @@ class VirtualMachine(Visitor):
 
             cursor.advance()
 
-    @staticmethod
-    def resolve_table_name(symbol: Symbol) -> str:
-        """
-        attempt to resolve table name by inspecting argument symbol
-        :param symbol:
-        :return:
-        """
-
-        if isinstance(symbol, SelectExpr):
-            # TODO: is this clause needed?
-            return symbol.from_location.literal.lower()
-        elif isinstance(symbol, (DeleteStmnt, InsertStmnt, DropStmnt, TruncateStmnt, UpdateStmnt)):
-            return symbol.table_name.literal.lower()
-        return None
-
     def run(self, program):
         """
         run the virtual machine with program on state
@@ -199,7 +251,7 @@ class VirtualMachine(Visitor):
                 logging.error(f"ERROR: virtual machine failed on: [{stmt}]")
                 raise
 
-    def execute(self, stmnt: 'Symbol'):
+    def execute(self, stmnt: Symbol):
         """
         execute statement
         :param stmnt:
@@ -267,139 +319,6 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-    def get_record_iter(self, source: AliasableSource):
-        """
-        This should return an iterator over the record.
-        NOTE: The source can be either a table or joined/materialized
-        recordset. This should handle both
-
-        :return: TODO: this should return an iterator, i.e. an object that has __next__
-        """
-
-        # 1. handle source is a single unmaterialized/serialized table
-        if is_single_table:
-            return SerializedRecordIter(cursor, schema)
-        else:
-            # 2. handle table is an existing rowset
-            # TODO: this would require that the generated rowset is accessible here
-            return RecordSetIter(record_set)
-
-    def materialize_source(self, source: AliasableSource) -> RecordSet:
-        """
-        This should handle the materialization of source,
-        and return a set of rows
-
-        For now, I need to handle:
-            - single tables
-            - joined tables
-        eventually, will also have to handle nested select expr,
-        both correlated and uncorrelated.
-
-        For single and joined tables, this will create cursor
-        over each of the source tables and loop/iterate and add
-        the record
-
-        For tables this should be just a list of deser objects
-
-        Not sure if where condition should be handled here.
-        My leaning is that, it should- that will simplify the
-        logic around correlated subqueries.
-
-        :return:
-        """
-        rset = RecordSet()
-        # 1. handle single source
-        if isinstance(source.source_name, Token):
-            table_name = source.source_name.literal
-            if table_name != CATALOG and not self.state_manager.table_exists(table_name):
-                raise ExecutionException(f"table [{table_name}] does not exist")
-
-            # todo: remove special handling of catalog here
-            # perhaps statemanager is aware of catalog
-            if table_name == CATALOG:
-                # system table/objects
-                tree = self.state_manager.get_catalog_tree()
-                schema = self.state_manager.get_catalog_schema()
-            else:
-                # user tables/objects
-                tree = self.state_manager.get_tree(table_name)
-                schema = self.state_manager.get_schema(table_name)
-
-            # iterate cursor and add to result set
-            cursor = Cursor(self.state_manager.get_pager(), tree)
-            while cursor.end_of_table is False:
-                cell = cursor.get_cell()
-                resp = deserialize_cell(cell, schema)
-                assert resp.success
-                record = resp.body
-                rset.append(record)
-                cursor.advance()
-
-            return rset
-
-        assert isinstance(source.source_name, Joining)
-        # 2. handle joined sources
-        stack = []
-        # materialize the most nested element in the joining first
-        while isinstance(source.source_name, Joining):
-            # check if joining has a nested joining
-            child = source.source_name
-            # recurse
-            stack.append(child)
-            # the parser nests joins s.t. left source is the child join
-            source = child.left_source
-
-        # 3. perform join by walking up the recursive stack
-        is_innermost_join = True
-        while stack:
-            joining = stack.pop()
-            # get left source
-            # NOTE: in most nested joining, left source will be a table
-            # however, after that, it will be a previously joined recordSet
-            if is_innermost_join:
-                left_src = joining.left_source
-                left_record_iter = self.get_record_iter(left_src)
-                assert left_src.alias_name and left_src.alias_name.literal is not None, "alias is required"
-                left_alias = left_src.alias_name.literal
-            else:
-                left_record_iter = RecordSetIter(rset)
-                left_alias = None
-            # get right source
-            right_src = joining.right_source
-            assert right_src.alias_name and right_src.alias_name.literal is not None, "alias is required"
-
-            # rset created for next join
-            next_rset = RecordSet()
-            # `get_record_iter` transparently handles both cursor and
-            # pre-joined sources
-            for left_record in left_record_iter:
-                for right_record in self.get_record_iter(right_src):
-                    # add joined record if cross join or on condition is true
-
-                    # check if the on clause evaluates to true
-                    # TODO: the below call may need to be passed the table aliases
-                    evaluation = self.evaluate_on_clause(joining.on_clause, left_record, right_record)
-                    if evaluation:
-                        # on-cond evaluated true; add joined record
-                        # to result set
-                        joined_record = join_records(left_record, right_record,
-                                                     left_alias=left_alias, right_alias=right_src.alias_name.literal)
-                        next_rset.append(joined_record)
-                    elif joining.join_type == JoinType.LeftOuter:
-                        # for left- and right outer join, if evaluation fails, there should be at least one record
-                        # with other side column set to null
-                        raise NotImplementedError
-                    elif joining.join_type == JoinType.RightOuter:
-                        raise NotImplementedError
-                    elif joining.join_type == JoinType.FullOuter:
-                        raise NotImplementedError
-
-            # prepare for next join op
-            # inner_most join is only True one
-            is_innermost_join = False
-            rset = next_rset
-
-        return rset
 
     def visit_select_expr(self, expr: SelectExpr, parent_context = None):
         """
@@ -424,6 +343,7 @@ class VirtualMachine(Visitor):
             # evaluate where condition and filter non-matching rows
             if self.evaluate_where_clause(expr.where_clause, record) is True:
                 # write to output if matches condition
+                # todo: piped record should only contain selected column
                 self.output_pipe.write(record)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
@@ -433,7 +353,7 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        table_name = self.resolve_table_name(stmnt)
+        table_name = self.resolve_name(stmnt)
 
         # get schema
         schema = self.state_manager.get_schema(table_name)
@@ -468,13 +388,12 @@ class VirtualMachine(Visitor):
         :return:
         """
         # identifier are case sensitive, so don't convert
-        table_name = self.resolve_table_name(stmnt)
+        table_name = self.resolve_name(stmnt)
         # check table is not catalog
         assert table_name != CATALOG, "cannot delete table from catalog; use drop table"
 
         # get tree and schema
-        tree = self.state_manager.get_tree(table_name)
-        schema = self.state_manager.get_schema(table_name)
+        schema, tree = self.get_schema_and_tree(stmnt)
 
         # scan table and determine which keys to delete, based on where condition
         cursor = Cursor(self.state_manager.get_pager(), tree)
@@ -510,7 +429,7 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        table_name = self.resolve_table_name(stmnt)
+        table_name = self.resolve_name(stmnt)
 
         catalog_tree = self.state_manager.get_catalog_tree()
         catalog_schema = self.state_manager.get_catalog_schema()
@@ -530,7 +449,8 @@ class VirtualMachine(Visitor):
 
     # section : sub-statement handlers
 
-    def evaluate_on_clause(self, on_clause: OnClause, left_record, right_record) -> bool:
+    @staticmethod
+    def evaluate_on_clause(on_clause: OnClause, raccessor: RecordAccessor) -> bool:
         """
         evaluate on condition
 
@@ -548,38 +468,38 @@ class VirtualMachine(Visitor):
             # result of and over and clauses within or-clause
             and_result = True
             for predicate in and_clause.predicates:
-                # decompose predicate
+                # decompose predicate, and resolve value
                 # the predicate contains 2 operands: left and right;
-                # the predicate could refer to one or more of left_, right_ record, or value
+                # the predicate could refer to one or more of left_record, right_record, or a value
                 left_token = predicate.first.value
                 right_token = predicate.second.value
 
-                # TODO: revolve value of left_token in is column_ref ; likewise for right_token
-                # below code needs to be updated
-
                 if left_token.token_type == TokenType.IDENTIFIER:
-                    column = left_token.literal
-                    cond_value = right_token.literal
+                    # left_token is a column reference
+                    left_value = raccessor.get(left_token.literal)
                 else:
-                    cond_value = left_token.literal
-                    column = right_token.literal
+                    # left token is a literal value
+                    left_value = left_token.literal
 
-                # determine the record's value for given column
-                record_value = record.get(column)
+                if right_token.token_type == TokenType.IDENTIFIER:
+                    right_value = raccessor.get(right_token.literal)
+                else:
+                    right_value = right_token.literal
+
                 # evaluate predicate
                 if predicate.op.token_type == TokenType.EQUAL:
-                    pred_val = record_value == cond_value
+                    pred_val = left_value == right_value
                 elif predicate.op.token_type == TokenType.NOT_EQUAL:
-                    pred_val = record_value != cond_value
+                    pred_val = left_value != right_value
                 elif predicate.op.token_type == TokenType.LESS_EQUAL:
-                    pred_val = record_value <= cond_value
+                    pred_val = left_value <= right_value
                 elif predicate.op.token_type == TokenType.LESS:
-                    pred_val = record_value < cond_value
+                    pred_val = left_value < right_value
                 elif predicate.op.token_type == TokenType.GREATER_EQUAL:
-                    pred_val = record_value >= cond_value
+                    pred_val = left_value >= right_value
                 else:
                     assert predicate.op.token_type == TokenType.GREATER
-                    pred_val = record_value > cond_value
+                    pred_val = left_value > right_value
 
                 and_result = and_result and pred_val
 
@@ -589,7 +509,8 @@ class VirtualMachine(Visitor):
                 return True
         return False
 
-    def evaluate_where_clause(self, where_clause: WhereClause, record: Record) -> bool:
+    @staticmethod
+    def evaluate_where_clause(where_clause: WhereClause, record: Record) -> bool:
         """
         evaluate condition
 
@@ -645,3 +566,150 @@ class VirtualMachine(Visitor):
                 # condition is true, eagerly exit
                 return True
         return False
+
+    @staticmethod
+    def resolve_name(symbol: Symbol) -> str:
+        """
+        attempt to resolve table name by inspecting argument symbol
+        :param symbol:
+        :return:
+        """
+        if isinstance(symbol, AliasableSource):
+            return symbol.source_name.literal.lower()
+        elif isinstance(symbol, (DeleteStmnt, InsertStmnt, DropStmnt, TruncateStmnt, UpdateStmnt)):
+            return symbol.table_name.literal.lower()
+        raise NameResolutionError(f"Unable to resolve [{symbol}]")
+
+    def get_record_iter(self, source: AliasableSource) -> SerializedRecordIter:
+        """
+        Return iterator over source records.
+
+        :return:
+        """
+        schema, tree = self.get_schema_and_tree(source)
+        cursor = Cursor(self.state_manager.get_pager(), tree)
+        return SerializedRecordIter(cursor, schema)
+
+    def get_schema_and_tree(self, source: Symbol) -> Tuple[Schema, Tree]:
+        """
+        helper to resolve name and return schema and tree corresponding
+        to name
+        :param source:
+        :return:
+        """
+        table_name = self.resolve_name(source)
+        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+            raise ExecutionException(f"table [{table_name}] does not exist")
+
+        if table_name == CATALOG:
+            # system table/objects
+            schema = self.state_manager.get_catalog_schema()
+            tree = self.state_manager.get_catalog_tree()
+        else:
+            # user tables/objects
+            schema = self.state_manager.get_schema(table_name)
+            tree = self.state_manager.get_tree(table_name)
+
+        return schema, tree
+
+    def materialize_source(self, source: Union[AliasableSource, Joining]) -> RecordSet:
+        """
+        This should handle the materialization of source,
+        and return a set of rows
+
+        For now, I need to handle:
+            - single tables
+            - joined tables
+        eventually, will also have to handle nested select expr,
+        both correlated and uncorrelated.
+
+        For single and joined tables, this will create cursor
+        over each of the source tables and loop/iterate and add
+        the record
+
+        For tables this should be just a list of deser objects
+
+        Not sure if where condition should be handled here.
+        My leaning is that, it should- that will simplify the
+        logic around correlated subqueries.
+
+        :return:
+        """
+        rset = RecordSet()
+        # 1. handle single source
+        if isinstance(source, AliasableSource):
+            for record in self.get_record_iter(source):
+                rset.append(record)
+            return rset
+
+        assert isinstance(source, Joining)
+        # 2. handle joined sources
+        stack = []
+        # materialize the most nested element in the joining first
+        # while isinstance(source.source_name, Joining):   # old cond
+        while isinstance(source, Joining):
+            stack.append(source)
+            # check if joining has a nested joining
+            # the parser nests joins s.t. left source is the child join
+            source = source.left_source
+
+        # 3. perform join by walking up the recursive stack
+        is_innermost_join = True
+        while stack:
+            joining = stack.pop()
+            # get left source
+            # NOTE: in most nested joining, left source will be a table
+            # however, after that, it will be a previously joined recordSet
+            if is_innermost_join:
+                left_src = joining.left_source
+                left_record_iter = self.get_record_iter(left_src)
+                assert left_src.alias_name and left_src.alias_name.literal is not None, "alias is required"
+                left_alias = left_src.alias_name.literal
+            else:
+                left_record_iter = RecordSetIter(rset)
+                left_alias = None
+
+            # get right source
+            right_src = joining.right_source
+            assert right_src.alias_name and right_src.alias_name.literal is not None, "alias is required"
+            right_alias = right_src.alias_name.literal
+
+            # rset created for next join
+            next_rset = RecordSet()
+            # `get_record_iter` transparently handles both cursor and
+            # pre-joined sources
+            for left_record in left_record_iter:
+                for right_record in self.get_record_iter(right_src):
+                    # add joined record if cross join or on condition is true
+
+                    # create a record accessor to access column values in `left_` and `righ_record`
+                    raccessor = RecordAccessor()
+                    if left_alias is None:
+                        # left is a multi-record
+                        raccessor.add_multi_record(left_record)
+                    else:
+                        raccessor.add_record(left_alias, left_record)
+
+                    raccessor.add_record(right_alias, right_record)
+                    # check if the on clause evaluates to true
+                    evaluation = self.evaluate_on_clause(joining.on_clause, raccessor)
+                    if evaluation:
+                        # on-cond evaluated true; add joined record
+                        # to result set
+                        joined_record = join_records(left_record, right_record, left_alias, right_alias)
+                        next_rset.append(joined_record)
+                    elif joining.join_type == JoinType.LeftOuter:
+                        # for left- and right outer join, if evaluation fails, there should be at least one record
+                        # with other side column set to null
+                        raise NotImplementedError
+                    elif joining.join_type == JoinType.RightOuter:
+                        raise NotImplementedError
+                    elif joining.join_type == JoinType.FullOuter:
+                        raise NotImplementedError
+
+            # prepare for next join op
+            # inner_most join is only True one
+            is_innermost_join = False
+            rset = next_rset
+
+        return rset

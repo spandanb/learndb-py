@@ -427,8 +427,9 @@ class Parser:
         # 2.1. loop until we see either "where" token or reach end of token stream
         while self.is_at_end() is False and self.peek().token_type != TokenType.WHERE:
             # handle join clause
-            if self.match(TokenType.JOIN, TokenType.INNER, TokenType.CROSS):
-                self.previous()
+            join_type = None
+            # consume join type
+            if self.match(TokenType.INNER):
                 join_type = JoinType.Inner
             elif self.match(TokenType.LEFT):
                 join_type = JoinType.LeftOuter
@@ -439,9 +440,13 @@ class Parser:
                 join_type = JoinType.RightOuter
                 if self.check(TokenType.OUTER):
                     self.advance()
-            else:
-                self.consume(TokenType.CROSS, "expected join")
+            elif self.match(TokenType.CROSS):
                 join_type = JoinType.Cross
+
+            self.consume(TokenType.JOIN, "expected 'join' keyword")
+            if join_type is None:
+                # no qualifier means inner join
+                join_type = JoinType.Inner
 
             # handle right source
             if self.peek().token_type == TokenType.LEFT_PAREN:
@@ -451,7 +456,7 @@ class Parser:
                 alias_name = None
                 # check if there is an alias
                 if self.match(TokenType.IDENTIFIER):
-                    alias_name = self.peek()
+                    alias_name = self.previous()
                 right_source = AliasableSource(source_name, alias_name)
 
             # if exists, handle on-clause

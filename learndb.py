@@ -205,7 +205,7 @@ def repl():
             print(pipe.read())
 
 
-def devloop():
+def devloop_old():
     """
     this works through the entire intialize process
     :return:
@@ -303,7 +303,7 @@ def inner_devloop(insert_keys, del_keys):
 
     # delete and validate
     for idx, key in enumerate(del_keys):
-        cmd = f"delete from foo where colA = {key}"
+        cmd = f"delete from foo where colA = {key} AND colB = 'foo'"
         logging.info(f"handling [{cmd}]")
         resp = db.handle_input(cmd)
         if not resp.success:
@@ -340,6 +340,30 @@ def inner_devloop(insert_keys, del_keys):
         print('*'*100)
 
     db.close()
+
+
+def devloop():
+    db = LearnDB(DB_FILE)
+    db.nuke_dbfile()
+
+    db.handle_input("create table foo ( cola integer primary key, colb integer, colc integer)")
+    db.handle_input("create table bar ( colx integer primary key, coly integer, colz integer)")
+    db.handle_input("create table car ( colx integer primary key, coly integer, colz integer)")
+    db.handle_input("insert into foo ( cola, colb, colc) values (1, 2, 3)")
+    db.handle_input("insert into foo ( cola, colb, colc) values (2, 4, 6)")
+    db.handle_input("insert into bar ( colx, coly, colz) values (30, 2, 40)")
+    # db.handle_input("select cola, colb from foo where cola = 1 or colc = 2")
+    # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
+    # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
+    db.handle_input("select cola, colb from foo f inner join bar r on f.cola = r.coly")
+    # db.handle_input("select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b")
+
+    assert db.get_pipe().has_msgs()
+
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        # key = record.get("cola")
+        print(f'pipe read: {record}')
 
 
 def parse_args_and_start(args: list):
