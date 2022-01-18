@@ -319,7 +319,6 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-
     def visit_select_expr(self, expr: SelectExpr, parent_context = None):
         """
         Handle select expr.
@@ -470,7 +469,7 @@ class VirtualMachine(Visitor):
             for predicate in and_clause.predicates:
                 # decompose predicate, and resolve value
                 # the predicate contains 2 operands: left and right;
-                # the predicate could refer to one or more of left_record, right_record, or a value
+                # the operands could either be a column reference, e.g. foo.colx or a literal value, e.g. 4
                 left_token = predicate.first.value
                 right_token = predicate.second.value
 
@@ -614,24 +613,13 @@ class VirtualMachine(Visitor):
 
     def materialize_source(self, source: Union[AliasableSource, Joining]) -> RecordSet:
         """
-        This should handle the materialization of source,
-        and return a set of rows
-
-        For now, I need to handle:
+        This should handle the materialization of source.
+        The source is whatever is in the from clause.
+        For now, this includes:
             - single tables
             - joined tables
         eventually, will also have to handle nested select expr,
         both correlated and uncorrelated.
-
-        For single and joined tables, this will create cursor
-        over each of the source tables and loop/iterate and add
-        the record
-
-        For tables this should be just a list of deser objects
-
-        Not sure if where condition should be handled here.
-        My leaning is that, it should- that will simplify the
-        logic around correlated subqueries.
 
         :return:
         """
@@ -682,7 +670,7 @@ class VirtualMachine(Visitor):
                 for right_record in self.get_record_iter(right_src):
                     # add joined record if cross join or on condition is true
 
-                    # create a record accessor to access column values in `left_` and `righ_record`
+                    # create a record accessor to access column values in `left_` and `right_record`
                     raccessor = RecordAccessor()
                     if left_alias is None:
                         # left is a multi-record
@@ -699,7 +687,8 @@ class VirtualMachine(Visitor):
                         joined_record = join_records(left_record, right_record, left_alias, right_alias)
                         next_rset.append(joined_record)
                     elif joining.join_type == JoinType.LeftOuter:
-                        # for left- and right outer join, if evaluation fails, there should be at least one record
+                        # for left, right, and full outer join, if evaluation fails,
+                        # there should be one and only one record
                         # with other side column set to null
                         raise NotImplementedError
                     elif joining.join_type == JoinType.RightOuter:

@@ -53,6 +53,7 @@ class TokenType(Enum):
     INNER = auto()
     LEFT = auto()
     RIGHT = auto()
+    FULL = auto()
     OUTER = auto()
     CROSS = auto()
 
@@ -90,6 +91,7 @@ KEYWORDS = {
     'inner',
     'left',
     'right',
+    'full',
     'outer',
     'cross',
 

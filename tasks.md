@@ -52,9 +52,13 @@
 - run black
 - run mypy
 
+## Lang
+  - Add support for nested select statements (uncorrelated)
+  - Add support for nested select statements (correlated)
 
 ## Bugs
-  - duplicate key not erroring
+  - e2e_test.py::join_test should fail
+  - duplicate key not erroring (this might be working now)
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
   - create table def , requires space after final column and final ')'
 

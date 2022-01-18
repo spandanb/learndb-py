@@ -205,7 +205,7 @@ def repl():
             print(pipe.read())
 
 
-def devloop_old():
+def devloop_add_del():
     """
     this works through the entire intialize process
     :return:
@@ -303,7 +303,8 @@ def inner_devloop(insert_keys, del_keys):
 
     # delete and validate
     for idx, key in enumerate(del_keys):
-        cmd = f"delete from foo where colA = {key} AND colB = 'foo'"
+        # cmd = f"delete from foo where colA = {key} AND colB = 'foo'"
+        cmd = f"delete from foo where colA = {key}"
         logging.info(f"handling [{cmd}]")
         resp = db.handle_input(cmd)
         if not resp.success:
@@ -342,6 +343,35 @@ def inner_devloop(insert_keys, del_keys):
     db.close()
 
 
+def devloop_join():
+
+    db = LearnDB(DB_FILE)
+    db.nuke_dbfile()
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colb integer, colc integer)")
+    db.handle_input("create table bar ( colx integer primary key, coly integer, colz integer)")
+    # insert into table
+    db.handle_input("insert into foo (cola, colb, colc) values (1, 2, 3)")
+    db.handle_input("insert into foo (cola, colb, colc) values (2, 4, 6)")
+    db.handle_input("insert into foo (cola, colb, colc) values (3, 10, 8)")
+    db.handle_input("insert into bar (colx, coly, colz) values (101, 10, 80)")
+    db.handle_input("insert into bar (colx, coly, colz) values (102, 4, 90)")
+    # select
+    db.handle_input("select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly")
+
+    keys = []
+
+    assert db.get_pipe().has_msgs()
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        # NOTE: records access API is different for Record and MultiRecord
+        keys.append(record.get("b", "colx"))
+    # TODO: this is not working
+    expected = [101, 102]
+    assert keys == expected, f"expected {expected}; received {keys}"
+
+
 def devloop():
     db = LearnDB(DB_FILE)
     db.nuke_dbfile()
@@ -355,8 +385,9 @@ def devloop():
     # db.handle_input("select cola, colb from foo where cola = 1 or colc = 2")
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
-    db.handle_input("select cola, colb from foo f inner join bar r on f.cola = r.coly")
+    # db.handle_input("select cola, colb from foo f inner join bar r on f.cola = r.coly")
     # db.handle_input("select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b")
+    db.handle_input("select cola, colb from foo f cross join bar r on f.x = r.y")  # cross join should not have an on-clause
 
     assert db.get_pipe().has_msgs()
 
@@ -387,6 +418,10 @@ python learndb.py file <filepath>
     runmode = args[0].lower()
     if runmode == 'repl':
         repl()
+    elif runmode == 'join_dloop':
+        devloop_join()
+    elif runmode == 'add_del_dloop':
+        devloop_add_del()
     elif runmode == 'devloop':
         devloop()
     elif runmode == 'file':

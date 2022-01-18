@@ -71,6 +71,9 @@ The following are some parts of a DBMS (In no particular order):
 
 - Run specific test:
 `python -m pytest tests.py -k test_name`
+  
+- Clear pytest cache
+`python -m pytest --cache-clear`
 
 - Run REPL: `python learndb.py repl`
 
