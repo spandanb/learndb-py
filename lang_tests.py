@@ -1,5 +1,5 @@
-from lang_parser.tokenizer import Tokenizer
-from lang_parser.sqlparser import Parser
+import pytest
+
 from lang_parser.sqlhandler import SqlFrontEnd
 
 
@@ -15,7 +15,7 @@ def test_select_stmnt():
         assert handler.is_success()
 
 
-def test_other_succ_stmnt():
+def test_misc_succ_stmnt():
     """
     Collection of misc statements that should
     succeed successfully
@@ -25,8 +25,35 @@ def test_other_succ_stmnt():
     """
     cmds = ["select cola, colb from foo where cola = 1 and colb = 2 or colc = 3",
             "select cola, colb from foo where cola = 1 and colb = 2 and colc = 3"
-            "select cola, colb from foo where cola = 1 and colb = 2 or colc = 3 and cold = 4"
+            "select cola, colb from foo where cola = 1 and colb = 2 or colc = 3 and cold = 4",
+            "select cola, colb from foo f join bar b on f.cola = b.colb",
+            "select cola, colb from foo f inner join bar b on f.cola = b.colb",
+            "select cola, colb from foo f inner join bar r on f.cola = r.coly",
+            "select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b",
+            "select cola, colb from foo f inner join bar r on f.b = r.y left join car c on c.x = f.b",
+            "select cola, colb from foo f left outer join bar r on f.b = r.y right join car c on c.x = f.b",
+            "select cola, colb from foo f cross join bar r",
+
             ]
+    for cmd in cmds:
+        handler = SqlFrontEnd()
+        handler.parse(cmd)
+        assert handler.is_success()
+
+
+def test_misc_fail_stmnt():
+    """
+    misc collections of statements that should fail
+    :return:
+    """
+    cmds = [
+        "select cola, colb from foo f cross join bar r on f.x = r.y",  # cross join should not have an on-clause
+    ]
+    with pytest.raises(AssertionError):
+        for cmd in cmds:
+            handler = SqlFrontEnd()
+            handler.parse(cmd)
+            assert handler.is_success()
 
 
 
@@ -34,7 +61,7 @@ def test_create_stmnt():
     cmds = [
         "create table foo ( colA integer, colB text)",
         "create table foo ( colA integer primary key, colB text)"
--    ]
+    ]
     for cmd in cmds:
         handler = SqlFrontEnd()
         handler.parse(cmd)

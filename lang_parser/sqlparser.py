@@ -433,13 +433,14 @@ class Parser:
                 join_type = JoinType.Inner
             elif self.match(TokenType.LEFT):
                 join_type = JoinType.LeftOuter
-                # check for optional "outer" keyword
-                if self.check(TokenType.OUTER):
-                    self.advance()
+                # check for and consume optional "outer" keyword
+                self.match(TokenType.OUTER)
             elif self.match(TokenType.RIGHT):
                 join_type = JoinType.RightOuter
-                if self.check(TokenType.OUTER):
-                    self.advance()
+                self.match(TokenType.OUTER)
+            elif self.match(TokenType.FULL):
+                join_type = JoinType.FullOuter
+                self.match(TokenType.OUTER)
             elif self.match(TokenType.CROSS):
                 join_type = JoinType.Cross
 
