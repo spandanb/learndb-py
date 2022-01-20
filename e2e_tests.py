@@ -132,10 +132,8 @@ def test_join():
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
         keys.append(record.get("b", "colx"))
-    # TODO: this is not working
-    assert keys == [101, 102, 103, "this is not a key"]
-
-
+    keys.sort()
+    assert keys == [101, 102]
 
 
 def test_delete_equality_on_primary_column():
@@ -211,12 +209,6 @@ def test_delete_inequality():
     pipe = db.get_pipe()
     assert not pipe.has_msgs(), "expected no rows"
 
-
-def test_join():
-    """
-    test join operation
-    :return:
-    """
 
 
 def test_update():
