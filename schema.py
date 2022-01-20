@@ -217,7 +217,7 @@ class MultiRecord:
 
     def get(self, table_alias: str, column_name: str):
         assert self.contains(table_alias, column_name), f"column with reference [{table_alias}.{column_name}] does not exist"
-        self.record_map[table_alias].get(column_name)
+        return self.record_map[table_alias].get(column_name)
 
 
 def join_records(left_record: Union[Record, MultiRecord], right_record: Union[Record, MultiRecord],
