@@ -337,3 +337,9 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     what correct code and behavior looks like. Further, if I do end up writing more optimized handlers, I will have
     a reference implementation - which while inefficient should be easier to reason about.
 
+1/20
+    Joins are implemented as nested loop. This works for inner join. To handle outer join, I'll need to use extra
+    space to track what rows have been joined. Specifically, consider, right outer join.
+    I'll keep track (via a seen index) of rows from the right source (inner loop) that have not been joined, and hence not added to
+    the result set. Then after the nested loop, I'll iterate over the seen index and add null'ed copies of rows to the
+    result set.
