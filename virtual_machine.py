@@ -6,23 +6,13 @@ from constants import CATALOG
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
-from schema import (
-    create_record,
-    create_catalog_record,
-    generate_schema,
-    join_records,
-    MultiRecord,
-    Record,
-    Schema,
-    schema_to_ddl
-)
+from schema import generate_schema, Schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 from dataexchange import Response
 
 from lang_parser.visitor import Visitor
 from lang_parser.tokens import TokenType
 from lang_parser.symbols import (
-    Token,
     Symbol,
     Program,
     CreateStmnt,
@@ -39,7 +29,14 @@ from lang_parser.symbols import (
     WhereClause
 )
 from lang_parser.sqlhandler import SqlFrontEnd
-
+from record_utils import (
+    create_record,
+    create_null_record,
+    create_catalog_record,
+    join_records,
+    MultiRecord,
+    Record,
+)
 
 # section: exceptions
 
@@ -589,6 +586,31 @@ class VirtualMachine(Visitor):
         cursor = Cursor(self.state_manager.get_pager(), tree)
         return SerializedRecordIter(cursor, schema)
 
+    def get_null_record(self, source: AliasableSource) -> Record:
+        """
+        Return a null record for given source.
+        A null record is one which has the structure consistent with
+        the schema, but all the values are set to null.
+
+        :param source:
+        :return:
+        """
+        schema = self.get_schema(source)
+        return create_null_record(schema)
+
+    def get_schema(self, source: Symbol) -> Schema:
+        """
+        helper to resolve name and return schema
+        :param source:
+        :return:
+        """
+        table_name = self.resolve_name(source)
+        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+            raise ExecutionException(f"table [{table_name}] does not exist")
+
+        return self.state_manager.get_catalog_schema() if table_name == CATALOG else \
+            self.state_manager.get_schema(table_name)
+
     def get_schema_and_tree(self, source: Symbol) -> Tuple[Schema, Tree]:
         """
         helper to resolve name and return schema and tree corresponding
@@ -626,6 +648,7 @@ class VirtualMachine(Visitor):
         rset = RecordSet()
         # 1. handle single source
         if isinstance(source, AliasableSource):
+            # 1.1. add each record in source to result set
             for record in self.get_record_iter(source):
                 rset.append(record)
             return rset
@@ -633,11 +656,10 @@ class VirtualMachine(Visitor):
         assert isinstance(source, Joining)
         # 2. handle joined sources
         stack = []
-        # materialize the most nested element in the joining first
-        # while isinstance(source.source_name, Joining):   # old cond
+        # 2.1. materialize the most nested element in the joining first
         while isinstance(source, Joining):
             stack.append(source)
-            # check if joining has a nested joining
+            # 2.2. check if joining has a nested joining
             # the parser nests joins s.t. left source is the child join
             source = source.left_source
 
@@ -645,7 +667,7 @@ class VirtualMachine(Visitor):
         is_innermost_join = True
         while stack:
             joining = stack.pop()
-            # get left source
+            # 3.1. get left source
             # NOTE: in most nested joining, left source will be a table
             # however, after that, it will be a previously joined recordSet
             if is_innermost_join:
@@ -657,35 +679,43 @@ class VirtualMachine(Visitor):
                 left_record_iter = RecordSetIter(rset)
                 left_alias = None
 
-            # get right source
+            # 3.2. get right source
             right_src = joining.right_source
             assert right_src.alias_name and right_src.alias_name.literal is not None, "alias is required"
             right_alias = right_src.alias_name.literal
 
-            # rset created for next join
+            # 3.3. rset created for next join
             next_rset = RecordSet()
-            # `get_record_iter` transparently handles both cursor and
-            # pre-joined sources
+            # 3.4. do nested loop to join left and right sources
             for left_record in left_record_iter:
+                # flag to track whether `left_record` has joined with any
+                # records in right_record; this is needed for left, and full outer join
+                has_joined_right_record = False
+
+                # 3.4.1. iterate over record in right source
                 for right_record in self.get_record_iter(right_src):
                     # add joined record if cross join or on condition is true
 
-                    # create a record accessor to access column values in `left_` and `right_record`
+                    # 3.4.1.1. create a record accessor to access column values in `left_` and `right_record`
                     raccessor = RecordAccessor()
+                    # 3.4.1.2. add left_record to record accessor
                     if left_alias is None:
                         # left is a multi-record
                         raccessor.add_multi_record(left_record)
                     else:
                         raccessor.add_record(left_alias, left_record)
 
+                    # 3.4.1.3. add right_record to record accessor
                     raccessor.add_record(right_alias, right_record)
-                    # check if the on clause evaluates to true
+
+                    # 3.4.1.4. check if the on clause evaluates to true
                     evaluation = self.evaluate_on_clause(joining.on_clause, raccessor)
                     if evaluation:
-                        # on-cond evaluated true; add joined record
+                        # on-condition evaluated true; add joined record
                         # to result set
                         joined_record = join_records(left_record, right_record, left_alias, right_alias)
                         next_rset.append(joined_record)
+                        has_joined_right_record = True
                     elif joining.join_type == JoinType.LeftOuter:
                         # for left, right, and full outer join, if evaluation fails,
                         # there should be one and only one record
@@ -695,6 +725,19 @@ class VirtualMachine(Visitor):
                         raise NotImplementedError
                     elif joining.join_type == JoinType.FullOuter:
                         raise NotImplementedError
+
+                # 3.4.2. check if we need to add empty record for left or outer join
+                if not has_joined_right_record and \
+                        (joining.join_type == JoinType.LeftOuter or joining.join_type == JoinType.FullOuter):
+                    # create null right record
+                    right_record = self.get_null_record(right_src)
+                    # join record
+                    joined_record = join_records(left_record, right_record, left_alias, right_alias)
+                    # attach to record set
+                    next_rset.append(joined_record)
+
+            # 3.5. TODO: for right, and full outer join add any records from right source
+            # that was not joined add added to result set
 
             # prepare for next join op
             # inner_most join is only True one

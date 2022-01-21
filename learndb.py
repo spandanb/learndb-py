@@ -33,11 +33,16 @@ class LearnDB:
     exposed via a thin wrapper.
     """
 
-    def __init__(self, db_filepath: str):
+    def __init__(self, db_filepath: str, nuke_db_file: bool = False):
         """
-        pass
+
+        :param db_filepath: the db file
+        :param nuke_db_file: whether to nuke the file before self is initialized
         """
         self.db_filepath = db_filepath
+        # NOTE: the method
+        if nuke_db_file and os.path.exists(self.db_filepath):
+            os.remove(self.db_filepath)
         self.state_manager = None
         self.pipe = None
         self.virtual_machine = None
@@ -366,7 +371,9 @@ def devloop_join():
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
         # NOTE: records access API is different for Record and MultiRecord
-        keys.append(record.get("b", "colx"))
+        # keys.append(record.get("b", "colx"))
+        rdict = record.to_dict()
+        keys.append(rdict)
     # TODO: this is not working
     expected = [101, 102]
     assert keys == expected, f"expected {expected}; received {keys}"
@@ -381,13 +388,14 @@ def devloop():
     db.handle_input("create table car ( colx integer primary key, coly integer, colz integer)")
     db.handle_input("insert into foo ( cola, colb, colc) values (1, 2, 3)")
     db.handle_input("insert into foo ( cola, colb, colc) values (2, 4, 6)")
-    db.handle_input("insert into bar ( colx, coly, colz) values (30, 2, 40)")
+    db.handle_input("insert into bar ( colx, coly, colz) values (30, 20, 40)")
     # db.handle_input("select cola, colb from foo where cola = 1 or colc = 2")
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
     # db.handle_input("select cola, colb from foo f inner join bar r on f.cola = r.coly")
     # db.handle_input("select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b")
-    db.handle_input("select cola, colb from foo f cross join bar r on f.x = r.y")  # cross join should not have an on-clause
+    # db.handle_input("select cola, colb from foo f cross join bar r on f.x = r.y")  # cross join should not have an on-clause
+    db.handle_input("select cola, colb from foo f left join bar r on f.x = r.y")
 
     assert db.get_pipe().has_msgs()
 

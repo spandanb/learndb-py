@@ -9,7 +9,8 @@ from constants import (CELL_KEY_SIZE_SIZE,
 
 from datatypes import DataType, Null, Integer, Text, Blob, Float
 from dataexchange import Response
-from schema import Integer, Record, Schema
+from schema import Integer, Schema
+from record_utils import Record
 
 
 class InvalidCell(Exception):
