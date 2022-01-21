@@ -686,6 +686,17 @@ class VirtualMachine(Visitor):
 
             # 3.3. rset created for next join
             next_rset = RecordSet()
+
+            # for left, right, and full outer join, if evaluation fails,
+            # there should be one and only one record
+            # with other side column set to null
+
+            # track first iter of right source
+            # so we can build index of right source record indices
+            right_src_first_iter = True
+            # track row ids of right records that have not been joined
+            right_src_non_joined_rowids = set()
+
             # 3.4. do nested loop to join left and right sources
             for left_record in left_record_iter:
                 # flag to track whether `left_record` has joined with any
@@ -693,9 +704,8 @@ class VirtualMachine(Visitor):
                 has_joined_right_record = False
 
                 # 3.4.1. iterate over record in right source
-                for right_record in self.get_record_iter(right_src):
+                for right_rowid, right_record in enumerate(self.get_record_iter(right_src)):
                     # add joined record if cross join or on condition is true
-
                     # 3.4.1.1. create a record accessor to access column values in `left_` and `right_record`
                     raccessor = RecordAccessor()
                     # 3.4.1.2. add left_record to record accessor
@@ -708,6 +718,10 @@ class VirtualMachine(Visitor):
                     # 3.4.1.3. add right_record to record accessor
                     raccessor.add_record(right_alias, right_record)
 
+                    if right_src_first_iter:
+                        # only add during first iteration of right src
+                        right_src_non_joined_rowids.add(right_rowid)
+
                     # 3.4.1.4. check if the on clause evaluates to true
                     evaluation = self.evaluate_on_clause(joining.on_clause, raccessor)
                     if evaluation:
@@ -716,28 +730,32 @@ class VirtualMachine(Visitor):
                         joined_record = join_records(left_record, right_record, left_alias, right_alias)
                         next_rset.append(joined_record)
                         has_joined_right_record = True
-                    elif joining.join_type == JoinType.LeftOuter:
-                        # for left, right, and full outer join, if evaluation fails,
-                        # there should be one and only one record
-                        # with other side column set to null
-                        raise NotImplementedError
-                    elif joining.join_type == JoinType.RightOuter:
-                        raise NotImplementedError
-                    elif joining.join_type == JoinType.FullOuter:
-                        raise NotImplementedError
+                        # remove this row id- since we've
+                        right_src_non_joined_rowids.remove(right_rowid)
 
                 # 3.4.2. check if we need to add empty record for left or outer join
                 if not has_joined_right_record and \
                         (joining.join_type == JoinType.LeftOuter or joining.join_type == JoinType.FullOuter):
                     # create null right record
-                    right_record = self.get_null_record(right_src)
+                    right_null_record = self.get_null_record(right_src)
                     # join record
-                    joined_record = join_records(left_record, right_record, left_alias, right_alias)
+                    joined_record = join_records(left_record, right_null_record, left_alias, right_alias)
                     # attach to record set
                     next_rset.append(joined_record)
 
-            # 3.5. TODO: for right, and full outer join add any records from right source
+                right_src_first_iter = False
+
+            # 3.5. for right, and full outer join add any records from right source
             # that was not joined add added to result set
+            if joining.join_type == JoinType.RightOuter or joining.join_type == JoinType.FullOuter:
+                # TODO: create left_null_record correctly
+                left_null_record = self.get_null_record(left_src)
+                for right_rowid, right_record in enumerate(self.get_record_iter(right_src)):
+                    if right_rowid in right_src_non_joined_rowids:
+                        # join record
+                        joined_record = join_records(left_null_record, right_record, left_alias, right_alias)
+                        # attach to record set
+                        next_rset.append(joined_record)
 
             # prepare for next join op
             # inner_most join is only True one
