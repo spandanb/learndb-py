@@ -31,27 +31,51 @@ class Parser:
         raise_exception(bool): whether to raise on parse error
 
     grammar :
-        program -> (stmnt ";") * EOF
+        program           -> (stmnt ";") * EOF
 
-        stmnt   -> select_expr
-                | create_stmnt
-                | drop_stmnt
-                | insert_stmnt
-                | update_stmnt
-                | delete_stmnt
-                | truncate_stmnt
+        stmnt             -> select_expr
+                         | create_stmnt
+                         | drop_stmnt
+                         | insert_stmnt
+                         | update_stmnt
+                         | delete_stmnt
+                         | truncate_stmnt
 
-        select_expr      -> "select" selectable "from" from_item "where" where_clause
-        selectable       -> (column_name ",")* (column_name)
+        select_expr      -> "select" selectables
+                            "from" from_clause
+                            "where" where_clause
+                            "group by" group_by_clause
+                            "having" having_clause
+                            "order by" order_by_clause
+                            limit_clause
+        selectables      -> (selectable ",")* (selectable)
+        selectable       -> column_name | case_stmnt | expr
+        case_stmnt       -> "case" ("when" condition "then" expr )+ "else" expr "end"
+
         column_name      -> IDENTIFIER
-        from_location    -> table_name/view_name source_alias? | source_alias? | joined_objects | ( select_expr ) source_alias ?
+        from_location    -> source_name | source_name source_alias? | joined_objects | ( select_expr ) source_alias ?
         joined_objects   -> from_location ( "inner" | "left" | "right" | "outer" )
                             "join" from_location
                             "on" predicate
         where_clause     -> or_clause*
-        or_clause        -> (and_clause "or")* (and_clause)
-        and_clause       -> (predicate "and")* (predicate)
-        predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
+        group_by_clause  -> (column_name)+
+        having_clause    -> or_clause
+        order_by_clause  -> (column_name (asc|desc)?)*
+        limit_clause     -> "limit" INTEGER_NUMBER, "offset" INTEGER_NUMBER
+
+        expr             -> or_clause | "(" select_expr ")" |
+
+        # from spanlox
+        equality         → comparison ( ( "!=" | "==" ) comparison )* ;
+        comparison       → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+        term             → factor ( ( "-" | "+" ) factor )* ;
+        factor           → unary ( ( "/" | "*" ) unary )* ;
+        unary            → ( "!" | "-" ) unary
+                         | primary ;
+        primary          → NUMBER | STRING | "true" | "false" | "nil"
+                         | "(" expression ")" ;
+                         | IDENTIFIER ;
+        # end spanlox
 
         create_stmnt     -> "create" "table" table_name "(" column_def_list ")"
         column_def_list  -> (column_def ",")* column_def
@@ -62,7 +86,7 @@ class Parser:
 
         insert_stmnt     -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
         column_name_list -> (column_name ",")* column_name
-        value_list -> (value ",")* value
+        value_list       -> (value ",")* value
 
         delete_stmnt     -> "delete" "from" table_name ("where" where_clause)?
 
@@ -70,7 +94,22 @@ class Parser:
 
         truncate_stmnt   -> "truncate" table_name
 
-        term             -> NUMBER | STRING | IDENTIFIER
+        or_clause        -> (and_clause "or")* (and_clause)
+        and_clause       -> (predicate "and")* (predicate)
+
+        # why split equality and comparison?
+        and_clause       -> (equality "and")* (equality)
+        equality         -> comparison ( ( "<>" | "=" ) comparison )* ;
+        comparison       -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+
+        predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )
+        term             -> factor ( ( "-" | "+" ) factor )*
+        factor           -> unary ( ( "/" | "*" ) unary )*
+        unary            -> ( "!" | "-" ) unary
+                         | primary
+        primary          → INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+                         | "(" expr ")"
+                         | IDENTIFIER
 
         INTEGER_NUMBER   -> {0-9}+
         FLOAT_NUMBER     -> {0-9}+(.{0-9}+)?
@@ -237,16 +276,35 @@ class Parser:
         # select and from are required
         self.consume(TokenType.SELECT, "Expected keyword [SELECT]")
         selectable = self.selectable()
-        from_location = None
+        from_clause = None
         where_clause = None
+        group_by_clause = None
+        having_clause = None
+        order_by_clause = None
+        limit_clause = None
+
         # from is optional
         if self.match(TokenType.FROM):
             from_location = self.from_location()
-            # where clause is optional
+            # optional where clause
             if self.match(TokenType.WHERE):
                 where_clause = self.where_clause()
+            # optional group by clause
+            if self.match(TokenType.GROUP) and self.consume(TokenType.BY, "expected 'by' keyword"):
+                group_by = self.group_by_clause()
+            # optional having clause
+            if self.match(TokenType.HAVING):
+                having_clause = self.having_clase()
+            # optional order by clause
+            if self.match(TokenType.ORDER) and self.consume(TokenType.BY, "expected 'by' keyword"):
+                order_by_clause = self.order_by_clause()
+            # optional limit clause
+            if self.match(TokenType.LIMIT):
+                limit_clause = self.limit_clause()
 
-        return SelectExpr(selectable=selectable, from_location=from_location, where_clause=where_clause)
+        return SelectExpr(selectable=selectable, from_clause=from_clause, where_clause=where_clause,
+                          group_by_clause=group_by_clause, having_clause=having_clause,
+                          order_by_clause=order_by_clause, limit_clause=limit_clause)
 
     def insert_stmnt(self) -> InsertStmnt:
         """
@@ -484,12 +542,18 @@ class Parser:
         """
         return WhereClause(self.conjunctive_disjunction())
 
+    def group_by_clause(self) -> GroupByClause:
+        """
+
+        :return:
+        """
+
     def on_clause(self) -> OnClause:
         return OnClause(self.conjunctive_disjunction())
 
     def conjunctive_disjunction(self) -> List[AndClause]:
         """
-        Or (conjunction) of ands (disjunction)
+        Or (disjunction) of ands (conjuction)
         :return:
         """
         or_clauses = [self.and_clause()]
