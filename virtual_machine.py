@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from typing import Optional, Tuple, Union
+from typing import Optional, List, Tuple, Union
 
 from constants import CATALOG
 from cursor import Cursor
@@ -61,12 +61,9 @@ class RecordSetIter:
     """
     This is an iterator over a RecordSet
     """
-    def __init__(self, record_set: 'RecordSet'):
+    def __init__(self, record_set: RecordSet):
         self.record_set = record_set
         self.recordidx = 0
-
-    def __iter__(self):
-        return self
 
     def __next__(self):
         if self.recordidx >= len(self.record_set):
@@ -119,11 +116,44 @@ class RecordSet:
     def __getitem__(self, idx: int):
         return self.records[idx]
 
+    def __iter__(self):
+        return RecordSetIter(self)
+
     def get_record(self, idx: int):
         return self.records[idx]
 
     def append(self, record):
         self.records.append(record)
+
+
+class GroupedRecordSet:
+    """
+    A grouping of records that allow storing and apply
+    aggregates to groups.
+    """
+    def __init__(self):
+        """
+        groups are nested dicts, one dict for each level of nesting
+        i.e. if there is a group by column, then groups: {col_val: set()}
+        for 2 group by clauses, this is groups: {col0_val: {col2_val: set()}}, etc.
+        """
+        self.groups = {}
+
+    def add_grouped_record(self, group_path: List[str], record: Record):
+        """
+        :param group_path:
+        :param record:
+        :return:
+        """
+        # ptr to current group
+        ptr = self.groups
+        for idx, group in enumerate(group_path):
+            if group not in ptr:
+                # groups are nested dicts; except last level, which is a set of records
+                ptr[group] = [] if idx + 1 == len(group_path) else {}
+            # advance group ptr
+            ptr = ptr[group]
+        return ptr
 
 
 class RecordAccessor:
@@ -316,7 +346,7 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-    def visit_select_expr(self, expr: SelectExpr, parent_context = None):
+    def visit_select_expr(self, expr: SelectExpr, parent_context=None):
         """
         Handle select expr.
 
@@ -329,18 +359,62 @@ class VirtualMachine(Visitor):
         :param parent_context: unused- would be needed for correlated queries
         :return:
         """
+        # 1. setup
         self.output_pipe.reset()
 
+        # 2. materialize from_clause
         record_set = self.materialize_source(expr.from_location)
-        record_set_iter = RecordSetIter(record_set)
 
+        filtered = RecordSet()
+        # 3. evaluate where clause
         # iterate record set over all records
-        for record in record_set_iter:
+        for record in record_set:
             # evaluate where condition and filter non-matching rows
-            if self.evaluate_where_clause(expr.where_clause, record) is True:
+            # pass parent_context since where clause may contain correlated sub-query
+            if self.evaluate_where_clause(expr.where_clause, record, parent_context) is True:
                 # write to output if matches condition
                 # todo: piped record should only contain selected column
-                self.output_pipe.write(record)
+                filtered.append(record)
+
+        # 4. evaluate group by
+        if expr.group_by_clause is not None:
+            # a grouped set should be able to represent
+            grouped = GroupedRecordSet()
+            group_order = [] # should be grouping columns
+            group_vals = []  # this is the group path record will be stored at
+            for record in filtered:
+                # list of values of group by columns
+                group_vals = []
+                for grp in group_order:
+                    group_val = record.get(grp.name)
+                    group_vals.append(group_val)
+                grouped.add_grouped_record(group_vals, record)
+
+        # 5. evaluate having clause
+        # applies on group
+        self.evaluate_having_clause(expr.having_clause)
+
+        # 6. order by
+        # i.e. record set should be sortable
+
+        # 7. limit
+
+        # select
+        selected = RecordSet()
+        # materialize any groupings into 
+        selections = {}
+        
+        for selectable in select.selectables:
+            # if non-grouped, seletctable is either column name or subquery;
+            # if grouped, select is agg column
+            if sub_query:
+                handle_select_expr()
+
+        
+        # replace pipe with resultset
+
+        # write to pipe
+        self.output_pipe.write(record)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
         """
@@ -506,7 +580,7 @@ class VirtualMachine(Visitor):
         return False
 
     @staticmethod
-    def evaluate_where_clause(where_clause: WhereClause, record: Record) -> bool:
+    def evaluate_where_clause(where_clause: WhereClause, record: Record, parent_context=None) -> bool:
         """
         evaluate condition
 
@@ -643,6 +717,8 @@ class VirtualMachine(Visitor):
         eventually, will also have to handle nested select expr,
         both correlated and uncorrelated.
 
+        TODO: make sure variable names are clear and in-line comments are clear
+
         :return:
         """
         rset = RecordSet()
@@ -748,8 +824,21 @@ class VirtualMachine(Visitor):
             # 3.5. for right, and full outer join add any records from right source
             # that was not joined add added to result set
             if joining.join_type == JoinType.RightOuter or joining.join_type == JoinType.FullOuter:
-                # TODO: create left_null_record correctly
-                left_null_record = self.get_null_record(left_src)
+                # create null record for left src; this depends on whether left src
+                # is a raw source; or a joined source
+                if is_innermost_join:
+                    left_src = joining.left_source
+                    left_null_record = self.get_null_record(left_src)
+                else:
+                    # TODO: how do I create a null record for a joined source?
+                    # this goes to a previous decision, i.e. whether to create a schema for the joined
+                    # source; I punted on that before; but I'm reconsidering that now
+                    # because to create a left_null_record for joined record, now, I'll
+                    # have to get an actual record
+                    # Also, this code is getting quiet hard to read, and this doesn't even
+                    # include sub-queries
+                    left_null_record = None
+
                 for right_rowid, right_record in enumerate(self.get_record_iter(right_src)):
                     if right_rowid in right_src_non_joined_rowids:
                         # join record
