@@ -57,10 +57,10 @@ class SelectExpr(Symbol):
     selectable: Selectable
     from_location: Union[AliasableSource, Joining]
     where_clause: WhereClause = None
-    group_by_clause: Any = None
-    having_clause: Any = None
-    order_by_clause: Any = None
-    limit_clause: Any = None
+    group_by_clause: GroupByClause = None
+    having_clause: HavingClause = None
+    order_by_clause: OrderByClause = None
+    limit_clause: LimitClause = None
 
 
 @dataclass
@@ -141,6 +141,34 @@ class OnClause(Symbol):
 
 
 @dataclass
+class GroupByClause(Symbol):
+    # list of group by columns
+    group_by_columns: List[Token]
+
+
+@dataclass
+class HavingClause(Symbol):
+    or_clause: List[AndClause]
+
+
+@dataclass
+class OrderByClause(Symbol):
+    order_by_columns: List[OrderSpecifier]
+
+
+@dataclass
+class OrderSpecifier(Symbol):
+    column_name: Token
+    ascending: bool = True
+
+
+@dataclass
+class LimitClause(Symbol):
+    limit: int = None
+    offset: int = 0
+
+
+@dataclass
 class AndClause(Symbol):
     predicates: List[Predicate]
 
@@ -157,3 +185,13 @@ class Predicate(Symbol):
 @dataclass
 class Term(Symbol):
     value: Any
+
+
+@dataclass
+class Literal(Symbol):
+    value: Any
+
+
+@dataclass
+class Grouping(Symbol):
+    grouped: Any
