@@ -17,9 +17,13 @@ from .symbols import (Symbol,
                       JoinType,
                       OnClause,
                       WhereClause,
+                      GroupByClause,
+                      HavingClause,
+                      LimitClause,
                       AndClause,
                       Predicate,
-                      Term)
+                      Term,
+                      Literal)
 from .utils import pascal_to_snake, ParseError
 
 
@@ -31,9 +35,10 @@ class Parser:
         raise_exception(bool): whether to raise on parse error
 
     grammar :
-        program           -> (stmnt ";") * EOF
 
-        stmnt             -> select_expr
+        program          -> (stmnt ";") * EOF
+
+        stmnt            -> select_expr
                          | create_stmnt
                          | drop_stmnt
                          | insert_stmnt
@@ -41,41 +46,62 @@ class Parser:
                          | delete_stmnt
                          | truncate_stmnt
 
-        select_expr      -> "select" selectables
-                            "from" from_clause
-                            "where" where_clause
-                            "group by" group_by_clause
-                            "having" having_clause
-                            "order by" order_by_clause
-                            limit_clause
-        selectables      -> (selectable ",")* (selectable)
-        selectable       -> column_name | case_stmnt | expr
-        case_stmnt       -> "case" ("when" condition "then" expr )+ "else" expr "end"
+        select_expr      -> select_clause
+                          | from_clause
+                          | where_clause
+                          | group_by_clause
+                          | having_clause
+                          | order_by_clause
+                          | limit_clause
 
+        select_clause    -> "select" (expr ",")* (expr)
+
+        # inspiration: https://www.postgresql.org/docs/14/sql-expressions.html
+        expr             -> column_name
+                         | case_stmnt
+                         | func_call
+                         | sub_query    # NOTE: at runtime, VM must enforce that this be a scalar subquery (returns <= 1 rows)
+                         | literal
+                         | or_clauses
+                         | "(" expr ")"
+
+        case_stmnt       -> "case" ("when" expr "then" expr)+ "else" expr
+        func_call        -> IDENTIFIER "(" (func_arg ",")* )
+        func_arg         -> expr
+
+        from_clause      -> "from" from_location
+        from_location    -> source_name source_alias?
+                         | joined_objects
+                         | ( select_expr ) source_alias
+        joined_objects   -> cross_join | non_cross_join
+        inner_join       -> from_location "inner"? "join" from_location "on" expr
+        outer_join       -> from_location ("left" | "right" | "full") "outer"? "on" expr
+        cross_join       -> from_location "cross" "join" from_location
+
+        source_name      -> IDENTIFIER
         column_name      -> IDENTIFIER
-        from_location    -> source_name | source_name source_alias? | joined_objects | ( select_expr ) source_alias ?
-        joined_objects   -> from_location ( "inner" | "left" | "right" | "outer" )
-                            "join" from_location
-                            "on" predicate
-        where_clause     -> or_clause*
-        group_by_clause  -> (column_name)+
-        having_clause    -> or_clause
-        order_by_clause  -> (column_name (asc|desc)?)*
-        limit_clause     -> "limit" INTEGER_NUMBER, "offset" INTEGER_NUMBER
 
-        expr             -> or_clause | "(" select_expr ")" |
+        or_clauses       -> or_clause*
+        or_clause        -> (and_clause "or")* (and_clause)
+        and_clause       -> (predicate "and")* (predicate)
 
-        # from spanlox
-        equality         → comparison ( ( "!=" | "==" ) comparison )* ;
-        comparison       → term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-        term             → factor ( ( "-" | "+" ) factor )* ;
-        factor           → unary ( ( "/" | "*" ) unary )* ;
-        unary            → ( "!" | "-" ) unary
-                         | primary ;
-        primary          → NUMBER | STRING | "true" | "false" | "nil"
-                         | "(" expression ")" ;
-                         | IDENTIFIER ;
-        # end spanlox
+        and_clause       -> (predicate "and")* (predicate)
+        predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )
+        term             -> factor ( ( "-" | "+" ) factor )*
+        factor           -> unary ( ( "/" | "*" ) unary )*
+        unary            -> ( "!" | "-" ) unary
+                         | primary
+        primary          -> INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+                         | "(" expr ")"
+                         | IDENTIFIER
+
+        sub_query        -> "(" select_expr ")"
+
+        where_clause     -> "where" expr
+        group_by_clause  -> "group" "by" (column_name ",")? (column_name)+
+        having_clause    -> "having" or_clause
+        order_by_clause  -> "order" "by" (column_name (asc|desc)?)*
+        limit_clause     -> "limit" INTEGER_NUMBER, ("offset" INTEGER_NUMBER)?
 
         create_stmnt     -> "create" "table" table_name "(" column_def_list ")"
         column_def_list  -> (column_def ",")* column_def
@@ -97,25 +123,301 @@ class Parser:
         or_clause        -> (and_clause "or")* (and_clause)
         and_clause       -> (predicate "and")* (predicate)
 
-        # why split equality and comparison?
-        and_clause       -> (equality "and")* (equality)
-        equality         -> comparison ( ( "<>" | "=" ) comparison )* ;
-        comparison       -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
-
+        and_clause       -> (predicate "and")* (predicate)
         predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )
         term             -> factor ( ( "-" | "+" ) factor )*
         factor           -> unary ( ( "/" | "*" ) unary )*
         unary            -> ( "!" | "-" ) unary
                          | primary
-        primary          → INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+        primary          -> INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
                          | "(" expr ")"
                          | IDENTIFIER
 
-        INTEGER_NUMBER   -> {0-9}+
-        FLOAT_NUMBER     -> {0-9}+(.{0-9}+)?
-        STRING           -> '.*'
-        IDENTIFIER       -> {_a-zA-z0-9}+
+        # for ref
+        #INTEGER_NUMBER   -> {0-9}+
+        #FLOAT_NUMBER     -> {0-9}+(.{0-9}+)?
+        #STRING           -> '.*'
+        #IDENTIFIER       -> {_a-zA-z0-9}+
     """
+
+    def program(self):
+        """
+        program          -> (stmnt ";") * EOF
+        """
+
+    def stmnt(self):
+        """
+        stmnt       -> select_expr
+                    | create_stmnt
+                    | drop_stmnt
+                    | insert_stmnt
+                    | update_stmnt
+                    | delete_stmnt
+                    | truncate_stmnt
+        """
+
+    def select_expr(self):
+        """
+        select_expr      -> select_clause
+                          | from_clause
+                          | where_clause
+                          | group_by_clause
+                          | having_clause
+                          | order_by_clause
+                          | limit_clause
+        """
+        if not self.check(TokenType.SELECT):
+           raise ParserException("Expected keyword [SELECT]")
+
+        select_clause = self.select_clause()
+
+        # below is old
+        self.consume(TokenType.SELECT, "Expected keyword [SELECT]")
+        selectable = self.selectable()
+        from_clause = None
+        where_clause = None
+        group_by_clause = None
+        having_clause = None
+        order_by_clause = None
+        limit_clause = None
+
+        # from is optional
+        if self.match(TokenType.FROM):
+            from_location = self.from_location()
+            # optional where clause
+            if self.match(TokenType.WHERE):
+                where_clause = self.where_clause()
+            # optional group by clause
+            if self.match(TokenType.GROUP) and self.consume(TokenType.BY, "expected 'by' keyword"):
+                group_by_clause = self.group_by_clause()
+            # optional having clause
+            if self.match(TokenType.HAVING):
+                having_clause = self.having_clause()
+            # optional order by clause
+            if self.match(TokenType.ORDER) and self.consume(TokenType.BY, "expected 'by' keyword"):
+                order_by_clause = self.order_by_clause()
+            # optional limit clause
+            if self.match(TokenType.LIMIT):
+                limit_clause = self.limit_clause()
+
+        return SelectExpr(selectable=selectable, from_location=from_clause, where_clause=where_clause,
+                          group_by_clause=group_by_clause, having_clause=having_clause,
+                          order_by_clause=order_by_clause, limit_clause=limit_clause)
+
+    def select_clause(self):
+        """
+        select_clause    -> "select" (expr ",")* (expr)
+        """
+        self.match(TokenType.SELECT, "Expected keyword [SELECT]")
+        selectables = []
+        loop = True
+        while loop:
+            is_match, matched_symbol = self.match_symbol(Expr)
+            if not is_match:
+                loop = False
+            else:
+                selectables.append(matched_symbol)
+        return Selectables[selectables]
+
+    def expr(self):
+        """
+        expr  -> column_name
+        | case_stmnt
+        | func_call
+        | sub_query    # NOTE: at runtime, VM must enforce that this be a scalar subquery (returns <= 1 rows)
+        | literal  # this is parsed under or_clauses
+        | "(" expr ")"
+        | or_clauses
+        """
+
+
+
+    def case_stmnt(self):
+        """
+        case_stmnt       -> "case" ("when" expr "then" expr)+ "else" expr
+        """
+
+    def func_call(self):
+        """
+        func_call        -> IDENTIFIER "(" (func_arg ",")* )
+        """
+
+    def func_arg(self):
+        """
+        func_arg         -> expr
+        """
+
+    def from_clause(self):
+        """
+        from_clause      -> "from" from_location
+        """
+
+    def from_location(self):
+        """
+        from_location    -> source_name source_alias?
+        | joined_objects
+        | ( select_expr ) source_alias
+        """
+
+    def joined_objects(self):
+        """
+        joined_objects   -> cross_join | non_cross_join
+        """
+
+    def inner_join(self):
+        """
+        inner_join       -> from_location "inner"? "join" from_location "on" expr
+        """
+
+    def outer_join(self):
+        """
+        outer_join       -> from_location ("left" | "right" | "full") "outer"? "on" expr
+        """
+
+    def cross_join(self):
+        """
+        cross_join       -> from_location "cross" "join" from_location
+        """
+
+    def source_name(self):
+        """
+        source_name      -> IDENTIFIER
+        """
+
+    def column_name(self):
+        """
+        column_name      -> IDENTIFIER
+        """
+
+    def or_clauses(self):
+        """
+        or_clauses       -> or_clause*
+        """
+
+    def or_clause(self):
+        """
+        or_clause        -> (and_clause "or")* (and_clause)
+        """
+
+    def and_clause(self):
+        """
+        and_clause       -> (predicate "and")* (predicate)
+        """
+
+    def predicate(self):
+        """
+        predicate        -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )
+        """
+
+    def term(self):
+        """
+        term             -> factor ( ( "-" | "+" ) factor )*
+        """
+
+    def factor(self):
+        """
+        factor           -> unary ( ( "/" | "*" ) unary )*
+        """
+
+    def unary(self):
+        """
+        unary  -> ( "!" | "-" ) unary
+        | primary
+        """
+
+    def primary(self):
+        """
+        primary          -> INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+        | "(" expr ")"
+        | IDENTIFIER
+        """
+
+    def sub_query(self):
+        """
+        sub_query        -> "(" select_expr ")"
+        """
+
+    def where_clause(self):
+        """
+        where_clause     -> "where" expr
+        """
+
+    def group_by_clause(self):
+        """
+        group_by_clause  -> "group" "by" (column_name ",")? (column_name)+
+        """
+
+    def having_clause(self):
+        """
+        having_clause    -> "having" or_clause
+        """
+
+    def order_by_clause(self):
+        """
+        order_by_clause  -> "order" "by" (column_name (asc|desc)?)*
+        """
+
+    def limit_clause(self):
+        """
+        limit_clause     -> "limit" INTEGER_NUMBER, ("offset" INTEGER_NUMBER)?
+        """
+
+    def create_stmnt(self):
+        """
+        create_stmnt     -> "create" "table" table_name "(" column_def_list ")"
+        """
+
+    def column_def_list(self):
+        """
+        column_def_list  -> (column_def ",")* column_def
+        """
+
+    def column_def(self):
+        """
+        column_def       -> column_name datatype ("primary key")? ("not null")?
+        """
+
+    def table_name(self):
+        """
+        table_name       -> IDENTIFIER
+        """
+
+    def drop_stmnt(self):
+        """
+        drop_stmnt       -> "drop" "table" table_name
+        """
+
+    def insert_stmnt(self):
+        """
+        insert_stmnt     -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
+        """
+
+    def column_name_list(self):
+        """
+        column_name_list -> (column_name ",")* column_name
+        """
+
+    def value_list(self):
+        """
+        value_list       -> (value ",")* value
+        """
+
+    def delete_stmnt(self):
+        """
+        delete_stmnt     -> "delete" "from" table_name ("where" where_clause)?
+        """
+
+    def update_stmnt(self):
+        """
+        update_stmnt     -> "update" table_name "set" column_name = value ("where" where_clause)?
+        """
+
+    def truncate_stmnt(self):
+        """
+        truncate_stmnt   -> "truncate" table_name
+        """
+
+
     def __init__(self, tokens: List, raise_exception=True):
         self.tokens = tokens
         self.current = 0  # pointer to current token
@@ -291,10 +593,10 @@ class Parser:
                 where_clause = self.where_clause()
             # optional group by clause
             if self.match(TokenType.GROUP) and self.consume(TokenType.BY, "expected 'by' keyword"):
-                group_by = self.group_by_clause()
+                group_by_clause = self.group_by_clause()
             # optional having clause
             if self.match(TokenType.HAVING):
-                having_clause = self.having_clase()
+                having_clause = self.having_clause()
             # optional order by clause
             if self.match(TokenType.ORDER) and self.consume(TokenType.BY, "expected 'by' keyword"):
                 order_by_clause = self.order_by_clause()
@@ -302,7 +604,7 @@ class Parser:
             if self.match(TokenType.LIMIT):
                 limit_clause = self.limit_clause()
 
-        return SelectExpr(selectable=selectable, from_clause=from_clause, where_clause=where_clause,
+        return SelectExpr(selectable=selectable, from_location=from_clause, where_clause=where_clause,
                           group_by_clause=group_by_clause, having_clause=having_clause,
                           order_by_clause=order_by_clause, limit_clause=limit_clause)
 
@@ -400,6 +702,10 @@ class Parser:
         return names
 
     def value_list(self) -> List:
+        """
+        value_list       -> (value ",")* value
+        :return:
+        """
         values = [self.term()]
         while self.match(TokenType.COMMA):
             values.append(self.term())
@@ -423,15 +729,11 @@ class Parser:
         is_nullable = True
         # optional modifiers - break when we reach end of column definition
         while self.peek().token_type not in [TokenType.COMMA, TokenType.RIGHT_PAREN]:
-            if self.peek().token_type == TokenType.PRIMARY and self.peekpeek().token_type == TokenType.KEY:
+            if self.match(TokenType.PRIMARY) and self.match(TokenType.KEY):
                 is_primary_key = True
                 is_nullable = False
-                self.advance()
-                self.advance()
-            elif self.peek().token_type == TokenType.NOT and self.peekpeek().token_type == TokenType.NULL:
+            elif self.match(TokenType.NOT) and self.match(TokenType.NULL):
                 is_nullable = False
-                self.advance()
-                self.advance()
             else:
                 self.report_error(f"Expected datatype or column constraint; found {self.peek()}", self.peek())
                 break
@@ -551,9 +853,22 @@ class Parser:
     def on_clause(self) -> OnClause:
         return OnClause(self.conjunctive_disjunction())
 
+
+    def having_clause(self) -> HavingClause:
+        """
+
+        :return:
+        """
+
+    def limit_clause(self) -> LimitClause:
+        """
+
+        :return:
+        """
+
     def conjunctive_disjunction(self) -> List[AndClause]:
         """
-        Or (disjunction) of ands (conjuction)
+        Or (disjunction) of ands (conjunction)
         :return:
         """
         or_clauses = [self.and_clause()]
@@ -572,6 +887,9 @@ class Parser:
 
     def predicate(self) -> Predicate:
         """
+        NOTE: I'm forcing predicate to be binary,
+        this also avoids parse ambiguity.
+
         predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
         :return:
         """
@@ -585,12 +903,58 @@ class Parser:
 
     def term(self):
         """
-        -- term should also handle other literals
-        term          -> NUMBER | STRING | IDENTIFIER
+        term             -> factor ( ( "-" | "+" ) factor )*
+        :return:
+        """
+
+    def factor(self):
+        """
+        factor           -> unary ( ( "/" | "*" ) unary )*
+        :return:
+        """
+
+    def unary(self):
+        """
+        unary            -> ( "!" | "-" ) unary
+                         | primary
+        :return:
+        """
+
+    def primary(self):
+        """
+        primary   -> INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+                 | "(" expr ")"
+                 | IDENTIFIER
+        :return:
+        """
+        if self.match(TokenType.FALSE):
+            return Literal(False)
+        elif self.match(TokenType.TRUE):
+            return Literal(True)
+        elif self.match(TokenType.NULL):
+            return Literal(None)
+        elif self.match(TokenType.NUMBER, TokenType.STRING):
+            # NOTE: this changes the behavior of literals
+            # which were previously enclosed
+            return Literal(self.previous().literal)
+        elif self.match(TokenType.LEFT_PAREN):
+            expr = self.conjunctive_disjunction()
+            self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.")
+            return Grouping(expr)
+        else:
+            raise self.error(self.peek(), "Expect expression.")
+
+
+
+
+    def termold(self):
+        """
+        term          -> NUMBER | STRING | IDENTIFIER | NULL
 
         :return:
         """
-        if self.match(TokenType.INTEGER_NUMBER, TokenType.FLOAT_NUMBER, TokenType.STRING, TokenType.IDENTIFIER):
+        if self.match(TokenType.INTEGER_NUMBER, TokenType.FLOAT_NUMBER, TokenType.STRING, TokenType.IDENTIFIER,
+                      TokenType.NULL, TokenType.TRUE, TokenType.FALSE):
             return Term(value=self.previous())
         self.report_error("expected a valid term")
 

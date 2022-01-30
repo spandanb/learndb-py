@@ -80,6 +80,10 @@ class TokenType(Enum):
     KEY = auto()
     NOT = auto()
 
+    # fixed-value literals
+    TRUE = auto()
+    FALSE = auto()
+
 
 KEYWORDS = {
     'select',
@@ -122,7 +126,11 @@ KEYWORDS = {
 
     'primary',
     'key',
-    'not'
+    'not',
+
+    # fixed-value literals
+    'true',
+    'false'
 
 }
 
