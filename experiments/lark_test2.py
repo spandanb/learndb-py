@@ -14,6 +14,13 @@ class _Ast(ast_utils.Ast):
     # this will be skipped
     pass
 
+    def pretty(self, depth = 0) -> str:
+        """
+        return a pretty printed strinG
+        :return:
+        """
+
+
 
 @dataclass
 class Program(_Ast, ast_utils.AsList):
@@ -79,13 +86,10 @@ grammar = '''
         limit_clause     : "limit"i INTEGER_NUMBER ("offset"i INTEGER_NUMBER)?
 
         // NOTE: there should be no on-clause on cross join and this will have to enforced post parse
-        //works - no alias, cond
-        //source             : table_name joining?
-        //joining            : "join"i table_name
-        //                   | "join"i table_name joining
-        
         source               : table_name
-                             | source join_modifier? "join"i table_name "on"i condition
+                             | joining
+        
+        joining              : source join_modifier? "join"i table_name table_alias? "on"i condition
         
         //joining            : "join"i table_name "on"i condition
         //                   | "join"i table_name "on"i joining condition
@@ -202,13 +206,13 @@ def driver():
     text = "select cola, colb from foo where cola <> colb and colx > coly;"
     text = "select cola, colb from foo join bar on where cola <> colb and colx > coly;"
     text = "select cola, colb from foo left outer join bar on where cola <> colb and colx > coly having foo > 4;    "
-    text = """select cola, colb from foo left outer join bar b on x = 1 left join jar j on jb = xw where cola <> colb and colx > coly"""
+    text = """select cola, colb from foo left outer join bar b on x = 1 left join jar j on jb = xw where cola <> colb and colx > coly;"""
     #text = "drop table foo"
     #print(parser.parse(text))
     tree = parser.parse(text)
     transformer = ast_utils.create_transformer(this_module, ToAst())
     tree = transformer.transform(tree)
-    print(tree.pretty())
+    print(tree)
     #print(tree.children[0].select_clause.children[0].Selections)
     return tree
 
