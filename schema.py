@@ -14,7 +14,7 @@ specified by the schema-, and related utilities are contained in record_utils.py
 from typing import List
 
 from datatypes import DataType, Integer, Text, Blob, Float
-from lang_parser.tokens import TokenType, Token
+# from lang_parser.tokens import TokenType, Token
 from dataexchange import Response
 
 

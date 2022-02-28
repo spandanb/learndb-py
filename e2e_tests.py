@@ -106,9 +106,39 @@ def test_select_inequality():
     """
 
 
-def test_join():
+def test_inner_join():
     """
 
+    :return:
+    """
+    db = LearnDB(TEST_DB_FILE)
+    db.nuke_dbfile()
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colb integer, colc integer)")
+    db.handle_input("create table bar ( colx integer primary key, coly integer, colz integer)")
+    # insert into table
+    db.handle_input("insert into foo (cola, colb, colc) values (1, 2, 3)")
+    db.handle_input("insert into foo (cola, colb, colc) values (2, 4, 6)")
+    db.handle_input("insert into foo (cola, colb, colc) values (3, 10, 8)")
+    db.handle_input("insert into bar (colx, coly, colz) values (101, 10, 80)")
+    db.handle_input("insert into bar (colx, coly, colz) values (102, 4, 90)")
+    # select
+    db.handle_input("select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly")
+
+    keys = []
+
+    assert db.get_pipe().has_msgs()
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        keys.append(record.get("b", "colx"))
+    keys.sort()
+    assert keys == [101, 102]
+
+
+def test_left_join():
+    """
+    test left-outer join
     :return:
     """
     db = LearnDB(TEST_DB_FILE)
