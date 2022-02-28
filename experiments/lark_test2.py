@@ -120,6 +120,7 @@ class FromClause(_Ast):
     where_clause: Any = None
 
 
+# Not sure how
 @dataclass
 class SourceX(_Ast):
     source: Any
@@ -133,9 +134,9 @@ class SourceX(_Ast):
 
 # this is a grammar for a subset of learndb-sql
 grammar = '''
-        program          : stmnt*
+        program          : (stmnt ";")*
         ?stmnt           : select_stmnt | drop_stmnt
-        select_stmnt     : select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause? SEMICOLON
+        select_stmnt     : select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
 
         select_clause    : "select"i selectables
         selectables      : column_name ("," column_name)*
@@ -147,30 +148,37 @@ grammar = '''
         limit_clause     : "limit"i INTEGER_NUMBER ("offset"i INTEGER_NUMBER)?
 
         // NOTE: there should be no on-clause on cross join and this will have to enforced post parse
-        ?source           : table_name
+        ?source           : table_name table_alias?
                           | joining
         
         ?joining          : source join_modifier? "join"i table_name table_alias? "on"i condition
         
-        join_modifier    : "inner"i | ("left"i "outer"i?) | ("right"i "outer"i?) | ("full"i "outer"i?) | "cross"i
+        //join_modifier    : "inner"i | ("left"i "outer"i?) | ("right"i "outer"i?) | ("full"i "outer"i?) | "cross"i
+        join_modifier    : inner | left_outer | right_outer | full_outer | cross
+        
+        inner            : "inner"i
+        left_outer       : "left"i ["outer"i]
+        right_outer      : "right"i ["outer"i]
+        full_outer       : "full"i ["outer"i]
+        cross            : "cross"i
         
         condition        : or_clause
-        or_clause        : and_clause
+        ?or_clause        : and_clause
                          | or_clause "or"i and_clause
-        and_clause       : predicate
+        ?and_clause       : predicate
                          | and_clause "and"i predicate
    
-        predicate        : comparison
+        ?predicate        : comparison
                          | predicate ( EQUAL | NOT_EQUAL ) comparison
-        comparison       : term
+        ?comparison       : term
                          | comparison ( LESS_EQUAL | GREATER_EQUAL | LESS | GREATER ) term
-        term             : factor
+        ?term             : factor
                          | term ( "-" | "+" ) factor
-        factor           : unary
+        ?factor           : unary
                          | factor ( "/" | "*" ) unary 
-        unary            : primary
+        ?unary            : primary
                          | ( "!" | "-" ) unary                 
-        primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true"i | "false"i | "null"i
+        ?primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true"i | "false"i | "null"i
                          | IDENTIFIER
 
         drop_stmnt       : "drop"i "table"i table_name
@@ -231,12 +239,15 @@ def driver():
     text = "select cola, colb from foo where cola <> colb and colx > coly;"
     text = "select cola, colb from foo join bar on where cola <> colb and colx > coly;"
     text = "select cola, colb from foo left outer join bar on where cola <> colb and colx > coly having foo > 4;    "
-    text = """select cola, colb from foo left outer join bar b on x = 1 left join jar j on jb = xw where cola <> colb and colx > coly;"""
+    text = """select cola, colb from foo left outer join bar b on x = 1 
+    cross join jar j on jb = xw where cola <> colb and colx > coly;
+    drop table foo;"""
+    text = "select cola, colb from foo f left join bar r on fx = ry;"
     #text = "drop table foo"
 
     # parse tree
     print(parser.parse(text).pretty())
-    return
+    #return
 
     # Ast
     tree = parser.parse(text)

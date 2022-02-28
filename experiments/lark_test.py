@@ -179,23 +179,66 @@ grammar3 = '''
 select_expr      : select_clause from_clause SEMICOLON
 select_clause    : SELECT column_name
 from_clause      : FROM from_location
-//from_location    : joined_objects
-from_location    : source_name source_alias "inner"? "join" source_name source_alias "on" or_clauses
+from_location    : joined_objects
+//from_location    : source_name source_alias "inner"? "join" source_name source_alias "on" or_clauses
 
-joined_objects   : inner_join | cross_join | outer_join
+joined_objects   : inner_join | outer_join
 inner_join       : from_location "inner"? "join" from_location "on" or_clauses
 outer_join       : from_location ("left" | "right" | "full") "outer"? "join" "on" or_clauses
 cross_join       : from_location "cross" "join"
 
 or_clauses       : or_clause*
-or_clause        : (and_clause "or")* and_clause
-and_clause       : (predicate "and")* predicate
-predicate        : term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )*
-term             : factor ( ( "-" | "+" ) factor )*
-factor           : unary ( ( "/" | "*" ) unary )*
-unary            : ( "!" | "-" ) unary
+?or_clause        : (and_clause "or")* and_clause
+?and_clause       : (predicate "and")* predicate
+?predicate        : term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )*
+?term             : factor ( ( "-" | "+" ) factor )*
+?factor           : unary ( ( "/" | "*" ) unary )*
+?unary            : ( "!" | "-" ) unary
                  | primary
-primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+?primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
+                 //| "(" expr ")"
+                 | SCOPED_IDENTIFIER
+                 | IDENTIFIER
+
+column_name:  SCOPED_IDENTIFIER | IDENTIFIER
+source_name:  IDENTIFIER
+source_alias: IDENTIFIER
+
+IDENTIFIER       : ("_" | ("a".."z") | ("A".."Z") | ("0".."9")+)+
+SCOPED_IDENTIFIER : (IDENTIFIER ".")* IDENTIFIER
+FLOAT_NUMBER     : INTEGER_NUMBER "." ("0".."9")*
+SEMICOLON        : ";"
+SELECT.1           : "select"i
+FROM.1            : "from"i
+
+%import common.ESCAPED_STRING   -> STRING
+%import common.SIGNED_NUMBER    -> INTEGER_NUMBER
+%import common.WS
+%ignore WS
+
+'''
+
+grammar4 = '''
+select_expr      : select_clause from_clause SEMICOLON
+select_clause    : SELECT column_name
+from_clause      : FROM from_location
+from_location    : joined_objects
+//from_location    : source_name source_alias "inner"? "join" source_name source_alias "on" or_clauses
+
+joined_objects   : inner_join | outer_join
+inner_join       : source_name source_alias "inner"? "join" source_name source_alias "on" or_clauses
+//outer_join       : source_name source_alias ("left" | "right" | "full") "outer"? "join" source_name source_alias "on" or_clauses
+cross_join       : source_name "cross" "join"
+
+or_clauses       : or_clause*
+?or_clause        : (and_clause "or")* and_clause
+?and_clause       : (predicate "and")* predicate
+?predicate        : term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term )*
+?term             : factor ( ( "-" | "+" ) factor )*
+?factor           : unary ( ( "/" | "*" ) unary )*
+?unary            : ( "!" | "-" ) unary
+                 | primary
+?primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true" | "false" | "null"
                  //| "(" expr ")"
                  | SCOPED_IDENTIFIER
                  | IDENTIFIER
