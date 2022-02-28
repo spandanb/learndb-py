@@ -343,3 +343,33 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     I'll keep track (via a seen index) of rows from the right source (inner loop) that have not been joined, and hence not added to
     the result set. Then after the nested loop, I'll iterate over the seen index and add null'ed copies of rows to the
     result set.
+
+1/21
+    If-else and dumb objects vs. conditional flag aware objects
+
+    Anytime I have an if-else branch, I can replace it with a data-structure, that can handle the condition. This is the
+    functional - object split. Specifically, this is a concern in the handling select statements, since there are many
+    stages, e.g. from, where, group by,... and each stage, modifies the result set of the previous stage. Initially, I was
+    preferring iterating, since it keeps the data structures dumb iterates. But, group by splits the result set into multiple
+    grouped sets. And using the above approach would require iterating over each group, to apply filters and aggregates, and
+    reconstruct a new group after- and this looks and feels quiet ugly. So, here I'm leaning towards having the ResultSet
+    and GroupedResultSet, have truncate and aggregate methods- i.e. the data structures are not so dumb.
+
+1/27
+    Extending parser and virtual machine to support all clauses
+
+    I'm working on extending the parser and VM to support group by, having, limit, clauses, as well as nested select
+    statements. This will rework the parser to have a few more symbol types. Also, the VM handler methods will be updated.
+
+2/20
+    Finally got lark to work. My language had various types of ambiguities and left and right recursions. Changing, those,
+    and broadly, rethinking how to construct the grammar such that these scenarios are avoided helped. However, unlike
+    the hand-rolled recursive descent, where I could do some tran-parser processing, e.g. attach joinType enum based on
+    the modifier to join keyword, I will need a secondary indirection, either as a layer of processing, that
+    transforms the tree, or a wrapper around the parsed tree, that enables retrieving fields.
+
+2/27
+    Still had some issues with the language parser, but looks like it's finally works. Now, trying to convert parse
+    tree into an Ast, ie. only with the desired classes in the hierarchy and string converted to literal values.
+
+
