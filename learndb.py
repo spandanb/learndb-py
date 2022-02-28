@@ -379,7 +379,7 @@ def devloop_join():
     assert keys == expected, f"expected {expected}; received {keys}"
 
 
-def devloop():
+def devloop_old():
     db = LearnDB(DB_FILE)
     db.nuke_dbfile()
 
@@ -403,6 +403,13 @@ def devloop():
         record = db.get_pipe().read()
         # key = record.get("cola")
         print(f'pipe read: {record}')
+
+
+def devloop():
+    db = LearnDB(DB_FILE)
+    db.nuke_dbfile()
+    resp = db.handle_input("select cola, colb from foo f left join bar r on fx = ry;")
+    print(resp)
 
 
 def parse_args_and_start(args: list):
