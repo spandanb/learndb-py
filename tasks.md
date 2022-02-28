@@ -1,5 +1,23 @@
 # Tasks
 
+## Lark
+  - pretty print transformed tree
+  - to_ast 
+      - sql_handler should return cleaned up ast
+  - _Ast root may need to implement visitor interface
+  - write tests for lark
+  - integrate lark into old parser setup; retain contain class like sqlfrontend
+
+
+## Parser
+- ensure rules make sense with `expression` symbol
+  - this (expression) should wrap or_clause
+
+## Lang
+  - Add support for nested select statements (uncorrelated)
+  - Add support for nested select statements (correlated)
+
+
 ## Storage (btree)
 - support deletion/free-list  
   - support defragmentation of unallocated space
@@ -51,10 +69,6 @@
 - update commits ref email
 - run black
 - run mypy
-
-## Lang
-  - Add support for nested select statements (uncorrelated)
-  - Add support for nested select statements (correlated)
 
 ## Bugs
   - e2e_test.py::join_test should fail
