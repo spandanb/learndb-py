@@ -66,5 +66,7 @@ class SqlFrontEnd:
             self.exc = e
             self.parsed = None
             self.is_succ = False
+            if self.raise_exception:
+                raise
 
 
