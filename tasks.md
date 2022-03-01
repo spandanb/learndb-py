@@ -6,8 +6,7 @@
       - sql_handler should return cleaned up ast
   - _Ast root may need to implement visitor interface
   - write tests for lark
-  - integrate lark into old parser setup; retain contain class like sqlfrontend
-
+  - validations: when parse tree is being turned into ast, assert things like, e.g. no-on clause on cross-join
 
 ## Parser
 - ensure rules make sense with `expression` symbol
