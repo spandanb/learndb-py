@@ -11,6 +11,11 @@ from serde import serialize_record, deserialize_cell
 from dataexchange import Response
 
 from lang_parser.visitor import Visitor
+from lang_parser.symbols import (
+    Program,
+    SelectStmnt,
+
+)
 #from lang_parser.tokens import TokenType
 #from lang_parser.symbols import (
 #    Symbol,
@@ -346,7 +351,7 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-    def visit_select_expr(self, expr: SelectExpr, parent_context=None):
+    def visit_select_stmnt(self, expr: SelectExpr, parent_context=None):
         """
         Handle select expr.
 

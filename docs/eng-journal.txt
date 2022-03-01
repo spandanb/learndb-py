@@ -372,4 +372,10 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     Still had some issues with the language parser, but looks like it's finally works. Now, trying to convert parse
     tree into an Ast, ie. only with the desired classes in the hierarchy and string converted to literal values.
 
+2/28
+    Some ideas on how to organize vm::select_stmnt logic; VM will have method to help construct the RecordSet
+    and GroupedRecordSet. This way, the logic for interpreting a stmnt would not have to be duplicated in vm
+    and recordSet. Here the record set will be dumb. This makes the VM explicitly single threaded.
 
+    Joins will be implemented as double-for loop. There maybe some optimizations here, e.g. avoiding full scans
+    when doing an equi-join; but for now I will pass on that. Later, I can revisit this and apply optimization.

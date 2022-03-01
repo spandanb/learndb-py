@@ -4,6 +4,7 @@ import os
 from lark import Lark, logger, ast_utils, Transformer
 from typing import Any, List
 from dataclasses import dataclass
+from .visitor import Visitor
 
 # logger.setLevel(logging.DEBUG)
 
@@ -16,6 +17,9 @@ class _Ast(ast_utils.Ast):
     The root of AST hierarchy
     """
     # NOTE: classes with preceding "_" will be skipped
+
+    def accept(self, visitor: Visitor) -> Any:
+        return visitor.visit(self)
 
     def is_virtual(self) -> bool:
         """
@@ -84,7 +88,7 @@ class Program(_Ast, ast_utils.AsList):
     statements: List[_Stmnt]
 
 
-# is this even needed
+# is this even needed?
 class _Stmnt(_Ast):
     pass
 
@@ -109,9 +113,30 @@ class Selectable(_Ast):
     item: Any
 
 
-@dataclass
+# defining class, allows me control how source is stored
 class FromClause(_Ast):
+    def __init__(self, source: Any, where_clause: Any = None):
+        self.source = source
+        self.where_clause = where_clause
+
+
+@dataclass
+class FromClauseOld(_Ast):
     source: Any
     # where clauses is nested in from, i.e. in a select
     # a where clause without a from clause is invalid
     where_clause: Any = None
+
+    def __init__(self, source: Any, where_clause: Any = None):
+        self.source = source
+        self.where_clause = where_clause
+
+
+
+
+#@dataclass
+#class Joining(_Ast):
+"""
+        ?joining          : source join_modifier? "join"i table_name table_alias?
+                      | source join_modifier? "join"i table_name table_alias? "on"i condition
+"""

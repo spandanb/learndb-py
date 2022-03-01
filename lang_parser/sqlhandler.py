@@ -6,6 +6,12 @@ from .grammar import GRAMMAR
 
 
 class ToAst(Transformer):
+
+    def FromClauxse(self, fclause):
+
+        pass
+        return fclause
+
     pass
     # todo: this should convert literals to datatype
 
