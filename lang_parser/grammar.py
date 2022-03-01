@@ -11,7 +11,7 @@ GRAMMAR = '''
         select_stmnt     : select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
 
         select_clause    : "select"i selectables
-        //selectables      : column_name ("," column_name)*
+        //selectables    : column_name ("," column_name)*
         selectables      : primary ("," primary)*
         from_clause      : "from"i source where_clause?
         where_clause     : "where"i condition
