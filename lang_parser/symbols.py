@@ -2,7 +2,7 @@ from __future__ import annotations
 import dataclasses
 import os
 from lark import Lark, logger, ast_utils, Transformer
-from typing import Any, List
+from typing import Any, List, Union
 from dataclasses import dataclass
 from .visitor import Visitor
 
@@ -60,7 +60,12 @@ class _Ast(ast_utils.Ast):
         return a pretty printed string
         :return:
         """
-        children = dataclasses.asdict(self)
+        if hasattr(self, "asdict"):
+            children = self.asdict()
+        else:
+            children = {key: getattr(self, key)
+                        for key in dir(self)
+                        if (not key.startswith("_") and not callable(getattr(self, key)))}
         lines = []
 
         child_depth = depth if self.is_virtual() else depth + 1
@@ -94,7 +99,7 @@ class _Stmnt(_Ast):
 
 
 @dataclass
-class SelectStmnt(_Ast):
+class SelectStmnt(_Stmnt):
     select_clause: _Selectables
     from_clause: FromClause = None
     group_by_clause: Any = None
@@ -114,29 +119,46 @@ class Selectable(_Ast):
 
 
 # defining class, allows me control how source is stored
-class FromClause(_Ast):
+class FromClauseX(_Ast):
     def __init__(self, source: Any, where_clause: Any = None):
         self.source = source
         self.where_clause = where_clause
 
 
 @dataclass
-class FromClauseOld(_Ast):
+class FromClause(_Ast):
     source: Any
     # where clauses is nested in from, i.e. in a select
     # a where clause without a from clause is invalid
     where_clause: Any = None
 
-    def __init__(self, source: Any, where_clause: Any = None):
-        self.source = source
-        self.where_clause = where_clause
+
+@dataclass
+class SingleSource(_Ast):
+    table_name: Any
+    table_alias: Any = None
 
 
+@dataclass
+class Joining(_Ast):
+    source: Union[ConditionedJoin, UnconditionedJoin]
 
 
-#@dataclass
-#class Joining(_Ast):
-"""
-        ?joining          : source join_modifier? "join"i table_name table_alias?
-                      | source join_modifier? "join"i table_name table_alias? "on"i condition
-"""
+@dataclass
+class ConditionedJoin(_Ast):
+    source: Any
+    join_modifier: Any = None
+    # since the previous token is optional, I have to make `condition`
+    # optional to make python parser happy, even though condition is required
+    # a more robust approach would be to accept all args, and based on rule or type
+    # assign to instance var
+    other_source: Any = None
+    other_alias: Any = None
+    condition: Any = None
+
+
+@dataclass
+class UnconditionedJoin(_Ast):
+    source: Any
+    other_source: Any
+    other_alias: Any = None

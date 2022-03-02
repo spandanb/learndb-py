@@ -21,14 +21,22 @@ GRAMMAR = '''
         limit_clause     : "limit"i INTEGER_NUMBER ("offset"i INTEGER_NUMBER)?
 
         // NOTE: there should be no on-clause on cross join and this will have to enforced post parse
-        ?source           : table_name table_alias?
+        ?source           : single_source
                           | joining
 
-        ?joining          : source join_modifier? "join"i table_name table_alias?
-                          | source join_modifier? "join"i table_name table_alias? "on"i condition
+        single_source      : table_name table_alias?
+    
+        // take 1 
+        //?joining          : source join_modifier? "join"i table_name table_alias?
+        //                  | source join_modifier? "join"i table_name table_alias? "on"i condition
 
-        //join_modifier    : "inner"i | ("left"i "outer"i?) | ("right"i "outer"i?) | ("full"i "outer"i?) | "cross"i
-        join_modifier    : inner | left_outer | right_outer | full_outer | cross
+        //split conditioned and unconditioned join
+        ?joining          : unconditioned_join | conditioned_join
+        conditioned_join  : source join_modifier? "join"i table_name table_alias? "on"i condition
+        unconditioned_join : source "cross" "join"i table_name table_alias?
+
+        //join_modifier    : inner | left_outer | right_outer | full_outer | cross
+        join_modifier    : inner | left_outer | right_outer | full_outer
 
         inner            : "inner"i
         left_outer       : "left"i ["outer"i]
