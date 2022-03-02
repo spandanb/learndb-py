@@ -14,7 +14,8 @@ from lang_parser.visitor import Visitor
 from lang_parser.symbols import (
     Program,
     SelectStmnt,
-
+    Joining,
+    SingleSource
 )
 #from lang_parser.tokens import TokenType
 #from lang_parser.symbols import (
@@ -351,7 +352,7 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-    def visit_select_stmnt(self, expr: SelectExpr, parent_context=None):
+    def visit_select_stmnt(self, expr: SelectStmnt, parent_context=None):
         """
         Handle select expr.
 
@@ -367,8 +368,14 @@ class VirtualMachine(Visitor):
         # 1. setup
         self.output_pipe.reset()
 
+        # the output is constructed in layers
+        # by modifying recordset; the recordset should
+        # support ordering, grouping, etc. but condition evaluations
+        # will reside in vm - since this will require walking AST, and
+        # I don't want this logic duplicated in recordset
+
         # 2. materialize from_clause
-        record_set = self.materialize_source(expr.from_location)
+        record_set = self.materialize_source(expr.from_clause)
 
         filtered = RecordSet()
         # 3. evaluate where clause
@@ -712,7 +719,7 @@ class VirtualMachine(Visitor):
 
         return schema, tree
 
-    def materialize_source(self, source: Union[AliasableSource, Joining]) -> RecordSet:
+    def materialize_source(self, from_clause) -> RecordSet:
         """
         This should handle the materialization of source.
         The source is whatever is in the from clause.
@@ -728,7 +735,7 @@ class VirtualMachine(Visitor):
         """
         rset = RecordSet()
         # 1. handle single source
-        if isinstance(source, AliasableSource):
+        if isinstance(from_clause.source, AliasableSource):
             # 1.1. add each record in source to result set
             for record in self.get_record_iter(source):
                 rset.append(record)
