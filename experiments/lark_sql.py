@@ -1,4 +1,7 @@
 from __future__ import annotations
+"""
+This implements the sql parser
+"""
 import logging
 import os
 import sys
@@ -138,6 +141,9 @@ grammar_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(grammar_mod)
 grammar = grammar_mod.GRAMMAR
 
+spec = importlib.util.spec_from_file_location("grammar", "/Users/spand/universe/learndb-py/lang_parser/symbols.py")
+symbols_mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(symbols_mod)
 
 
 class ToAst(Transformer):
@@ -160,9 +166,9 @@ def driver():
     text = "select cola, colb from foo f left join bar r on (select max(fig) from fodo where x = 1);"
 
     text = "select cola, colb from foo f left join bar r on r.x = y.b;"
-    text = "select cola, colb from foo f left outer join bar r on f.b = r.y right join car c on c.x = f.b;"
+
     text = "select cola, colb from foo f left join bar r on (select max(fig, farce) from fodo where x = 1);"
-    text = "select cola, colb from foo f where car = 'hello world' "
+
     text = "delete from table_foo where car_name <> 'marmar'"
     #text = "drop table foo"
     text = "update table_name set column_name = 32"
@@ -170,13 +176,17 @@ def driver():
     text = "insert into table_name (col_a, col_b) values (11, 92)"
     text  = "insert into table_name (col_a, col_b) values ('val_a', 'val_b')"
     text = "insert into table_name (col_a, col_b) values (11, 92)"
+    text = "select cola, colb from foo f where car = 'hello world' "
+    text = "select cola, colb from foo f left join bar r on (select max(fig, farce) from fodo where x = 1);"
+    text = "select cola, colb from foo f left outer join bar r on f.b = r.y right join car c on c.x = f.b;"
     # parse tree
     print(parser.parse(text).pretty())
     #return
 
     # Ast
     tree = parser.parse(text)
-    transformer = ast_utils.create_transformer(this_module, ToAst())
+    #transformer = ast_utils.create_transformer(this_module, ToAst())
+    transformer = ast_utils.create_transformer(symbols_mod, ToAst())
     tree = transformer.transform(tree)
     pretty = tree.prettyprint()
     pretty = os.linesep.join(pretty)
@@ -186,4 +196,4 @@ def driver():
 
 
 #driver0()
-driver()
+tree = driver()

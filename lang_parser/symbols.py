@@ -148,10 +148,12 @@ class Joining(_Ast):
 class ConditionedJoin(_Ast):
     source: Any
     join_modifier: Any = None
-    # since the previous token is optional, I have to make `condition`
-    # optional to make python parser happy, even though condition is required
-    # a more robust approach would be to accept all args, and based on rule or type
-    # assign to instance var
+    # since the join_modifier token is optional, I have to make `condition`
+    # optional to make dataclass syntax work
+    # the more correct approach would be to accept *args, and based on type of
+    # arg, set the instance variable
+    # the problem is that the grammar rule has optional symbols in the middle,
+    # and the parsed args are positionally passed to these symbol classes
     other_source: Any = None
     other_alias: Any = None
     condition: Any = None
