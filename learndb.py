@@ -408,7 +408,12 @@ def devloop_old():
 def devloop():
     db = LearnDB(DB_FILE)
     db.nuke_dbfile()
-    resp = db.handle_input("select cola, colb from foo f left join bar r on fx = ry;")
+
+
+    text = "select cola from foo f cross join june"
+    text = "select cola, colb from foo f left join bar r on fx = ry;"
+    resp = db.handle_input(text)
+
     print(resp)
 
 

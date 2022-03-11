@@ -15,7 +15,9 @@ from lang_parser.symbols import (
     Program,
     SelectStmnt,
     Joining,
-    SingleSource
+    SingleSource,
+    ConditionedJoin,
+    UnconditionedJoin
 )
 #from lang_parser.tokens import TokenType
 #from lang_parser.symbols import (
@@ -734,13 +736,18 @@ class VirtualMachine(Visitor):
         :return:
         """
         rset = RecordSet()
+        source = from_clause.source
         # 1. handle single source
-        if isinstance(from_clause.source, AliasableSource):
-            # 1.1. add each record in source to result set
-            for record in self.get_record_iter(source):
-                rset.append(record)
-            return rset
+        if isinstance(source, SingleSource):
 
+            pass
+        else:
+            assert isinstance(source, ConditionedJoin) or isinstance(source, UnconditionedJoin)
+            # handle joined source
+            # write in a way that's extensible
+            pass
+
+        # todo: old stuff below
         assert isinstance(source, Joining)
         # 2. handle joined sources
         stack = []
