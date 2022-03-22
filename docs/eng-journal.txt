@@ -379,3 +379,19 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
     Joins will be implemented as double-for loop. There maybe some optimizations here, e.g. avoiding full scans
     when doing an equi-join; but for now I will pass on that. Later, I can revisit this and apply optimization.
+
+
+3/21
+    Constructing the AST using Lark classes leads to issues when rules have optional symbols which are not
+    at the tail. Thus, the tokens are assigned to the right instance vars. One fix is to accept names as pos args,
+    while also requiring a user defined mapping of required args and types they could assume. e.g.
+    tokens = [
+        left_src: Field(Optional=True, types=Union[Joining, SingleSource]),
+        ...
+    ]
+    The other way to avoid this is to write the grammar in a way that rules don't have intermediate optional.
+    The third way, and the one I've opted for, is to use lark's ast construction utilities for rules, which
+    don't have optional terminals in body of the rule. For rules which have optional in the body, I explicitly
+    resolve the field names with the right arguments. This "resolution" requires me to specify the rule_name or
+    the ast types an arg could be. The resolution also fails e.g. for cases with duplicated symbols, where one of those is
+    optional. But these can be avoided.

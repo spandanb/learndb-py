@@ -22,7 +22,8 @@ from lang_parser.symbols import Program
 from dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
 from pipe import Pipe
 from statemanager import StateManager
-from virtual_machine import VirtualMachine
+#from virtual_machine import VirtualMachine
+from virtual_machine2 import VirtualMachine
 
 
 # section: core execution/user-interface logic
@@ -412,6 +413,8 @@ def devloop():
 
     text = "select cola from foo f cross join june"
     text = "select cola, colb from foo f left join bar r on fx = ry;"
+    text = "select cola, colb from foo f left join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
+    text = "select cola, colb from foo f join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
     resp = db.handle_input(text)
 
     print(resp)
