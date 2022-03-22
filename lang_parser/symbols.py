@@ -1,7 +1,8 @@
 from __future__ import annotations
+import abc
 import dataclasses
 import os
-from lark import Lark, logger, ast_utils, Transformer
+from lark import Lark, logger, ast_utils, Transformer, v_args
 from typing import Any, List, Union
 from dataclasses import dataclass
 from .visitor import Visitor
@@ -12,7 +13,7 @@ from .visitor import Visitor
 WHITESPACE = ' '
 
 
-class _Ast(ast_utils.Ast):
+class _Symbol(ast_utils.Ast):
     """
     The root of AST hierarchy
     """
@@ -34,7 +35,7 @@ class _Ast(ast_utils.Ast):
     def get_prettychild(self, child, child_depth) -> list:
         """
         Get pretty printed child; calls different method depending on whether
-        child is derived from _Ast, Lark.Tree, or Lark.Token.
+        child is derived from _Symbol, Lark.Tree, or Lark.Token.
 
         :param child:
         :param child_depth:
@@ -87,14 +88,13 @@ class _Ast(ast_utils.Ast):
         return lines
 
 
-
 @dataclass
-class Program(_Ast, ast_utils.AsList):
+class Program(_Symbol, ast_utils.AsList):
     statements: List[_Stmnt]
 
 
 # is this even needed?
-class _Stmnt(_Ast):
+class _Stmnt(_Symbol):
     pass
 
 
@@ -109,43 +109,51 @@ class SelectStmnt(_Stmnt):
 
 
 @dataclass
-class _Selectables(_Ast,  ast_utils.AsList):
+class _Selectables(_Symbol,  ast_utils.AsList):
     selections: List[Selectable]
 
 
 @dataclass
-class Selectable(_Ast):
+class Selectable(_Symbol):
     item: Any
 
 
 # defining class, allows me control how source is stored
-class FromClauseX(_Ast):
+class FromClauseX(_Symbol):
     def __init__(self, source: Any, where_clause: Any = None):
         self.source = source
         self.where_clause = where_clause
 
 
 @dataclass
-class FromClause(_Ast):
-    source: Any
+class FromClause(_Symbol):
+    source: Joining
     # where clauses is nested in from, i.e. in a select
     # a where clause without a from clause is invalid
     where_clause: Any = None
 
 
 @dataclass
-class SingleSource(_Ast):
+class SingleSourceY(_Symbol):
     table_name: Any
     table_alias: Any = None
 
 
+class SingleSource(_Symbol):
+    def __init__(self, table_name, table_alias=None):
+        self.table_name = table_name
+        self.table_alias = table_alias
+
+
+# nuke me?
 @dataclass
-class Joining(_Ast):
+class Joining(_Symbol):
     source: Union[ConditionedJoin, UnconditionedJoin]
 
 
+
 @dataclass
-class ConditionedJoin(_Ast):
+class ConditionedJoinX(_Symbol):
     source: Any
     join_modifier: Any = None
     # since the join_modifier token is optional, I have to make `condition`
@@ -154,13 +162,79 @@ class ConditionedJoin(_Ast):
     # arg, set the instance variable
     # the problem is that the grammar rule has optional symbols in the middle,
     # and the parsed args are positionally passed to these symbol classes
+
+    # this actually causes a deeper problem, whereby symbols with optional
+    # symbols can't easily be positionally assigned. One fix is to only accept
+    # named params, or accept pos args, and map them to kw args based on rule name
+    # perhaps I can use the annotation on arg to do mapping
     other_source: Any = None
     other_alias: Any = None
     condition: Any = None
 
 
+def resolve_tokens(fields, tokens):
+    """
+    returns tokens mapped to fields (definition)
+    the mapping is based on an exact name match
+    return list of tokens mapped to names from token_def
+
+    """
+    resolved = [None] * len(fields)
+    for i, field in enumerate(fields):
+        # the match is based on an exact name match
+        # either the rule exists as its own named tree
+        # or the camelcase name of the class matches
+        #if hasattr(token, "data"):
+        #    pass
+        #else:
+        #    pass
+        pass
+
+
+        #field.name
+        #if matches(field, token):
+        #    resolved[i] = token
+    return resolved
+
+
+class Field:
+    def __init__(self, name, optional=False, types=None):
+        self.name = name
+        self.optional = optional
+        self.types = types
+
+
+class ConditionedJoinY(_Symbol):
+    def __new__(cls, *tokens):
+        # maps tokens to fields
+        # NOTE: it maybe possible to generate this from the grammar
+        fields = [
+            Field(name="source", optional=False, types=[SingleSource, Joining]),
+            Field(name="join_modifier", optional=True, tree=""),
+            Field(name="other_source", optional=False),
+            Field(name="condition", optional=True)
+        ]
+        resolved = resolve_tokens(fields, tokens)
+        # map args to tokens
+
+        source = resolved[0]
+        join_modifier = resolved[1]
+        other_source = resolved[2]
+        condition = resolved[3]
+        return cls(source, join_modifier, other_source, condition)
+
+
+class ConditionedJoinX(_Symbol):
+    def __init__(self, source, join_modifier=None, other_source=None, condition=None):
+        self.source = source
+        self.join_modifier = join_modifier
+        self.other_source = other_source
+        self.condition = condition
+
+
 @dataclass
-class UnconditionedJoin(_Ast):
+class UnconditionedJoin(_Symbol):
     source: Any
     other_source: Any
-    other_alias: Any = None
+
+

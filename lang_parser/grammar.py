@@ -32,8 +32,10 @@ GRAMMAR = '''
 
         //split conditioned and unconditioned join
         ?joining          : unconditioned_join | conditioned_join
-        conditioned_join  : source join_modifier? "join"i table_name table_alias? "on"i condition
-        unconditioned_join : source "cross" "join"i table_name table_alias?
+        //conditioned_join  : source join_modifier? "join"i table_name table_alias? "on"i condition
+        conditioned_join  : source join_modifier? "join"i single_source "on"i condition
+        //unconditioned_join : source "cross" "join"i table_name table_alias?
+        unconditioned_join : source "cross" "join"i single_source
 
         //join_modifier    : inner | left_outer | right_outer | full_outer | cross
         join_modifier    : inner | left_outer | right_outer | full_outer
