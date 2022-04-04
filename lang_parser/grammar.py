@@ -78,10 +78,13 @@ GRAMMAR = '''
         func_arg_list    : (primary ",")* primary
 
         create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"
-        column_def_list  : (column_def ",")* column_def
-        column_def       : column_name datatype ("primary"i "key"i)? ("not"i "null"i)?
-        datatype         : "integer"i | "text"i | "bool"i | "null"i | "float"i
+        ?column_def_list  : (column_def ",")* column_def
+        ?column_def       : column_name datatype primary_key? not_null?
+        datatype         : INTEGER | TEXT | BOOL | NULL | FLOAT
 
+        primary_key      : "primary"i "key"i
+        not_null         : "not"i "null"i
+    
         drop_stmnt       : "drop"i "table"i table_name
 
         insert_stmnt     : "insert"i "into"i table_name "(" column_name_list ")" "values"i "(" value_list ")"
@@ -103,13 +106,11 @@ GRAMMAR = '''
         table_alias      : IDENTIFIER
 
         // keywords
-        // define keywords as they have higher priority
-        // todo: nuke these?
-        SELECT.5           : "select"i
-        FROM.5             : "from"i
-        WHERE.5            : "where"i
-        JOIN.5             : "join"i
-        ON.5               : "on"i
+        INTEGER          : "integer"i  
+        TEXT             : "text"i
+        BOOL             : "bool"i 
+        NULL             : "null"i 
+        FLOAT            : "float"i
 
         // operators
         STAR              : "*"

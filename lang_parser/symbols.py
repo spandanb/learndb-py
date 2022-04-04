@@ -1,16 +1,30 @@
 from __future__ import annotations
-import abc
-import dataclasses
 import os
 from lark import Lark, logger, ast_utils, Transformer, v_args
 from typing import Any, List, Union
 from dataclasses import dataclass
+from enum import Enum, auto
 from .visitor import Visitor
+
 
 # logger.setLevel(logging.DEBUG)
 
 
 WHITESPACE = ' '
+
+
+class JoinType(Enum):
+    Inner = auto()
+    LeftOuter = auto()
+    RightOuter = auto()
+    FullOuter = auto()
+    Cross = auto()
+
+
+class ColumnQualifier(Enum):
+    NoQualifier = auto()
+    PrimaryKey = auto()
+    NotNull = auto()
 
 
 class _Symbol(ast_utils.Ast):
@@ -87,6 +101,9 @@ class _Symbol(ast_utils.Ast):
 
         return lines
 
+    def prettystr(self) -> str:
+        return "".join(self.prettyprint())
+
 
 @dataclass
 class Program(_Symbol, ast_utils.AsList):
@@ -118,123 +135,49 @@ class Selectable(_Symbol):
     item: Any
 
 
-# defining class, allows me control how source is stored
-class FromClauseX(_Symbol):
-    def __init__(self, source: Any, where_clause: Any = None):
-        self.source = source
-        self.where_clause = where_clause
-
-
 @dataclass
 class FromClause(_Symbol):
-    source: Joining
+    source: Any
     # where clauses is nested in from, i.e. in a select
     # a where clause without a from clause is invalid
     where_clause: Any = None
 
 
 @dataclass
-class SingleSourceY(_Symbol):
+class SingleSource(_Symbol):
     table_name: Any
     table_alias: Any = None
-
-
-class SingleSource(_Symbol):
-    def __init__(self, table_name, table_alias=None):
-        self.table_name = table_name
-        self.table_alias = table_alias
-
-
-# nuke me?
-@dataclass
-class Joining(_Symbol):
-    source: Union[ConditionedJoin, UnconditionedJoin]
-
-
-
-@dataclass
-class ConditionedJoinX(_Symbol):
-    source: Any
-    join_modifier: Any = None
-    # since the join_modifier token is optional, I have to make `condition`
-    # optional to make dataclass syntax work
-    # the more correct approach would be to accept *args, and based on type of
-    # arg, set the instance variable
-    # the problem is that the grammar rule has optional symbols in the middle,
-    # and the parsed args are positionally passed to these symbol classes
-
-    # this actually causes a deeper problem, whereby symbols with optional
-    # symbols can't easily be positionally assigned. One fix is to only accept
-    # named params, or accept pos args, and map them to kw args based on rule name
-    # perhaps I can use the annotation on arg to do mapping
-    other_source: Any = None
-    other_alias: Any = None
-    condition: Any = None
-
-
-def resolve_tokens(fields, tokens):
-    """
-    returns tokens mapped to fields (definition)
-    the mapping is based on an exact name match
-    return list of tokens mapped to names from token_def
-
-    """
-    resolved = [None] * len(fields)
-    for i, field in enumerate(fields):
-        # the match is based on an exact name match
-        # either the rule exists as its own named tree
-        # or the camelcase name of the class matches
-        #if hasattr(token, "data"):
-        #    pass
-        #else:
-        #    pass
-        pass
-
-
-        #field.name
-        #if matches(field, token):
-        #    resolved[i] = token
-    return resolved
-
-
-class Field:
-    def __init__(self, name, optional=False, types=None):
-        self.name = name
-        self.optional = optional
-        self.types = types
-
-
-class ConditionedJoinY(_Symbol):
-    def __new__(cls, *tokens):
-        # maps tokens to fields
-        # NOTE: it maybe possible to generate this from the grammar
-        fields = [
-            Field(name="source", optional=False, types=[SingleSource, Joining]),
-            Field(name="join_modifier", optional=True, tree=""),
-            Field(name="other_source", optional=False),
-            Field(name="condition", optional=True)
-        ]
-        resolved = resolve_tokens(fields, tokens)
-        # map args to tokens
-
-        source = resolved[0]
-        join_modifier = resolved[1]
-        other_source = resolved[2]
-        condition = resolved[3]
-        return cls(source, join_modifier, other_source, condition)
-
-
-class ConditionedJoinX(_Symbol):
-    def __init__(self, source, join_modifier=None, other_source=None, condition=None):
-        self.source = source
-        self.join_modifier = join_modifier
-        self.other_source = other_source
-        self.condition = condition
 
 
 @dataclass
 class UnconditionedJoin(_Symbol):
     source: Any
     other_source: Any
+    join_type = JoinType.Cross
 
+
+class CreateStmnt(_Symbol):
+    def __init__(self, table_name: Any, column_def_list: Any):
+        self.table_name = table_name
+        self.columns = column_def_list.children
+        self.validate()
+
+    def validate(self):
+        """
+        Ensure only one and at most one primary key
+        """
+        pkey_count = len([col for col in self.columns if col.is_primary_key])
+        if pkey_count != 1:
+            raise ValueError(f"Expected 1 primary key received {pkey_count}")
+
+    def __repr__(self):
+        return str(self)
+
+    def __str__(self):
+        return f'{self.__class__.__name__}({self.__dict__})'
+
+
+@dataclass
+class _ColumnDefList(_Symbol, ast_utils.AsList):
+    column_defs: List[Any]
 

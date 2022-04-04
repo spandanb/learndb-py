@@ -1,5 +1,11 @@
 # Tasks
 
+## Top Priority
+- write Lark Ast class for other statements, e.g. create
+-- this is blocking init_catalog, and anything that requires schema
+- then implement vm::join
+
+
 ## Lark
   - pretty print transformed tree
   - to_ast 

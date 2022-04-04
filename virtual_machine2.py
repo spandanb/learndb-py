@@ -8,21 +8,30 @@ import logging
 import random
 import string
 
+from btree import Tree, TreeInsertResult, TreeDeleteResult
+from cursor import Cursor
 from dataexchange import Response
+from serde import serialize_record, deserialize_cell
 
 from lang_parser.visitor import Visitor
 from lang_parser.symbols import (
     _Symbol as Symbol,
     Program,
     SelectStmnt,
-    Joining,
     FromClause,
-    #SingleSourceX as SingleSource,
     SingleSource,
-    ConditionedJoinX as ConditionedJoin,
-    UnconditionedJoin
+    UnconditionedJoin,
+    JoinType
 )
+from lang_parser.symbols2 import (
+    Joining,
+    ConditionedJoin
+)
+from lang_parser.sqlhandler import SqlFrontEnd
 
+from record_utils import (
+    join_records
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +69,61 @@ class VirtualMachine(Visitor):
     RecordSet types, is because that would require logic for interpreting
     symbols into RecordSet; and I want that logic to not be replicated outside vm.
 
-    Should "state" be managed by the statemanager?
-
     """
-    def __init__(self, statemanager, pipe):
-        # should these part of the statemanager?
+    def __init__(self, state_manager, output_pipe):
+        self.state_manager = state_manager
+        self.output_pipe = output_pipe
+        # NOTE: some state is managed by the state_manager, and rest via
+        # vm's instance variable. Ultimately, there should be a cleaner,
+        # unified management of state
         self.rsets = {}
         self.grouprsets = {}
-        # todo: init_catalog
+        self.init_catalog()
 
     def init_catalog(self):
-        pass
+        """
+        Initialize the catalog
+        read the catalog, materialize table metadata and register with the statemanager
+        :return:
+        """
+        # get/register all tables' metadata from catalog
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_schema = self.state_manager.get_catalog_schema()
+        pager = self.state_manager.get_pager()
+        cursor = Cursor(pager, catalog_tree)
+
+        # need parser to parse schema definition
+        parser = SqlFrontEnd()
+
+        # iterate over table entries
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
+            resp = deserialize_cell(cell, catalog_schema)
+            assert resp.success, "deserialize failed while bootstrapping catalog"
+            table_record = resp.body
+
+            # get schema by parsing sql_text
+            sql_text = table_record.get("sql_text")
+            logging.info(f"bootstrapping schema from [{sql_text}]")
+            parser.parse(sql_text)
+            assert parser.is_success(), "catalog sql parse failed"
+            program = parser.get_parsed()
+            assert len(program.statements) == 1
+            stmnt = program.statements[0]
+            assert isinstance(stmnt, CreateStmnt)
+            resp = generate_schema(stmnt)
+            assert resp.success, "schema generation failed"
+            table_schema = resp.body
+
+            # get tree
+            # should vm be responsible for this
+            tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
+
+            # register schema
+            self.state_manager.register_schema(table_record.get("name"), table_schema)
+            self.state_manager.register_tree(table_record.get("name"), tree)
+
+            cursor.advance()
 
     def run(self, program):
         """
@@ -102,7 +155,7 @@ class VirtualMachine(Visitor):
             self.execute(stmt)
         return Response(True)
 
-    def visit_create_table_stmnt(self, stmnt) -> Response:
+    def visit_create_stmnt(self, stmnt) -> Response:
         pass
 
     def visit_select_stmnt(self, stmnt) -> Response:
@@ -110,20 +163,20 @@ class VirtualMachine(Visitor):
 
         """
 
-        self.materialize(stmnt.from_clause)
+        self.materialize(stmnt.from_clause.source)
 
 
     # section : statement helpers
     # general principles:
     # 1) helpers should be able to handle null types
 
-    def materialize(self, from_clause: FromClause) -> Response:
+
+    def materialize(self, source) -> Response:
         """
         this and other materialize methods should return Response(recordSetName: str);
         but this already shows a limitation of this
 
         """
-        source = from_clause.source
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
             return self.materialize_single_source(source)
@@ -141,11 +194,13 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         # get schema for table, and cursor on tree corresponding to table
-        schema, tree = self.get_schema_and_tree(source)
+        # todo: how will names be resolved?
+        schema = self.state_manager.get_schema(source.table_name)
+        tree = self.state_manager.get_tree(source.table_name)
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # iterate over entire table
-        while self.cursor.end_of_table is False:
-            cell = self.cursor.get_cell()
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
             resp = deserialize_cell(cell, schema)
             assert resp.success
             record = resp.body
@@ -161,15 +216,67 @@ class VirtualMachine(Visitor):
 
         stack = []
         ptr = source
-        # while False:
+        # parser places first table in a series of joins in the most nested
+        # join; recursively traverse the join object(s) and construct a ordered list of
+        # tables to materialize
         while True:
             # recurse down
-            if isinstance(ptr, Joining):
-                # not sure if this is how it'll work
-                stack.append(ptr)
+            if isinstance(ptr.source, Joining):
+                stack.append(ptr.source)
+                ptr = ptr.source
             else:
-                pass
+                assert isinstance(ptr.source, SingleSource)
+                # end of joining stack
+                stack.append(ptr.source)
+                break
 
+        # now materialize joins
+        first = stack.pop()
+        resp = self.materialize(first)
+        assert resp.success
+        rsname = resp.body
+        while stack:
+            # join next source with existing rset
+            next_join = stack.pop()
+            assert isinstance(next_join, Joining)
+            # NOTE: currently, materialize and join are separate steps
+            # these could be combined; but for now keep them separate
+            # to keep it simple
+            resp = self.materialize_single_source(next_join.other_source)
+            assert resp.success
+            next_rsname = resp.body
+
+            resp = self.join_recordset(next_join, rsname, next_rsname)
+            assert resp.success
+            rsname = resp.body
+
+        return Response(True, body=rsname)
+
+    def join_recordset(self, join, left_rsname: str, right_rsname: str) -> Response:
+        """
+        join record based on record type and return joined recordset
+        """
+        resp = self.init_recordset()
+        assert resp.success
+        rsname = resp.body
+
+        left_iter = self.recordset_iter(left_rsname)
+        right_iter = self.recordset_iter(right_rsname)
+
+        # inner join
+        if join.join_type == JoinType.Inner:
+            for left_rec in left_iter:
+                for right_rec in right_iter:
+                    if self.evaluate_on(join.condition, left_rec, right_rec):
+                        joined = join_records(left_rec, right_rec)
+                        self.append_recordset(rsname, joined)
+
+        # left join
+
+        return Response(True, body=rsname)
+
+    def evaluate_on(self, condition, left_record, right_record):
+        pass
 
 
     # section: record set utilities
@@ -193,3 +300,7 @@ class VirtualMachine(Visitor):
 
     def drop_recordset(self, name:str):
         pass
+
+    def recordset_iter(self, name: str):
+        """return an iterator over recordset"""
+        return iter(self.rsets[name])
