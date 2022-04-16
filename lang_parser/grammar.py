@@ -1,5 +1,4 @@
-# this is a grammar for a subset of learndb-sql using
-# lark syntax
+# lark grammar for a subset of learndb-sql using
 GRAMMAR = '''
         program          : stmnt 
                          | terminated
@@ -20,24 +19,16 @@ GRAMMAR = '''
         order_by_clause  : "order"i "by"i (column_name ("asc"i|"desc"i)?)*
         limit_clause     : "limit"i INTEGER_NUMBER ("offset"i INTEGER_NUMBER)?
 
-        // NOTE: there should be no on-clause on cross join and this will have to enforced post parse
-        ?source           : single_source
+        source            : single_source
                           | joining
 
         single_source      : table_name table_alias?
-    
-        // take 1 
-        //?joining          : source join_modifier? "join"i table_name table_alias?
-        //                  | source join_modifier? "join"i table_name table_alias? "on"i condition
 
-        //split conditioned and unconditioned join
+        //split conditioned and unconditioned (cross) join as cross join does not have an on-clause
         ?joining          : unconditioned_join | conditioned_join
-        //conditioned_join  : source join_modifier? "join"i table_name table_alias? "on"i condition
         conditioned_join  : source join_modifier? "join"i single_source "on"i condition
-        //unconditioned_join : source "cross" "join"i table_name table_alias?
-        unconditioned_join : source "cross" "join"i single_source
+        unconditioned_join : source "cross"i "join"i single_source
 
-        //join_modifier    : inner | left_outer | right_outer | full_outer | cross
         join_modifier    : inner | left_outer | right_outer | full_outer
 
         inner            : "inner"i
