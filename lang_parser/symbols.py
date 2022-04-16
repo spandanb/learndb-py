@@ -1,11 +1,11 @@
 from __future__ import annotations
 import os
-from lark import Lark, logger, ast_utils, Transformer, v_args
+from lark import Lark, logger, ast_utils, Transformer, v_args, Token
 from typing import Any, List, Union
 from dataclasses import dataclass
 from enum import Enum, auto
 from .visitor import Visitor
-
+from .utils import camel_to_snake
 
 # logger.setLevel(logging.DEBUG)
 
@@ -35,6 +35,12 @@ class _Symbol(ast_utils.Ast):
 
     def accept(self, visitor: Visitor) -> Any:
         return visitor.visit(self)
+
+    @property
+    def data(self):
+        # pretend to be a tree
+        value = camel_to_snake(self.__class__.__name__)
+        return Token(None, value)
 
     def is_virtual(self) -> bool:
         """
@@ -149,22 +155,22 @@ class SingleSource(_Symbol):
     table_alias: Any = None
 
 
-@dataclass
 class UnconditionedJoin(_Symbol):
-    source: Any
-    other_source: Any
-    join_type = JoinType.Cross
+    def __init__(self, source=None, other_source=None):
+        self.source: source
+        self.other_source = other_source
+        self.join_type = JoinType.Cross
 
 
 class CreateStmnt(_Symbol):
-    def __init__(self, table_name: Any, column_def_list: Any):
+    def __init__(self, table_name: Any = None, column_def_list: Any = None):
         self.table_name = table_name
         self.columns = column_def_list.children
         self.validate()
 
     def validate(self):
         """
-        Ensure only one and at most one primary key
+        Ensure one and only one primary key
         """
         pkey_count = len([col for col in self.columns if col.is_primary_key])
         if pkey_count != 1:

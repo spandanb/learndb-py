@@ -1,10 +1,8 @@
 from __future__ import annotations
-import os
 import logging
 
 from lark import Lark, ast_utils
 from lark.exceptions import UnexpectedInput  # root of all lark exceptions
-from typing import List, Tuple
 
 from . import symbols
 from .symbols2 import ToAst
@@ -12,7 +10,6 @@ from .grammar import GRAMMAR
 
 
 logger = logging.getLogger(__name__)
-
 
 
 class SqlFrontEnd:
@@ -53,20 +50,20 @@ class SqlFrontEnd:
         """
         # parse tree
         try:
-            print(self.parser.parse(text).pretty())
+            #print(self.parser.parse(text).pretty())
             # return
-
-            # Ast
+            #print("$" * 100)
+             # Ast
             tree = self.parser.parse(text)
             transformer = ast_utils.create_transformer(symbols, ToAst())
             tree = transformer.transform(tree)
-            pretty = tree.prettyprint()
-            pretty = os.linesep.join(pretty)
-            print("$"*100)
-            print(tree)
-            print("$." * 70)
-            print(pretty)
-            print("$" * 100)
+            #pretty = tree.prettyprint()
+            #pretty = os.linesep.join(pretty)
+            #print("$"*100)
+            #print(tree)
+            #print("$." * 70)
+            #print(pretty)
+            #print("$" * 100)
             # print(tree.children[0].select_clause.children[0].Selections)
             self.parsed = tree
             self.is_succ = True

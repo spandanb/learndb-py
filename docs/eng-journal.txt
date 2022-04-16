@@ -395,3 +395,16 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     resolve the field names with the right arguments. This "resolution" requires me to specify the rule_name or
     the ast types an arg could be. The resolution also fails e.g. for cases with duplicated symbols, where one of those is
     optional. But these can be avoided.
+
+4/16
+    I've been spinning on the most manageable parser solution. Lark's utilities for transforming parse tree to AST are
+    somewhat lacking; e.g. it can't assign rules based on kwargs for an AST's init method. Actually, the reason it doesn't
+    is that it's solving a more general problem, and specifically, you can have a rule where a symbol is repeated twice. This
+    can't be mapped to an init. However, I have written, and I suppose a simple enough grammar like sql can be written to avoid
+    this issue.
+
+    Anyways, there were 2 problems, one of optional's in the middle of a rule body- this is solved by mapping the rule names to
+    init kw args, manually in the transformer class. The second is of repeating rule_names- this can be solved by defining an alias
+    for a symbol, i.e. the write the grammar in a way that avoids this issue. This is not the purest solution- but again, this parsing
+    business is a can of worms for an imperative programmar.
+
