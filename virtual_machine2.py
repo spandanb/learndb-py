@@ -11,12 +11,14 @@ import string
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
+from schema import generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 
 from lang_parser.visitor import Visitor
 from lang_parser.symbols import (
     _Symbol as Symbol,
     Program,
+    CreateStmnt,
     SelectStmnt,
     FromClause,
     SingleSource,
@@ -30,8 +32,10 @@ from lang_parser.symbols2 import (
 from lang_parser.sqlhandler import SqlFrontEnd
 
 from record_utils import (
+    create_catalog_record,
     join_records
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -155,15 +159,61 @@ class VirtualMachine(Visitor):
             self.execute(stmt)
         return Response(True)
 
-    def visit_create_stmnt(self, stmnt) -> Response:
-        pass
+    def visit_create_stmnt(self, stmnt: CreateStmnt) -> Response:
+        """
+        Handle create stmnt:
+        generate, validate, and persisted schema.
+        """
+        # 1.attempt to generate schema from create_stmnt
+        response = generate_schema(stmnt)
+        if response.success is False:
+            # schema generation failed
+            return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
+        table_schema = response.body
+        table_name = table_schema.name
+        assert isinstance(table_name, str), "table_name is not string"
+
+        # 2. check whether table name is unique
+        assert self.state_manager.table_exists(table_name) is False, f"table {table_name} exists"
+
+        # 3. allocate tree for new table
+        page_num = self.state_manager.allocate_tree()
+
+        # 4. construct record for table
+        # NOTE: for now using page_num as unique int key
+        pkey = page_num
+        sql_text = schema_to_ddl(table_schema)
+        # logging.info(f'visit_create_stmnt: generated DDL: {sql_text}')
+        catalog_schema = self.state_manager.get_catalog_schema()
+        response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
+        if not response.success:
+            return Response(False, error_message=f'Failure due to {response.error_message}')
+
+        # 5. serialize table record, i.e. record in catalog table for new user table
+        table_record = response.body
+        response = serialize_record(table_record)
+        if not response.success:
+            return Response(False, error_message=f'Serialization failed: [{response.error_message}]')
+
+        # 6. insert entry into catalog tree
+        cell = response.body
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_tree.insert(cell)
+
+        # 7. register schema
+        self.state_manager.register_schema(table_name, table_schema)
+        # 8. register tree
+        tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
+        self.state_manager.register_tree(table_name, tree)
 
     def visit_select_stmnt(self, stmnt) -> Response:
         """
 
         """
-
+        # materialize source
         self.materialize(stmnt.from_clause.source)
+
+        # apply filter on source
 
 
     # section : statement helpers

@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from lark import Lark, logger, ast_utils, Transformer, v_args, Token
+from lark import Lark, logger, ast_utils, Transformer, v_args, Token, Tree
 from typing import Any, List, Union
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -21,10 +21,25 @@ class JoinType(Enum):
     Cross = auto()
 
 
-class ColumnQualifier(Enum):
-    NoQualifier = auto()
-    PrimaryKey = auto()
-    NotNull = auto()
+class DataType(Enum):
+    Integer = auto()
+    Text = auto()
+    Real = auto()
+    Blob = auto()
+
+
+def unwrap_tree_atom(rule: Tree):
+    # unwrap a tree object into a literal value
+    # by unpacking Tree. The Tree might contain a child Token (has data attribute)
+    # or another AST class. We want to pick the least encapsulated.
+    assert len(rule.children) == 1, f"expected single child; found {len(rule.children)}"
+    child = rule.children[0]
+    return getattr(child, "value", child)
+
+
+def unwrap_tree_list(rule: Tree):
+    # NOTE: child or child.value
+    return [getattr(child, "value", child) for child in rule.children]
 
 
 class _Symbol(ast_utils.Ast):
@@ -157,15 +172,15 @@ class SingleSource(_Symbol):
 
 class UnconditionedJoin(_Symbol):
     def __init__(self, source=None, other_source=None):
-        self.source: source
-        self.other_source = other_source
+        self.left_source = source
+        self.right_source = other_source
         self.join_type = JoinType.Cross
 
 
 class CreateStmnt(_Symbol):
-    def __init__(self, table_name: Any = None, column_def_list: Any = None):
-        self.table_name = table_name
-        self.columns = column_def_list.children
+    def __init__(self, table_name: Tree = None, column_def_list: Tree = None):
+        self.table_name = unwrap_tree_atom(table_name)
+        self.columns = unwrap_tree_list(column_def_list)
         self.validate()
 
     def validate(self):
