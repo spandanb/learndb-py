@@ -15,6 +15,7 @@ from typing import List
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
+from lang_parser.symbols import DataType
 from dataexchange import Response
 
 
@@ -173,41 +174,41 @@ def validate_schema(schema: Schema) -> Response:
     return Response(True)
 
 
-def token_to_datatype(datatype_token: Token) -> Response:
+def token_to_datatype(datatype: DataType) -> Response:
     """
     parse datatype token into DataType
     :param datatype_token:
     :return:
     """
-    token_type = datatype_token.token_type
-    if token_type == TokenType.INTEGER:
+    if datatype == DataType.Integer:
         return Response(True, body=Integer)
-    elif token_type == TokenType.TEXT:
+    elif datatype == DataType.Text:
         return Response(True, body=Text)
-    elif token_type == TokenType.BLOB:
+    elif datatype == DataType.Blob:
         return Response(True, body=Blob)
-    elif token_type == TokenType.REAL:
+    elif datatype == DataType.Real:
         return Response(True, body=Float)
-    return Response(False, error_message=f'Unrecognized datatype: [{datatype_token}]')
+    return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
 
 
-def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
+def generate_schema(create_stmnt) -> Response:
     """
-    construct schema corresponding to schema object.
+    Generate schema from a create stmnt. There is a very thin
+    layer of translation between the stmnt and the schema object.
+    But I want to distinguish the (create) stmnt from the schema.
     Note if the operation is successful, a valid schema was read.
     :param create_stmnt:
     :return:
     """
-    # construct schema
-    table_name = create_stmnt.table_name.literal
+    table_name = create_stmnt.table_name
     schema = Schema(name=table_name)
     columns = []
-    for coldef in create_stmnt.column_def_list:
+    for coldef in create_stmnt.columns:
         resp = token_to_datatype(coldef.datatype)
         if not resp.success:
             return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
         datatype = resp.body
-        column_name = coldef.column_name.literal.lower()
+        column_name = coldef.column_name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
     schema.columns = columns
@@ -217,6 +218,4 @@ def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
     if not resp.success:
         return Response(False, error_message=f'schema validation due to [{resp.error_message}]')
     return Response(True, body=schema)
-
-
 

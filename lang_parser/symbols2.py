@@ -7,7 +7,15 @@ e.g. that must be instantiated manually, enums etc.
 import abc
 from typing import Tuple, List
 from lark import Lark, Transformer, Tree, v_args
-from .symbols import _Symbol, SingleSource, UnconditionedJoin, JoinType, ColumnQualifier
+from .symbols import (
+    unwrap_tree_atom,
+    unwrap_tree_list,
+    _Symbol,
+    DataType,
+    SingleSource,
+    UnconditionedJoin,
+    JoinType
+)
 
 
 class Joining(abc.ABC):
@@ -28,7 +36,7 @@ class ConditionedJoin(_Symbol):
         self.join_type = self._join_modifier_to_type(join_modifier)
 
     @staticmethod
-    def _join_modifier_to_type(join_modifier=None) -> JoinType:
+    def _join_modifier_to_type(join_modifier) -> JoinType:
         if join_modifier is None:
             return JoinType.Inner
         modifier = join_modifier.children[0].data  # not sure why it's a list
@@ -43,13 +51,26 @@ class ConditionedJoin(_Symbol):
 
 
 class ColumnDef(_Symbol):
-    # column_name datatype primary_key? not_null?
 
-    def __init__(self, column_name = None, datatype=None, primary_key=None, not_null=None):
-        self.column_name = column_name
-        self.datatype = datatype
+    def __init__(self, column_name: Tree = None, datatype: Tree = None, primary_key: Tree = None, not_null: Tree = None):
+        self.column_name = unwrap_tree_atom(column_name)
+        self.datatype = self._datatype_to_type(unwrap_tree_atom(datatype))
         self.is_primary_key = primary_key is not None
-        self.is_not_null = not_null is not None
+        self.is_nullable = not_null is None
+
+    @staticmethod
+    def _datatype_to_type(datatype: str):
+        datatype = datatype.lower()
+        if datatype == "integer":
+            return DataType.Integer
+        elif datatype == "real":
+            return DataType.Real
+        elif datatype == "text":
+            return DataType.Text
+        elif datatype == "blob":
+            return DataType.Blob
+        else:
+            raise ValueError(f"Unrecognized datatype [{datatype}]")
 
     def __repr__(self):
         return str(self)
