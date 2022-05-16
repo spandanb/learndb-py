@@ -22,6 +22,9 @@ class JoinType(Enum):
 
 
 class DataType(Enum):
+    """
+    Enums for system datatypes
+    """
     Integer = auto()
     Text = auto()
     Real = auto()
@@ -131,6 +134,11 @@ class Program(_Symbol, ast_utils.AsList):
     statements: List[_Stmnt]
 
 
+#class Program(_Symbol, ast_utils.AsList):
+#    def __init__(self, statements):
+#        self.statements = statements
+
+
 # is this even needed?
 class _Stmnt(_Symbol):
     pass
@@ -146,14 +154,22 @@ class SelectStmnt(_Stmnt):
     limit_clause: Any = None
 
 
+#@dataclass
+#class Selectables(_Symbol,  ast_utils.AsList):
+#    selections: List[Selectable]
+
 @dataclass
-class _Selectables(_Symbol,  ast_utils.AsList):
+class SelectClause(_Symbol,  ast_utils.AsList):
     selections: List[Selectable]
 
 
 @dataclass
 class Selectable(_Symbol):
     item: Any
+
+
+#class SelectClause(_Symbol):
+
 
 
 @dataclass
@@ -180,7 +196,7 @@ class UnconditionedJoin(_Symbol):
 class CreateStmnt(_Symbol):
     def __init__(self, table_name: Tree = None, column_def_list: Tree = None):
         self.table_name = unwrap_tree_atom(table_name)
-        self.columns = unwrap_tree_list(column_def_list)
+        self.columns = unwrap_tree_list(column_def_list)  # todo: this unwrapping may be unnecessary
         self.validate()
 
     def validate(self):
@@ -202,3 +218,19 @@ class CreateStmnt(_Symbol):
 class _ColumnDefList(_Symbol, ast_utils.AsList):
     column_defs: List[Any]
 
+
+@dataclass
+class InsertStmnt(_Symbol):
+    table_name: Any
+    column_name_list: ColumnNameList
+    value_list: ValueList
+
+
+@dataclass
+class _ColumnNameList(_Symbol, ast_utils.AsList):
+    column_names: List[Any]
+
+
+@dataclass
+class _ValueList(_Symbol, ast_utils.AsList):
+    values: List[Any]

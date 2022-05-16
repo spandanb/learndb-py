@@ -114,6 +114,8 @@ def serialize_record(record: Record) -> Response:
         if column.is_primary_key:
             # ensure primary key is an int
             # this validation should be done at schema generation time
+            #if value is None:
+            #    breakpoint()
             assert column.datatype == Integer, "Primary key must be an integer"
             assert value is not None, "Primary key must exist"
             key = column.datatype.serialize(value)

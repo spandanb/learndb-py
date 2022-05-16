@@ -1,13 +1,17 @@
 # Tasks
 
 ## Top Priority
-- document how parse tree -> AST is working
-- write Lark Ast class for other statements, e.g. create
+- handle parser::unwrap_tree; this is causing issue in vm processing
+  - specifically, issues with insert stmnt
+- finish of insert
+- cleanup
+
 -- this is blocking init_catalog, and anything that requires schema
 - then implement vm::join
 
 
 ## Lark
+  - document how parse tree -> AST is working
   - pretty print transformed tree
   - to_ast 
       - sql_handler should return cleaned up ast

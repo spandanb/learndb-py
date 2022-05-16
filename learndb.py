@@ -153,8 +153,8 @@ class LearnDB:
         returns return value of child-invocation
         """
         # logging.info(f"In execute_statement; ")
-        self.virtual_machine.run(program)
-        return Response(True)
+        results = self.virtual_machine.run(program)
+        return Response(True, body=results)
 
     def input_handler(self, input_buffer: str) -> Response:
         """
@@ -381,6 +381,9 @@ def devloop_join():
 
 
 def devloop_old():
+    # TODO: before cleaning/nuking these, ensure that the debugging capabilities/flows
+    # these expose, are kept somewhere, perhaps a standalone debug driver?
+    # somewhere; or perhaps just kept in this file
     db = LearnDB(DB_FILE)
     db.nuke_dbfile()
 
@@ -408,17 +411,31 @@ def devloop_old():
 
 def devloop():
     db = LearnDB(DB_FILE)
-    db.nuke_dbfile()
-
+    #db.nuke_dbfile()
 
     text = "select cola from foo f cross join june"
     text = "select cola, colb from foo f left join bar r on fx = ry;"
     text = "select cola, colb from foo f left join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
     text = "select cola, colb from foo f join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
-    text = "create table foo (cola integer primary key, colb text not null)"
+    text = "select cola, colb from foo f left join bar b on x = 1;"
+    text = "create table foo (cola integer primary key, colb x)"
+    text = "select cola from catalog"
+    text = "insert into foo ( cola, colb) values (3, 'hello')"
+    #text = "select cola from foo"
+
     resp = db.handle_input(text)
 
-    print(resp)
+    #texts = [
+        #"create table gookoo (colabc integer primary key, colbcd text, colxyz text)",
+        #"insert into foo ( cola, colb) values (2, 'hello')",
+        #"select cola from catalog"
+    #]
+    #for text in texts:
+    #    print(f"handling {text}")
+    #    resp = db.handle_input(text)
+    #    print(resp)
+
+    db.close()
 
 
 def parse_args_and_start(args: list):
@@ -461,5 +478,5 @@ python learndb.py file <filepath>
 if __name__ == '__main__':
     # config logger
     FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
-    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
+    logging.basicConfig(format=FORMAT, level=logging.DEBUG, filename="/Users/spandanbemby/universe/learndb-py/log.log")
     parse_args_and_start(sys.argv[1:])
