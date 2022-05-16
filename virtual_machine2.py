@@ -33,7 +33,8 @@ from lang_parser.sqlhandler import SqlFrontEnd
 
 from record_utils import (
     create_catalog_record,
-    join_records
+    join_records,
+    create_record,
 )
 
 
@@ -138,10 +139,15 @@ class VirtualMachine(Visitor):
         result = []
         for stmt in program.statements:
             try:
-                result.append(self.execute(stmt))
-            except Exception:
-                logging.error(f"ERROR: virtual machine failed on: [{stmt}]")
+                resp = self.execute(stmt)
+                if isinstance(resp, Response) and not resp.success:
+                    logging.warning(f"Statement [{stmt}] failed with {resp}")
+                result.append(resp)
+            except Exception as e:
+                logging.error(f"ERROR: virtual machine errored on: [{stmt}] with [{e}|]")
+                # ultimately this should not throw
                 raise
+        return result
 
     def execute(self, stmnt: Symbol):
         """
@@ -161,12 +167,12 @@ class VirtualMachine(Visitor):
 
     def visit_create_stmnt(self, stmnt: CreateStmnt) -> Response:
         """
-        Handle create stmnt:
+        Handle create stmnt
         generate, validate, and persisted schema.
         """
         # 1.attempt to generate schema from create_stmnt
         response = generate_schema(stmnt)
-        if response.success is False:
+        if not response.success:
             # schema generation failed
             return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
         table_schema = response.body
@@ -208,18 +214,58 @@ class VirtualMachine(Visitor):
 
     def visit_select_stmnt(self, stmnt) -> Response:
         """
-
+        handle select stmnt
         """
-        # materialize source
-        self.materialize(stmnt.from_clause.source)
+        # 1. setup
+        self.output_pipe.reset()
 
-        # apply filter on source
+        # 2. materialize source - from clause
+        resp = self.materialize(stmnt.from_clause.source)
+        if not resp.success:
+            return Response(False, error_message=f"source materialization failed due to {resp.error_message}")
+        rsname = resp.body
 
+        # 3. apply filter on source - where clause
+        for record in self.recordset_iter(rsname):
+            logger.info(record)
+
+    def visit_insert_stmnt(self, stmnt) -> Response:
+        """
+        handle insert stmnt
+        """
+        # todo: error if table does not exist
+        # get schema
+        schema = self.state_manager.get_schema(stmnt.table_name)
+        resp = create_record(stmnt.column_name_list, stmnt.value_list, schema)
+        if not resp.success:
+            return Response(False, error_message=f"Insert record failed due to [{resp.error_message}]")
+
+        record = resp.body
+        # get table's tree
+        tree = self.state_manager.get_tree(stmnt.table_name)
+
+        resp = serialize_record(record)
+        assert resp.success, f"serialize record failed due to {resp.error_message}"
+
+        cell = resp.body
+        resp = tree.insert(cell)
+        assert resp == TreeInsertResult.Success, f"Insert op failed with status: {resp}"
 
     # section : statement helpers
     # general principles:
     # 1) helpers should be able to handle null types
 
+    def get_schema(self, table_name):
+        if table_name.lower() == "catalog":
+            return self.state_manager.get_catalog_schema()
+        else:
+            return self.state_manager.get_schema(table_name)
+
+    def get_tree(self, table_name):
+        if table_name.lower() == "catalog":
+            return self.state_manager.get_catalog_tree()
+        else:
+            return self.state_manager.get_tree(table_name)
 
     def materialize(self, source) -> Response:
         """
@@ -233,6 +279,9 @@ class VirtualMachine(Visitor):
 
         elif isinstance(source, Joining):
             return self.materialize_joining(source)
+
+        else:
+            raise ValueError(f"Unknown materialization source type {source}")
         # case nestedSelect
 
     def materialize_single_source(self, source: SingleSource) -> Response:
@@ -244,9 +293,9 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         # get schema for table, and cursor on tree corresponding to table
-        # todo: how will names be resolved?
-        schema = self.state_manager.get_schema(source.table_name)
-        tree = self.state_manager.get_tree(source.table_name)
+        # do names need to be resolved?
+        schema = self.get_schema(source.table_name)
+        tree = self.get_tree(source.table_name)
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # iterate over entire table
         while cursor.end_of_table is False:
@@ -321,7 +370,7 @@ class VirtualMachine(Visitor):
                         joined = join_records(left_rec, right_rec)
                         self.append_recordset(rsname, joined)
 
-        # left join
+        # todo: implement other joins
 
         return Response(True, body=rsname)
 
@@ -331,25 +380,27 @@ class VirtualMachine(Visitor):
 
     # section: record set utilities
 
+    def gen_randkey(self, size=10):
+        return "".join(random.choice(string.ascii_letters) for i in range(size))
+
     def init_recordset(self) -> Response:
         """
         initialize recordset; this requires a unique name
         for each recordset
         """
-        gen_randkey = lambda: tuple(random.choice(string.ascii_letters) for i in range(10))
-        name = gen_randkey()
+        name = self.gen_randkey()
         while name in self.rsets:
             # generate while non-unique
-            name = gen_randkey()
-
+            name = self.gen_randkey()
+        self.rsets[name] = []
         return Response(True, body=name)
 
     def append_recordset(self, name: str, record):
         assert name in self.rsets
         self.rsets[name].append(record)
 
-    def drop_recordset(self, name:str):
-        pass
+    def drop_recordset(self, name: str):
+        del self.rsets[name]
 
     def recordset_iter(self, name: str):
         """return an iterator over recordset"""

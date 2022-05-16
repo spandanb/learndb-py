@@ -15,7 +15,7 @@ from typing import List
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
-from lang_parser.symbols import DataType
+from lang_parser.symbols import DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
 from dataexchange import Response
 
 
@@ -180,13 +180,13 @@ def token_to_datatype(datatype: DataType) -> Response:
     :param datatype_token:
     :return:
     """
-    if datatype == DataType.Integer:
+    if datatype == SymbolDataType.Integer:
         return Response(True, body=Integer)
-    elif datatype == DataType.Text:
+    elif datatype == SymbolDataType.Text:
         return Response(True, body=Text)
-    elif datatype == DataType.Blob:
+    elif datatype == SymbolDataType.Blob:
         return Response(True, body=Blob)
-    elif datatype == DataType.Real:
+    elif datatype == SymbolDataType.Real:
         return Response(True, body=Float)
     return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
 

@@ -9,9 +9,9 @@ GRAMMAR = '''
                          | create_stmnt
         select_stmnt     : select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
 
-        select_clause    : "select"i selectables
+        select_clause    : "select"i primary ("," primary)* //selectables
         //selectables    : column_name ("," column_name)*
-        selectables      : primary ("," primary)*
+        //selectables      : primary ("," primary)*
         from_clause      : "from"i source where_clause?
         where_clause     : "where"i condition
         group_by_clause  : "group"i "by"i column_name ("," column_name)*
