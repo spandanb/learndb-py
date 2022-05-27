@@ -418,9 +418,10 @@ def devloop():
     text = "select cola, colb from foo f left join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
     text = "select cola, colb from foo f join bar b on x = 1 left join car c on y = 2 left join dar d on fx = ry;"
     text = "select cola, colb from foo f left join bar b on x = 1;"
-    text = "create table foo (cola integer primary key, colb x)"
+
     text = "select cola from catalog"
     text = "insert into foo ( cola, colb) values (3, 'hello')"
+    text = "create table foo (cola integer primary key, colb text)"
     #text = "select cola from foo"
 
     resp = db.handle_input(text)

@@ -408,3 +408,11 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     for a symbol, i.e. the write the grammar in a way that avoids this issue. This is not the purest solution- but again, this parsing
     business is a can of worms for an imperative programmar.
 
+
+5/14
+    Is the catalog a table, that must be protected, i.e. can't be dropped unless whole db is dropped. Or is it something special,
+    i.e. not a table. This distinction is important, because it affects how we think about the VM apis. i.e. do we use
+    the same api/functions to operate on table and catalog (with if conditions), or do we think about them as fundamentally
+    different types of objects and hence hitting different flows (albeit, common helper functions can still be shared).
+    The above point is a broader point, about what are the core functionalities and APIs that, e.g. the VM operates on.
+

@@ -6,7 +6,8 @@ from lark.exceptions import UnexpectedInput  # root of all lark exceptions
 
 from . import symbols
 from .symbols import _Symbol
-from .symbols2 import ToAst
+from .symbols2 import ToAst, SecondTransformer
+from .symbols3 import ToAst2
 from .grammar import GRAMMAR
 
 
@@ -246,11 +247,12 @@ class SqlFrontEnd:
                 node is None:
             return node
 
-        while isinstance(node, Tree):
+        if isinstance(node, Tree):
             if len(node.children) == 0:
                 node = node.children[0]
             else:
                 node = node.children
+            return self.unwrap(node)
         if isinstance(node, list):
             for idx in range(len(node)):
                 item = node[idx]
@@ -265,8 +267,8 @@ class SqlFrontEnd:
                 except Exception:
                     # some attrs aren't settable
                     pass
-        if isinstance(node, list) and len(node) == 1:
-            return node[0]
+        #if isinstance(node, list) and len(node) == 1:
+        #    return node[0]
         return node
 
     def parse(self, text: str):
@@ -282,12 +284,23 @@ class SqlFrontEnd:
             #print("$" * 100)
              # Ast
             tree = self.parser.parse(text)
-            transformer = ast_utils.create_transformer(symbols, ToAst())
-            tree = transformer.transform(tree)
-            print(tree)
+            # first transformation
+            #transformer = ast_utils.create_transformer(symbols, ToAst())
+            #tree = transformer.transform(tree)
+            #print(tree)
+
+            # second transformation
+            # attempt this without, create_transformerxx
+            # second = SecondTransformer()
+            # tree = second.transform(tree)
             #breakpoint()
             #tree = self.remove_tree_wrapper4(tree)
-            tree = self.unwrap(tree)
+            #tree = self.unwrap(tree)
+
+            print(tree)
+            
+            transformer = ToAst2()
+            tree = transformer.transform(tree)
             print(tree)
             #breakpoint()
 
