@@ -222,8 +222,8 @@ class _ColumnDefList(_Symbol, ast_utils.AsList):
 @dataclass
 class InsertStmnt(_Symbol):
     table_name: Any
-    column_name_list: ColumnNameList
-    value_list: ValueList
+    column_name_list: Any
+    value_list: Any
 
 
 @dataclass
@@ -234,3 +234,8 @@ class _ColumnNameList(_Symbol, ast_utils.AsList):
 @dataclass
 class _ValueList(_Symbol, ast_utils.AsList):
     values: List[Any]
+
+
+#class ColumnDef(_Symbol):
+#    def __init__(self, *args):
+#        self.args = args
