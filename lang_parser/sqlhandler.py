@@ -7,7 +7,7 @@ from lark.exceptions import UnexpectedInput  # root of all lark exceptions
 from . import symbols
 from .symbols import _Symbol
 from .symbols2 import ToAst, SecondTransformer
-from .symbols3 import ToAst2
+from .symbols3 import ToAst2, ToAst3
 from .grammar import GRAMMAR
 
 
@@ -283,6 +283,9 @@ class SqlFrontEnd:
             # return
             #print("$" * 100)
              # Ast
+            text = "select cola, 9 from catalog where cond != true"
+
+            print(f"parsing text [note manual overide]: {text}")
             tree = self.parser.parse(text)
             # first transformation
             #transformer = ast_utils.create_transformer(symbols, ToAst())
@@ -298,8 +301,8 @@ class SqlFrontEnd:
             #tree = self.unwrap(tree)
 
             print(tree)
-            
-            transformer = ToAst2()
+
+            transformer = ToAst3()
             tree = transformer.transform(tree)
             print(tree)
             #breakpoint()

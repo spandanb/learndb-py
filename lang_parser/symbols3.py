@@ -7,6 +7,7 @@ from .symbols import (
     _Symbol
 )
 
+
 class JoinType(Enum):
     Inner = auto()
     LeftOuter = auto()
@@ -20,6 +21,17 @@ class ColumnModifier(Enum):
     NotNull = auto()
     Nil = auto()  # no modifier - likely not needed
 
+
+class DataType(Enum):
+    """
+    Enums for system datatypes
+     NOTE: This represents data-types as understood by the parser. Which
+     maybe different from VM's notion of datatypes
+    """
+    Integer = auto()
+    Text = auto()
+    Real = auto()
+    Blob = auto()
 
 
 class CreateStmnt(_Symbol):
@@ -45,35 +57,45 @@ class CreateStmnt(_Symbol):
 
 class ColumnDef(_Symbol):
 
-    def __init__(self, column_name: Tree = None, datatype: Tree = None, column_modifier=None):
+    def __init__(self, column_name: Tree = None, datatype: Tree = None, column_modifier=ColumnModifier.Nil):
         self.column_name = column_name
-        self.datatype = self._datatype_to_type(datatype)
-        self.is_primary_key = primary_key is not None
-        self.is_nullable = not_null is None
-
-    @staticmethod
-    def _datatype_to_type(datatype: str):
-        datatype = datatype.lower()
-        if datatype == "integer":
-            return DataType.Integer
-        elif datatype == "real":
-            return DataType.Real
-        elif datatype == "text":
-            return DataType.Text
-        elif datatype == "blob":
-            return DataType.Blob
-        else:
-            raise ValueError(f"Unrecognized datatype [{datatype}]")
+        self.datatype = datatype
+        self.is_primary_key = column_modifier == ColumnModifier.PrimaryKey
+        self.is_nullable = column_modifier == ColumnModifier.NotNull or column_modifier == ColumnModifier.PrimaryKey
 
     def __repr__(self):
         return str(self)
 
     def __str__(self):
         return self.prettystr()
-        #return f'{self.__class__.__name__}({self.__dict__})'
 
 
-# simple classes
+class SelectStmnt:
+    pass
+
+
+@dataclass
+class SelectClause:
+    selectables: List[Any]
+
+
+class FromClause:
+    pass
+
+
+class WhereClause:
+    pass
+
+
+class InsertStmnt:
+    pass
+
+
+# simple classes - i.e. don't need custom methods
+
+@dataclass
+class Program(_Symbol):
+    statements: list
 
 
 @dataclass
@@ -102,6 +124,7 @@ class ToAst2(Transformer):
     # helpers
 
     def rules_to_kwargs(self, args) -> dict:
+        # todo:nuke
         kwargs = {arg.data: arg for arg in args}
         return kwargs
 
@@ -112,7 +135,7 @@ class ToAst2(Transformer):
         pass
 
     def create_stmnt(self, arg):
-        breakpoint()
+        return CreateStmnt(arg.children[0], arg.children[1])
 
     def table_name(self, arg: Tree):
         assert len(arg.children) == 1
@@ -121,13 +144,29 @@ class ToAst2(Transformer):
         return val
 
     def column_def_list(self, arg):
-        breakpoint()
+        return arg.children
 
     def column_name(self, arg):
         assert len(arg.children) == 1
-        val = TableName(arg.children[0])
+        val = ColumnName(arg.children[0])
         # breakpoint()
         return val
+
+    def datatype(self, arg):
+        """
+        Convert datatype text to arg
+        """
+        datatype = arg.children[0].lower()
+        if datatype == "integer":
+            return DataType.Integer
+        elif datatype == "real":
+            return DataType.Real
+        elif datatype == "text":
+            return DataType.Text
+        elif datatype == "blob":
+            return DataType.Blob
+        else:
+            raise ValueError(f"Unrecognized datatype [{datatype}]")
 
     def primary_key(self, arg):
         # this rule doesn't have any children nodes
@@ -140,25 +179,7 @@ class ToAst2(Transformer):
         return ColumnModifier.NotNull
         # breakpoint()
 
-    # kw mapped classes
-
-    def column_def_kw_approach(self, tree):
-        """
-        there's two ways to handle these scenarios
-        1) rule _to _kw; the problem here is that this mapping still doesn't have
-            every case, e.g. if the rule appears multiple times, the rule_name_map would
-            be wrong. Approach 2, i.e. explicit coding depending on the need seems better.
-            Also, there aren't too many rules (right now) that woukd benefit from this.
-            Albeit, for select  stmnt, there are many clauses, all of which except the select clause
-            are optional. This takes me back to the whole cycle, of automating away parse-tree -> AST
-            generation. Maybe I should write the select stmnt handler here, before adding a layer of abstratcion
-
-        2) check with if, else conds, i.e. explicit/primitive checking
-        """
-        params = self.rules_to_kwargs(tree.children)
-        val = ColumnDef(**params)
-        breakpoint()
-        return val
+    # custom logic classes
 
     def column_def(self, tree):
         """
@@ -178,6 +199,136 @@ class ToAst2(Transformer):
             # todo: this more cleanly, e.g. primary key implies not null, uniqueness
             # modifiers could be a flag enum, which can be or'ed
             modifier = args[2]
-        print("COLUMN_DEF", column_name, datatype, modifier)
-        breakpoint()
+        val = ColumnDef(column_name, datatype, modifier)
+        return val
+
+
+class ToAst3(Transformer):
+    """
+    Convert parse tree to AST.
+    Handles rules with optionals at tail
+    and optionals in body.
+
+    NOTE: another decision point here
+    is where I wrap every rule in a dummy symbol class.
+    - I could wrap each class, and a parent node can unwrap a child.
+    - however, for boolean like fields, e.g. column_def__is_primary_key, it might be better
+      to return an enum
+
+    NOTE: If a grammar symbol has a leading "?", the corresponding class won't be visited
+    """
+    # helpers
+
+    # simple classes - top level statements
+
+    def program(self, args):
+        return Program(args)
+
+    def create_stmnt(self, args):
+        return CreateStmnt(args[0], args[1])
+
+    def select_stmnt(self, args):
+        # TODO: remove all rules from comments; and make grammar.py the authoritative source of rule def
+        """select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?"""
+
+
+
+    def insert_stmnt(self, args):
+        pass
+
+    # simple classes - select stmnt components
+
+    def select_clause(self, args):
+        return SelectClause(args)
+
+    def from_clause(self, args):
+        pass
+
+    def where_clause(self, args):
+        pass
+
+    def group_by_clause(self, args):
+        pass
+
+    def having_clause(self, args):
+        pass
+
+    def order_by_clause(self, args):
+        pass
+
+    def limit_clause(self, args):
+        pass
+
+    def condition(self, args):
+        pass
+
+    def primary(self, args):
+        return args[0]
+
+    # simple classes - insert stmnt components
+
+    # simple classes - create stmnt components
+
+    def table_name(self, args: list):
+        assert len(args) == 1
+        val = TableName(args[0])
+        # breakpoint()
+        return val
+
+    def column_def_list(self, args):
+        return args
+
+    def column_name(self, args):
+        assert len(args) == 1
+        val = ColumnName(args[0])
+        # breakpoint()
+        return val
+
+    def datatype(self, args):
+        """
+        Convert datatype text to arg
+        """
+        datatype = args[0].lower()
+        if datatype == "integer":
+            return DataType.Integer
+        elif datatype == "real":
+            return DataType.Real
+        elif datatype == "text":
+            return DataType.Text
+        elif datatype == "blob":
+            return DataType.Blob
+        else:
+            raise ValueError(f"Unrecognized datatype [{datatype}]")
+
+    def primary_key(self, arg):
+        # this rule doesn't have any children nodes
+        #assert len(arg.children) == 0, f"Expected 0 children; received {len(arg.children)}"
+        return ColumnModifier.PrimaryKey
+
+    def not_null(self, arg):
+        # this rule doesn't have any children nodes
+        #assert len(arg.children) == 0
+        return ColumnModifier.NotNull
+        # breakpoint()
+
+    # custom logic classes
+
+    def column_def(self, args):
+        """
+        ?column_def       : column_name datatype primary_key? not_null?
+
+        check with if, else conds
+        """
+        column_name = args[0]
+        datatype = args[1]
+        # any remaining args are column modifiers
+        modifier = ColumnModifier.Nil
+        if len(args) >= 3:
+            # the logic here is that if the primary key modifier is used
+            # not null is redudanct; and the parser ensures/requires primary
+            # key mod must be specified before not null
+            # todo: this more cleanly, e.g. primary key implies not null, uniqueness
+            # modifiers could be a flag enum, which can be or'ed
+            modifier = args[2]
+        val = ColumnDef(column_name, datatype, modifier)
         return val

@@ -53,13 +53,13 @@ GRAMMAR = '''
                          | factor ( "/" | "*" ) unary
         ?unary           : primary
                          | ( "!" | "-" ) unary
-        ?primary         : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true"i | "false"i | "null"i
+        primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
                          | IDENTIFIER 
                          | SCOPED_IDENTIFIER
                          | nested_select
                          | func_call
 
-        ?value : INTEGER_NUMBER | FLOAT_NUMBER | STRING | "true"i | "false"i | "null"i
+        ?value           : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
 
         // should this be expr
         nested_select    : "(" select_stmnt ")"
@@ -88,7 +88,10 @@ GRAMMAR = '''
 
         truncate_stmnt   : "truncate"i table_name
 
+        // datatype values
         FLOAT_NUMBER     : INTEGER_NUMBER "." ("0".."9")*
+        TRUE             : "true"i
+        FALSE            : "false"i
 
         // func names are globally defined
         func_name        : IDENTIFIER
