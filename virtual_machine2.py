@@ -15,16 +15,22 @@ from schema import generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 
 from lang_parser.visitor import Visitor
-from lang_parser.symbols import (
+from lang_parser.symbols3 import (
     _Symbol as Symbol,
     Program,
     CreateStmnt,
-    SelectStmnt,
+    SelectStmnt
+)
+
+# todo: migrate all these to one modules
+from lang_parser.symbols import (
     FromClause,
     SingleSource,
     UnconditionedJoin,
     JoinType
 )
+
+
 from lang_parser.symbols2 import (
     Joining,
     ConditionedJoin
