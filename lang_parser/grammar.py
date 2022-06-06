@@ -7,12 +7,15 @@ GRAMMAR = '''
         ?terminated      : stmnt ";"
         ?stmnt           : select_stmnt | drop_stmnt | delete_stmnt | update_stmnt | truncate_stmnt | insert_stmnt 
                          | create_stmnt
-        select_stmnt     : select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
+                         
+        // I only want logically valid stataments; and from is required for all other clauses
+        // and so is nested under from clause                       
+        select_stmnt     : select_clause from_clause? 
 
         select_clause    : "select"i primary ("," primary)* //selectables
         //selectables    : column_name ("," column_name)*
         //selectables      : primary ("," primary)*
-        from_clause      : "from"i source where_clause?
+        from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
         where_clause     : "where"i condition
         group_by_clause  : "group"i "by"i column_name ("," column_name)*
         having_clause    : "having"i condition
@@ -38,9 +41,9 @@ GRAMMAR = '''
         cross            : "cross"i
 
         condition        : or_clause
-        ?or_clause        : and_clause
+        or_clause        : and_clause
                          | or_clause "or"i and_clause
-        ?and_clause       : predicate
+        and_clause       : predicate
                          | and_clause "and"i predicate
 
         ?predicate       : comparison
