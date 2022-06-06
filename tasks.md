@@ -1,6 +1,7 @@
 # Tasks
 
 ## Top Priority
+- todo, remove ToAst
 - handle parser::unwrap_tree; this is causing issue in vm processing
   - specifically, issues with insert stmnt
 - finish of insert
