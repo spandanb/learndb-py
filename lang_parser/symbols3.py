@@ -13,6 +13,7 @@ WHITESPACE = ' '
 
 # enum types
 
+
 class JoinType(Enum):
     Inner = auto()
     LeftOuter = auto()
@@ -41,7 +42,7 @@ class DataType(Enum):
 
 # symbol class
 
-class _Symbol(ast_utils.Ast):
+class Symbol(ast_utils.Ast):
     """
     The root of AST hierarchy
     """
@@ -122,7 +123,7 @@ class _Symbol(ast_utils.Ast):
 # create statement
 
 
-class CreateStmnt(_Symbol):
+class CreateStmnt(Symbol):
     def __init__(self, table_name: Tree = None, column_def_list: Tree = None):
         self.table_name = table_name
         self.columns = column_def_list
@@ -145,7 +146,7 @@ class CreateStmnt(_Symbol):
 
 # create statement helpers
 
-class ColumnDef(_Symbol):
+class ColumnDef(Symbol):
 
     def __init__(self, column_name: Tree = None, datatype: Tree = None, column_modifier=ColumnModifier.Nil):
         self.column_name = column_name
@@ -162,7 +163,7 @@ class ColumnDef(_Symbol):
 
 # select stmnt
 @dataclass
-class SelectStmnt:
+class SelectStmnt(Symbol):
     select_clause: Any
     # all other clauses depend on from clause and hence are
     # nested under for_clause; this implicitly means that a select
@@ -175,11 +176,11 @@ class SelectStmnt:
 # select stmnt helpers
 
 @dataclass
-class SelectClause:
+class SelectClause(Symbol):
     selectables: List[Any]
 
 
-class FromClause:
+class FromClause(Symbol):
     def __init__(self, source, where_clause=None, group_by_clause=None, having_clause=None, order_by_clause=None,
                  limit_clause=None):
         self.source = source
@@ -193,26 +194,25 @@ class FromClause:
 
 
 @dataclass
-class SingleSource:
+class SingleSource(Symbol):
     table_name: Any
     table_alias: Any = None
 
 
 # wrap around from source
 @dataclass
-class FromSource:
+class FromSource(Symbol):
     source: Any
 
 
-class UnconditionedJoin(_Symbol):
-    def __init__(self, source=None, other_source=None):
-        self.left_source = source
-        self.right_source = other_source
+class UnconditionedJoin(Symbol):
+    def __init__(self, left_source, right_source):
+        self.left_source = left_source
+        self.right_source = right_source
         self.join_type = JoinType.Cross
 
 
-class ConditionedJoin(_Symbol):
-    # TODO: should AST symbol classes inherit from _Symbol?
+class ConditionedJoin(Symbol):
     """
     AST classes are responsible for translating parse tree matched rules
     to more intuitive properties, that the VM can operate on.
@@ -252,62 +252,81 @@ Joining.register(UnconditionedJoin)
 
 
 @dataclass
-class WhereClause:
+class WhereClause(Symbol):
     condition: Any  # OrClause
 
 
 @dataclass
-class OrClause:
+class OrClause(Symbol):
     and_clauses: Any
 
 
 @dataclass
-class AndClause:
+class AndClause(Symbol):
     predicates: List[Any]
 
 
 @dataclass
-class GroupByClause:
+class GroupByClause(Symbol):
     columns: List[Any]
 
 
 @dataclass
-class HavingClause:
+class HavingClause(Symbol):
     condition: Any
 
 
 @dataclass
-class OrderByClause:
+class OrderByClause(Symbol):
     columns: List[Any]
 
 
 @dataclass
-class LimitClause:
+class LimitClause(Symbol):
     limit: Any
     offset: Any = None
 
 
-class InsertStmnt:
-    pass
+@dataclass
+class InsertStmnt(Symbol):
+    table_name: Any
+    column_name_list: List[Any]
+    value_list: List[Any]
 
 
-# simple classes - i.e. don't need custom methods
 
 @dataclass
-class Program(_Symbol):
+class ColumnNameList(Symbol):
+    names: List
+
+
+@dataclass
+class ValueList(Symbol):
+    values: List
+
+
+@dataclass
+class DeleteStmnt(Symbol):
+    table_name: Any
+    where_condition: Any = None
+
+
+@dataclass
+class Program(Symbol):
     statements: list
 
 
 @dataclass
-class TableName(_Symbol):
+class TableName(Symbol):
     table_name: Any
 
 
 @dataclass
-class ColumnName(_Symbol):
+class ColumnName(Symbol):
     column_name: Any
 
 
+# todo: rename ToAst
 class ToAst3(Transformer):
     """
     Convert parse tree to AST.
@@ -329,28 +348,38 @@ class ToAst3(Transformer):
 
     # simple classes - top level statements
 
-    def program(self, args):
+    @staticmethod
+    def program(args):
         return Program(args)
 
-    def create_stmnt(self, args):
+    @staticmethod
+    def create_stmnt(args):
         return CreateStmnt(args[0], args[1])
 
-    def select_stmnt(self, args):
+    @staticmethod
+    def select_stmnt(args):
         """select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?"""
         # this return a logically valid structure,
         # i.e. select is always needed, but where, group by, and having require a from clause
         # and hence are nested under from clause
         return SelectStmnt(*args)
 
-    def insert_stmnt(self, args):
-        pass
+    @staticmethod
+    def insert_stmnt(args):
+        return InsertStmnt(args*)
 
-    # simple classes - select stmnt components
+    @staticmethod
+    def delete_stmnt(args):
+        return DeleteStmnt(*args)
 
-    def select_clause(self, args):
+    # select stmnt components
+
+    @staticmethod
+    def select_clause(args):
         return SelectClause(args)
 
-    def from_clause(self, args) -> FromClause:
+    @staticmethod
+    def from_clause(args) -> FromClause:
         # setup iteration over args
         args_iter = iter(args)
         count = len(args)
@@ -378,7 +407,6 @@ class ToAst3(Transformer):
                 fclause.order_by_clause = arg
 
         return fclause
-
 
     def where_clause(self, args):
         assert len(args) == 1
@@ -421,7 +449,8 @@ class ToAst3(Transformer):
             return ConditionedJoin(args[0], args[2], args[3], join_modifier=args[1])
 
     def unconditioned_join(self, args):
-        pass
+        assert len(args) == 2
+        return UnconditionedJoin(args[0], args[1])
 
     def condition(self, args):
         assert len(args) == 1 and isinstance(args[0], OrClause)
@@ -449,9 +478,8 @@ class ToAst3(Transformer):
     def primary(self, args):
         return args[0]
 
-    # simple classes - insert stmnt components
 
-    # simple classes - create stmnt components
+    # create stmnt components
 
     def table_name(self, args: list):
         assert len(args) == 1
@@ -495,8 +523,6 @@ class ToAst3(Transformer):
         return ColumnModifier.NotNull
         # breakpoint()
 
-    # custom logic classes
-
     def column_def(self, args):
         """
         ?column_def       : column_name datatype primary_key? not_null?
@@ -516,3 +542,13 @@ class ToAst3(Transformer):
             modifier = args[2]
         val = ColumnDef(column_name, datatype, modifier)
         return val
+
+    # insert stmnt components
+
+    @staticmethod
+    def column_name_list(args):
+        return ColumnNameList(args)
+
+    @staticmethod
+    def value_list(args):
+        return ValueList(args)
