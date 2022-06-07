@@ -24,6 +24,7 @@ def driver():
     having f.x > 3
     order by f.x
     limit 100"""
+    text = "insert into bar ( colx, coly, colz) values (30, 20, 40)"
 
     fe.parse(text)
     print(f'is_succ: {fe.is_success()}')
