@@ -92,6 +92,7 @@ GRAMMAR = '''
         truncate_stmnt   : "truncate"i table_name
 
         // datatype values
+        // NOTE: This syntax supports inf precision, but the impl will have some finite precision
         FLOAT_NUMBER     : INTEGER_NUMBER "." ("0".."9")*
         TRUE             : "true"i
         FALSE            : "false"i

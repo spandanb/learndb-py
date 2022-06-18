@@ -15,7 +15,7 @@ from typing import List
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
-from lang_parser.symbols import DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
+from lang_parser.symbols3 import DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
 from dataexchange import Response
 
 
