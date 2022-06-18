@@ -14,7 +14,6 @@ from .grammar import GRAMMAR
 logger = logging.getLogger(__name__)
 
 
-
 class SqlFrontEnd:
     """
     Parser for learndb lang, based on lark definition
@@ -28,7 +27,7 @@ class SqlFrontEnd:
         self._init()
 
     def _init(self):
-        self.parser = Lark(GRAMMAR, parser='earley', start="program", debug=True)  # , ambiguity='explicit')
+        self.parser = Lark(GRAMMAR, parser='earley', start="program", debug=True)
 
     def error_summary(self):
         if self.exc is not None:
@@ -53,43 +52,9 @@ class SqlFrontEnd:
         """
         # parse tree
         try:
-            #print(self.parser.parse(text).pretty())
-            # return
-            #print("$" * 100)
-             # Ast
-            #text = """select cola, 9 from tabA ta join tabB tb on ta.x = tb.y
-            #        where cond != true and acond != 'mango' or someother > 32 """
-
-            print(f"parsing text [note manual overide]: {text}")
             tree = self.parser.parse(text)
-            # first transformation
-            #transformer = ast_utils.create_transformer(symbols, ToAst())
-            #tree = transformer.transform(tree)
-            #print(tree)
-
-            # second transformation
-            # attempt this without, create_transformerxx
-            # second = SecondTransformer()
-            # tree = second.transform(tree)
-            #breakpoint()
-            #tree = self.remove_tree_wrapper4(tree)
-            #tree = self.unwrap(tree)
-
-            print(tree)
-
             transformer = ToAst3()
             tree = transformer.transform(tree)
-            print(tree)
-            #breakpoint()
-
-            #pretty = tree.prettyprint()
-            #pretty = os.linesep.join(pretty)
-            #print("$"*100)
-
-            #print("$." * 70)
-            #print(pretty)
-            #print("$" * 100)
-            # print(tree.children[0].select_clause.children[0].Selections)
             self.parsed = tree
             self.is_succ = True
             self.exc = None

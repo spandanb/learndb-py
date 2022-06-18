@@ -5,6 +5,8 @@ Records are data containing objects that conform to a schema.
 """
 from typing import List, Optional, Union
 
+from lark import Token
+from lang_parser.symbols3 import ColumnNameList, ValueList
 from dataexchange import Response
 from schema import Schema
 
@@ -170,7 +172,7 @@ def validate_record(record) -> Response:
             return Response(False, error_message=f'non-nullable field [{column.name}] is unset')
         # check if literals have valid value
         if value is not None and not column.datatype.is_valid_term(value):
-            return Response(False, error_message=f'Column [{column.name}, type: {column.datatype}] has invalid term [{value}]')
+            return Response(False, error_message=f'Column [{column.name}, type: {column.datatype}] has invalid term [{value}] [term type: {type(value)}]')
         # check if column is primary key
         if column.is_primary_key:
             has_primary_key = True
@@ -181,23 +183,32 @@ def validate_record(record) -> Response:
     return Response(True)
 
 
-def create_record(column_name_list: List, value_list: List, schema: Schema) -> Response:
+def create_record(column_name_list: ColumnNameList, value_list: ValueList, schema: Schema) -> Response:
     """
     Create record. Note if the operation is successful, a valid record was read.
     :return:
     """
-    if len(column_name_list) != len(value_list):
+    if len(column_name_list.names) != len(value_list.values):
         return Response(False, error_message=f'Number of column names [{len(column_name_list)}] '
                                              f'does not equal number of values[{len(value_list)}]')
 
     # create record
     values = {}
-    for idx, col_name in enumerate(column_name_list):
-        value = value_list[idx]
+    for idx, col_name in enumerate(column_name_list.names):
+        value = value_list.values[idx]
 
-        # todo: verify this
-        extracted = getattr(value, 'literal', value)
-        values[col_name] = extracted
+        # handle any type conversion
+        if isinstance(value, Token):
+            # where should this type checking be codified?
+            if value.type == "INTEGER_NUMBER":
+                value = int(value)
+            elif value.type == "FLOAT_NUMBER":
+                value = float(value)
+
+            # else: leave as string
+            # do other types need to be converted?
+
+        values[col_name] = value
 
     record = Record(values, schema)
 
@@ -211,7 +222,9 @@ def create_record(column_name_list: List, value_list: List, schema: Schema) -> R
 
 def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):
     """
-    Create a catalog record
+    Create a catalog record.
+
+    NOTE: This must produce a type identical output to parser
     :param pkey:
     :param table_name:
     :param root_page_num:
@@ -219,7 +232,7 @@ def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_te
     :return:
     """
 
-    return create_record(['pkey', 'name', 'root_pagenum', 'sql_text'],
-                         [pkey, table_name, root_page_num, sql_text],
+    return create_record(ColumnNameList(['pkey', 'name', 'root_pagenum', 'sql_text']),
+                         ValueList([pkey, table_name, root_page_num, sql_text]),
                          catalog_schema)
 

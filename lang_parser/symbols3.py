@@ -1,5 +1,6 @@
 import abc
 
+import os
 from lark import Lark, Transformer, Tree, v_args, ast_utils
 from enum import Enum, auto
 from typing import Any, List, Union
@@ -40,6 +41,17 @@ class DataType(Enum):
     Blob = auto()
 
 
+class LiteralTypes(Enum):
+    """
+    Enum for types of literals grammar supports
+    unused, but should be used when doing literal conversion
+    """
+    FloatNumber = auto()
+    IntegerNumber = auto()
+    DoubleQuotedString = auto()
+    SingleQuotedString = auto()
+
+
 # symbol class
 
 class Symbol(ast_utils.Ast):
@@ -51,6 +63,9 @@ class Symbol(ast_utils.Ast):
     def accept(self, visitor: Visitor) -> Any:
         return visitor.visit(self)
 
+    def __hash__(self):
+        return self.__class__.__name__ + str(self.__dict__)
+
     def is_virtual(self) -> bool:
         """
         Helper method to determine whether symbol/parsed
@@ -60,6 +75,7 @@ class Symbol(ast_utils.Ast):
         """
         classname = self.__class__.__name__
         return classname.startswith("_")
+
 
     def get_prettychild(self, child, child_depth) -> list:
         """
@@ -152,7 +168,7 @@ class ColumnDef(Symbol):
         self.column_name = column_name
         self.datatype = datatype
         self.is_primary_key = column_modifier == ColumnModifier.PrimaryKey
-        self.is_nullable = column_modifier == ColumnModifier.NotNull or column_modifier == ColumnModifier.PrimaryKey
+        self.is_nullable = column_modifier != ColumnModifier.NotNull and column_modifier != ColumnModifier.PrimaryKey
 
     def __repr__(self):
         return str(self)
@@ -318,11 +334,13 @@ class Program(Symbol):
 
 @dataclass
 class TableName(Symbol):
+    # todo: nuke, unused
     table_name: Any
 
 
 @dataclass
 class ColumnName(Symbol):
+    # todo: nuke, unused
     column_name: Any
 
 
@@ -354,7 +372,8 @@ class ToAst3(Transformer):
 
     @staticmethod
     def create_stmnt(args):
-        return CreateStmnt(args[0], args[1])
+        stmnt = CreateStmnt(args[0], args[1])
+        return stmnt
 
     @staticmethod
     def select_stmnt(args):
@@ -366,7 +385,8 @@ class ToAst3(Transformer):
 
     @staticmethod
     def insert_stmnt(args):
-        return InsertStmnt(args*)
+        stmtn = InsertStmnt(*args)
+        return stmtn
 
     @staticmethod
     def delete_stmnt(args):
@@ -483,8 +503,7 @@ class ToAst3(Transformer):
 
     def table_name(self, args: list):
         assert len(args) == 1
-        val = TableName(args[0])
-        # breakpoint()
+        val = args[0]
         return val
 
     def column_def_list(self, args):
@@ -492,8 +511,7 @@ class ToAst3(Transformer):
 
     def column_name(self, args):
         assert len(args) == 1
-        val = ColumnName(args[0])
-        # breakpoint()
+        val = args[0]
         return val
 
     def datatype(self, args):
@@ -514,14 +532,11 @@ class ToAst3(Transformer):
 
     def primary_key(self, arg):
         # this rule doesn't have any children nodes
-        #assert len(arg.children) == 0, f"Expected 0 children; received {len(arg.children)}"
         return ColumnModifier.PrimaryKey
 
     def not_null(self, arg):
         # this rule doesn't have any children nodes
-        #assert len(arg.children) == 0
         return ColumnModifier.NotNull
-        # breakpoint()
 
     def column_def(self, args):
         """

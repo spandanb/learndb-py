@@ -8,6 +8,8 @@ import logging
 import random
 import string
 
+from typing import List
+
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
@@ -16,25 +18,17 @@ from serde import serialize_record, deserialize_cell
 
 from lang_parser.visitor import Visitor
 from lang_parser.symbols3 import (
-    _Symbol as Symbol,
+    Symbol,
     Program,
     CreateStmnt,
-    SelectStmnt
-)
-
-# todo: migrate all these to one modules
-from lang_parser.symbols import (
     FromClause,
     SingleSource,
     UnconditionedJoin,
-    JoinType
-)
-
-
-from lang_parser.symbols2 import (
+    JoinType,
     Joining,
     ConditionedJoin
 )
+
 from lang_parser.sqlhandler import SqlFrontEnd
 
 from record_utils import (
@@ -136,19 +130,24 @@ class VirtualMachine(Visitor):
 
             cursor.advance()
 
-    def run(self, program):
+    def run(self, program, stop_on_err=False) -> List:
         """
         run the virtual machine with program on state
         :param program:
+        :param stop_on_err: stop program execution on first error
         :return:
         """
         result = []
         for stmt in program.statements:
             try:
                 resp = self.execute(stmt)
+                logging.info(f"sssstmnt {stmt} produced resp [{resp}]")
+                # assert isinstance(resp, Response), f"[{stmt}] expected Response, received {resp}"
                 if isinstance(resp, Response) and not resp.success:
                     logging.warning(f"Statement [{stmt}] failed with {resp}")
                 result.append(resp)
+                if not resp and stop_on_err:
+                    return result
             except Exception as e:
                 logging.error(f"ERROR: virtual machine errored on: [{stmt}] with [{e}|]")
                 # ultimately this should not throw
@@ -226,7 +225,7 @@ class VirtualMachine(Visitor):
         self.output_pipe.reset()
 
         # 2. materialize source - from clause
-        resp = self.materialize(stmnt.from_clause.source)
+        resp = self.materialize(stmnt.from_clause.source.source)
         if not resp.success:
             return Response(False, error_message=f"source materialization failed due to {resp.error_message}")
         rsname = resp.body
