@@ -208,7 +208,7 @@ def generate_schema(create_stmnt) -> Response:
         if not resp.success:
             return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
         datatype = resp.body
-        column_name = coldef.column_name.lower()
+        column_name = coldef.column_name.name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
     schema.columns = columns

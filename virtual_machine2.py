@@ -16,6 +16,7 @@ from dataexchange import Response
 from schema import generate_schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 
+from lark import Token
 from lang_parser.visitor import Visitor
 from lang_parser.symbols3 import (
     Symbol,
@@ -26,7 +27,10 @@ from lang_parser.symbols3 import (
     UnconditionedJoin,
     JoinType,
     Joining,
-    ConditionedJoin
+    ConditionedJoin,
+    Comparison,
+    ComparisonOp
+
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -141,8 +145,7 @@ class VirtualMachine(Visitor):
         for stmt in program.statements:
             try:
                 resp = self.execute(stmt)
-                logging.info(f"sssstmnt {stmt} produced resp [{resp}]")
-                # assert isinstance(resp, Response), f"[{stmt}] expected Response, received {resp}"
+                # todo: why isn't resp always Response
                 if isinstance(resp, Response) and not resp.success:
                     logging.warning(f"Statement [{stmt}] failed with {resp}")
                 result.append(resp)
@@ -220,19 +223,45 @@ class VirtualMachine(Visitor):
     def visit_select_stmnt(self, stmnt) -> Response:
         """
         handle select stmnt
+        most clauses are optional
         """
         # 1. setup
         self.output_pipe.reset()
 
-        # 2. materialize source - from clause
-        resp = self.materialize(stmnt.from_clause.source.source)
-        if not resp.success:
-            return Response(False, error_message=f"source materialization failed due to {resp.error_message}")
-        rsname = resp.body
+        # 2. check and handle from clause
+        from_clause = stmnt.from_clause
+        if from_clause:
+            # materialize source in from clause
+            resp = self.materialize(stmnt.from_clause.source.source)
+            if not resp.success:
+                return Response(False, error_message=f"[from_clause] source materialization failed due to {resp.error_message}")
+            rsname = resp.body
 
-        # 3. apply filter on source - where clause
-        for record in self.recordset_iter(rsname):
-            logger.info(record)
+            # 3. apply filter on source - where clause
+            if from_clause.where_clause:
+                resp = self.filter_results(from_clause.where_clause, rsname)
+                if not resp.success:
+                    return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
+                # filtering produces a new resultset
+                rsname = resp.body
+
+            if from_clause.group_by_clause:
+                pass
+            if from_clause.having_clause:
+                pass
+            if from_clause.order_by_clause:
+                pass
+            if from_clause.limit_clause:
+                pass
+
+            for record in self.recordset_iter(rsname):
+                # todo: create records with only selected columns
+                self.output_pipe.write(record)
+
+        # output pipe for sanity
+        # for msg in self.output_pipe.store:
+        #    logger.info(msg)
+
 
     def visit_insert_stmnt(self, stmnt) -> Response:
         """
@@ -353,6 +382,69 @@ class VirtualMachine(Visitor):
             resp = self.join_recordset(next_join, rsname, next_rsname)
             assert resp.success
             rsname = resp.body
+
+        return Response(True, body=rsname)
+
+    def check_resolve_name(self, operand, record) -> Response:
+        """
+        Check if the `operand` is logical name, if so
+        attempt to resolve it from record
+        """
+        if isinstance(operand, Token) and operand.type == "IDENTIFIER":
+            # check if we can resolve this
+            if operand in record.values:
+                return Response(True, body=record.values[operand])
+            return Response(False)
+        else:
+            # not name, return as is
+            return Response(True, body=operand)
+
+    def filter_results(self, where_clause, source_rsname: str) -> Response:
+        """
+        Apply where_clause on source_rsname and return
+        """
+        resp = self.init_recordset()
+        assert resp.success
+        # generate new result set
+        rsname = resp.body
+
+        for record in self.recordset_iter(source_rsname):
+            or_result = False
+            # or the result of each and_clause
+            for and_clause in where_clause.condition.and_clauses:
+                and_result = True
+                for predicate in and_clause.predicates:
+                    assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
+                    # resolve any logical names
+                    resp = self.check_resolve_name(predicate.left_op, record)
+                    assert resp.success
+                    left_value = resp.body
+                    resp = self.check_resolve_name(predicate.right_op, record)
+                    assert resp.success
+                    right_value = resp.body
+                    # value of evaluated predicate
+                    pred_value = False
+                    if predicate.operator == ComparisonOp.Greater:
+                        pred_value = left_value > right_value
+                    elif predicate.operator == ComparisonOp.Less:
+                        pred_value = left_value < right_value
+                    elif predicate.operator >= ComparisonOp.GreaterEqual:
+                        pred_value = left_value >= right_value
+                    elif predicate.operator == ComparisonOp.LessEqual:
+                        pred_value = left_value <= right_value
+                    elif predicate.operator == ComparisonOp.Equal:
+                        pred_value = left_value == right_value
+                    else:
+                        assert predicate.operator == ComparisonOp.NotEqual
+                        pred_value = left_value != right_value
+
+                    and_result = and_result and pred_value
+                    # todo: once an and_result is False, stop loop
+
+                or_result = or_result or and_result
+
+            if or_result:
+                self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
 

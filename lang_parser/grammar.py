@@ -46,15 +46,16 @@ GRAMMAR = '''
         and_clause       : predicate
                          | and_clause "and"i predicate
 
-        ?predicate       : comparison
+        // predicate and comparison ares separate so =, <> have lower precedence than other comp ops
+        predicate        : comparison
                          | predicate ( EQUAL | NOT_EQUAL ) comparison
-        ?comparison      : term
+        comparison       : term
                          | comparison ( LESS_EQUAL | GREATER_EQUAL | LESS | GREATER ) term
-        ?term            : factor
+        term            : factor
                          | term ( "-" | "+" ) factor
-        ?factor          : unary
+        factor          : unary
                          | factor ( "/" | "*" ) unary
-        ?unary           : primary
+        unary           : primary
                          | ( "!" | "-" ) unary
         primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
                          | IDENTIFIER 

@@ -4,6 +4,7 @@ This module contains the highest level user-interaction and resource allocation
 i.e. management of entities, like parser, virtual machine, pager, etc. that implement
 the DBMS functionality that is learndb.
 """
+import os
 import os.path
 import math  # for testing
 import sys
@@ -411,7 +412,7 @@ def devloop_old():
 
 def devloop():
     db = LearnDB(DB_FILE)
-    #db.nuke_dbfile()
+    db.nuke_dbfile()
 
     text = "select cola from foo f cross join june"
     text = "select cola, colb from foo f left join bar r on fx = ry;"
@@ -423,18 +424,28 @@ def devloop():
     text = "create table foo (cola integer primary key, colb text)"
     text = "select cola from catalog"
     #text = "select cola from foo"
-    text = "insert into foo ( cola, colb) values (3, 'hello')"
-    resp = db.handle_input(text)
+    text = "select cola from foo where cola > 5"
+    #resp = db.handle_input(text)
+    #db.close()
+    #return
 
-    #texts = [
-        #"create table gookoo (colabc integer primary key, colbcd text, colxyz text)",
-        #"insert into foo ( cola, colb) values (2, 'hello')",
-        #"select cola from catalog"
-    #]
-    #for text in texts:
-    #    print(f"handling {text}")
-    #    resp = db.handle_input(text)
-    #    print(resp)
+    texts = [
+        "create table foo (cola integer primary key, colb text)",
+        "insert into foo ( cola, colb) values (42, 'hello melo')",
+        "insert into foo ( cola, colb) values (1, 'helo melo')",
+        #"insert into foo ( cola, colb) values (43, 'lo melossss')",
+        #"insert into foo ( cola, colb) values (4, 'hello melo')",
+        #"insert into foo ( cola, colb) values (4002, 'heloPIESDS')",
+        "insert into foo ( cola, colb) values (99, 'hello bobo')",
+        "select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
+    ]
+    for text in texts:
+        logging.info(f"handling {text}")
+        resp = db.handle_input(text)
+        logging.info(f"received resp: {resp}")
+        while db.pipe.has_msgs():
+            logging.info("read from pipe: {}".format(db.pipe.read()))
+
 
     db.close()
 
@@ -479,5 +490,8 @@ python learndb.py file <filepath>
 if __name__ == '__main__':
     # config logger
     FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
-    logging.basicConfig(format=FORMAT, level=logging.DEBUG, filename="/Users/spandanbemby/universe/learndb-py/log.log")
+    # log to file
+    # logging.basicConfig(format=FORMAT, level=logging.DEBUG, filename=os.path.join(os.getcwd(), "log.log"))
+    # log to stdout
+    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
     parse_args_and_start(sys.argv[1:])
