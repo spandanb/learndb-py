@@ -6,7 +6,7 @@ Records are data containing objects that conform to a schema.
 from typing import List, Optional, Union
 
 from lark import Token
-from lang_parser.symbols3 import ColumnNameList, ValueList
+from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList
 from dataexchange import Response
 from schema import Schema
 
@@ -200,15 +200,17 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
         # handle any type conversion
         if isinstance(value, Token):
             # where should this type checking be codified?
-            if value.type == "INTEGER_NUMBER":
-                value = int(value)
-            elif value.type == "FLOAT_NUMBER":
-                value = float(value)
+            # TODO: these are likely not needed
+            #if value.type == "INTEGER_NUMBER":
+            #    value = int(value)
+            #elif value.type == "FLOAT_NUMBER":
+            #    value = float(value)
+            pass
 
             # else: leave as string
             # do other types need to be converted?
 
-        values[col_name] = value
+        values[col_name.name] = value
 
     record = Record(values, schema)
 
@@ -232,7 +234,8 @@ def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_te
     :return:
     """
 
-    return create_record(ColumnNameList(['pkey', 'name', 'root_pagenum', 'sql_text']),
+    return create_record(ColumnNameList([ColumnName('pkey'), ColumnName('name'), ColumnName('root_pagenum'),
+                                         ColumnName('sql_text')]),
                          ValueList([pkey, table_name, root_page_num, sql_text]),
                          catalog_schema)
 

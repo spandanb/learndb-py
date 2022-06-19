@@ -3,7 +3,8 @@ Tests serde of individual datatypes and of schemas/records
 composed of columns of many different datatype
 """
 from datatypes import Integer, Float, Text, Null, Blob
-from schema import Schema, Column, Record
+from schema import Schema, Column
+from record_utils import Record
 from serde import deserialize_cell, serialize_record
 
 

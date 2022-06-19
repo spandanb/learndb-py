@@ -32,8 +32,8 @@ class ColumnModifier(Enum):
 class DataType(Enum):
     """
     Enums for system datatypes
-     NOTE: This represents data-types as understood by the parser. Which
-     maybe different from VM's notion of datatypes
+    NOTE: This represents data-types as understood by the parser. Which
+    maybe different from VM's notion of datatypes
     """
     Integer = auto()
     Text = auto()
@@ -41,15 +41,13 @@ class DataType(Enum):
     Blob = auto()
 
 
-class LiteralTypes(Enum):
-    """
-    Enum for types of literals grammar supports
-    unused, but should be used when doing literal conversion
-    """
-    FloatNumber = auto()
-    IntegerNumber = auto()
-    DoubleQuotedString = auto()
-    SingleQuotedString = auto()
+class ComparisonOp(Enum):
+    Greater = auto()
+    Less = auto()
+    LessEqual = auto()
+    GreaterEqual = auto()
+    Equal = auto()
+    NotEqual = auto()
 
 
 # symbol class
@@ -177,6 +175,13 @@ class ColumnDef(Symbol):
         return self.prettystr()
 
 
+@dataclass
+class Comparison(Symbol):
+    left_op: Any
+    right_op: Any
+    operator: Any
+
+
 # select stmnt
 @dataclass
 class SelectStmnt(Symbol):
@@ -243,6 +248,7 @@ class ConditionedJoin(Symbol):
 
     @staticmethod
     def _join_modifier_to_type(join_modifier) -> JoinType:
+        # TODO: THIS CAN BE DONE IN THE TRANSFORMER
         if join_modifier is None:
             return JoinType.Inner
         modifier = join_modifier.children[0].data  # not sure why it's a list
@@ -341,7 +347,7 @@ class TableName(Symbol):
 @dataclass
 class ColumnName(Symbol):
     # todo: nuke, unused
-    column_name: Any
+    name: Any
 
 
 # todo: rename ToAst
@@ -476,6 +482,37 @@ class ToAst3(Transformer):
         assert len(args) == 1 and isinstance(args[0], OrClause)
         return args[0]
 
+    def comparison(self, args):
+        if len(args) == 1:
+            return args[0]
+        assert len(args) == 3
+        return Comparison(left_op=args[0], right_op=args[2], operator=args[1])
+
+    def predicate(self, args):
+        """
+        NOTE: predicate and comparison handle comparison, but different ops
+        to better handle precedence
+        """
+        if len(args) == 1:
+            return args[0]
+        assert len(args) == 3
+        return Comparison(left_op=args[0], right_op=args[2], operator=args[1])
+
+    def term(self, args):
+        if len(args) == 1:
+            return args[0]
+        breakpoint()
+
+    def factor(self, args):
+        if len(args) == 1:
+            return args[0]
+        breakpoint()
+
+    def unary(self, args):
+        if len(args) == 1:
+            return args[0]
+        breakpoint()
+
     def or_clause(self, args):
         if len(args) == 1:
             return OrClause([args[0]])
@@ -496,8 +533,8 @@ class ToAst3(Transformer):
             return args[0]
 
     def primary(self, args):
+        assert len(args) == 1
         return args[0]
-
 
     # create stmnt components
 
@@ -512,7 +549,7 @@ class ToAst3(Transformer):
     def column_name(self, args):
         assert len(args) == 1
         val = args[0]
-        return val
+        return ColumnName(val)
 
     def datatype(self, args):
         """
@@ -567,3 +604,31 @@ class ToAst3(Transformer):
     @staticmethod
     def value_list(args):
         return ValueList(args)
+
+    def INTEGER_NUMBER(self, arg):
+        return int(arg)
+
+    def FLOAT_NUMBER(self, arg):
+        return float(arg)
+
+    # comparison ops
+
+    def GREATER(self, arg):
+        return ComparisonOp.Greater
+
+    def LESS(self, arg):
+        return ComparisonOp.Less
+
+    def LESS_EQUAL(self, arg):
+        return ComparisonOp.LessEqual
+
+    def GREATER_EQUAL(self, arg):
+        return ComparisonOp.GreaterEqual
+
+    def EQUAL(self, arg):
+        return ComparisonOp.Equal
+
+    def NOT_EQUAL(self, arg):
+        return ComparisonOp.NotEqual
+
+
