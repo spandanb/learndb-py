@@ -29,8 +29,9 @@ from lang_parser.symbols3 import (
     Joining,
     ConditionedJoin,
     Comparison,
-    ComparisonOp
-
+    ComparisonOp,
+    WhereClause,
+    TableName
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -184,7 +185,7 @@ class VirtualMachine(Visitor):
             # schema generation failed
             return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
         table_schema = response.body
-        table_name = table_schema.name
+        table_name = table_schema.name.table_name
         assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
@@ -262,21 +263,24 @@ class VirtualMachine(Visitor):
         # for msg in self.output_pipe.store:
         #    logger.info(msg)
 
-
     def visit_insert_stmnt(self, stmnt) -> Response:
         """
         handle insert stmnt
         """
-        # todo: error if table does not exist
+        table_name = stmnt.table_name.table_name
+        if not self.state_manager.has_schema(table_name):
+            # check if table exists
+            return Response(False, error_message=f"Table [{table_name}] does not exist")
+
         # get schema
-        schema = self.state_manager.get_schema(stmnt.table_name)
+        schema = self.state_manager.get_schema(table_name)
         resp = create_record(stmnt.column_name_list, stmnt.value_list, schema)
         if not resp.success:
             return Response(False, error_message=f"Insert record failed due to [{resp.error_message}]")
 
         record = resp.body
         # get table's tree
-        tree = self.state_manager.get_tree(stmnt.table_name)
+        tree = self.state_manager.get_tree(table_name)
 
         resp = serialize_record(record)
         assert resp.success, f"serialize record failed due to {resp.error_message}"
@@ -285,27 +289,58 @@ class VirtualMachine(Visitor):
         resp = tree.insert(cell)
         assert resp == TreeInsertResult.Success, f"Insert op failed with status: {resp}"
 
+    def visit_delete_stmnt(self, stmnt) -> Response:
+        """
+        handle delete stmnt
+        """
+
+        # 1. iterate over source dataset
+        # materializing the entire recordset is expensive, but cleaner/easier/faster to implement
+        resp = self.materialize(stmnt.table_name)
+        assert resp.success
+        rsname = resp.body
+
+        if stmnt.where_condition:
+            resp = self.filter_results(stmnt.where_condition, rsname)
+            assert resp.success
+            rsname = resp.body
+
+        # 2. create list of keys to delete
+        del_keys = []
+        for record in self.recordset_iter(rsname):
+            del_keys.append(record.get_primary_key())
+
+        # 3. delete the keys
+        table_name = stmnt.table_name.table_name
+        tree = self.get_tree(table_name)
+        for del_key in del_keys:
+            resp = tree.delete(del_key)
+            if resp != TreeDeleteResult.Success:
+                logging.warning(f"delete failed for key {del_key}")
+                return Response(False, resp)
+        # return list of deleted keys
+        return Response(True, body=del_keys)
+
+
     # section : statement helpers
     # general principles:
     # 1) helpers should be able to handle null types
 
     def get_schema(self, table_name):
-        if table_name.lower() == "catalog":
+        if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_schema()
         else:
-            return self.state_manager.get_schema(table_name)
+            return self.state_manager.get_schema(table_name.table_name)
 
     def get_tree(self, table_name):
-        if table_name.lower() == "catalog":
+        if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_tree()
         else:
-            return self.state_manager.get_tree(table_name)
+            return self.state_manager.get_tree(table_name.table_name)
 
     def materialize(self, source) -> Response:
         """
-        this and other materialize methods should return Response(recordSetName: str);
-        but this already shows a limitation of this
-
+        this and other materialize methods return Response(recordSetName: str);
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
@@ -313,6 +348,9 @@ class VirtualMachine(Visitor):
 
         elif isinstance(source, Joining):
             return self.materialize_joining(source)
+
+        elif isinstance(source, TableName):
+            return self.materialized_source_from_name(source.table_name)
 
         else:
             raise ValueError(f"Unknown materialization source type {source}")
@@ -322,14 +360,20 @@ class VirtualMachine(Visitor):
         """
         Materialize single source and return
         """
+        assert isinstance(source, SingleSource), f"Unexpected {source}"
+
+        # does table_names need to be resolved?
+        return self.materialized_source_from_name(source.table_name)
+
+    def materialized_source_from_name(self, table_name: str) -> Response:
         resp = self.init_recordset()
         assert resp.success
         rsname = resp.body
 
         # get schema for table, and cursor on tree corresponding to table
-        # do names need to be resolved?
-        schema = self.get_schema(source.table_name)
-        tree = self.get_tree(source.table_name)
+        schema = self.get_schema(table_name)
+        tree = self.get_tree(table_name)
+
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # iterate over entire table
         while cursor.end_of_table is False:
@@ -399,10 +443,12 @@ class VirtualMachine(Visitor):
             # not name, return as is
             return Response(True, body=operand)
 
-    def filter_results(self, where_clause, source_rsname: str) -> Response:
+    def filter_results(self, where_clause: WhereClause, source_rsname: str) -> Response:
         """
         Apply where_clause on source_rsname and return
         """
+        assert isinstance(where_clause, WhereClause)
+
         resp = self.init_recordset()
         assert resp.success
         # generate new result set
@@ -428,7 +474,7 @@ class VirtualMachine(Visitor):
                         pred_value = left_value > right_value
                     elif predicate.operator == ComparisonOp.Less:
                         pred_value = left_value < right_value
-                    elif predicate.operator >= ComparisonOp.GreaterEqual:
+                    elif predicate.operator == ComparisonOp.GreaterEqual:
                         pred_value = left_value >= right_value
                     elif predicate.operator == ComparisonOp.LessEqual:
                         pred_value = left_value <= right_value
@@ -438,8 +484,8 @@ class VirtualMachine(Visitor):
                         assert predicate.operator == ComparisonOp.NotEqual
                         pred_value = left_value != right_value
 
+                    # optimization note: once an and_result is False, stop loop
                     and_result = and_result and pred_value
-                    # todo: once an and_result is False, stop loop
 
                 or_result = or_result or and_result
 
