@@ -57,6 +57,10 @@ class Record:
         """
         return column.lower() in self.values
 
+    def get_primary_key(self):
+        pkey_col = self.schema.get_primary_key_column()
+        return self.get(pkey_col)
+
 
 class MultiRecord:
     """

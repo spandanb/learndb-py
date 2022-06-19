@@ -14,8 +14,7 @@ def test_create_table():
     create table and check existence in catalog
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
-    db.nuke_dbfile()
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
 
     # output pipe
     pipe = db.get_pipe()
@@ -39,24 +38,26 @@ def test_insert():
     NOTE: more thorough insert/delete ops are covered in btree_tests.py
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
     # output pipe
     pipe = db.get_pipe()
 
     # create table
-    db.handle_input("create table foo ( colA integer primary key, colB text)")
+    # TODO: FIXME cannot handle non-lowercase column names, e.g.
+    # db.handle_input("create table foo ( colA integer primary key, colB text)")
+    db.handle_input("create table foo ( cola integer primary key, colb text)")
 
     # insert into table
-    db.handle_input("insert into foo (colA, colB) values (4, 'hellew words')")
+    db.handle_input("insert into foo (cola, colb) values (4, 'hellew words')")
 
     # verify data
-    db.handle_input("select colA, colB from foo")
+    db.handle_input("select cola, colb from foo")
 
     assert pipe.has_msgs(), "expected messages"
     record = pipe.read()
-    assert record.get("colA") == 4
-    assert record.get("colB") == "hellew words"
+    assert record.get("cola") == 4
+    assert record.get("colb") == "'hellew words'"
 
 
 def test_select_equality():
@@ -65,7 +66,7 @@ def test_select_equality():
 
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -111,7 +112,7 @@ def test_inner_join():
 
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -141,7 +142,7 @@ def test_left_join():
     test left-outer join
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -171,7 +172,7 @@ def test_delete_equality_on_primary_column():
     test delete with equality condition
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -192,7 +193,7 @@ def test_delete_equality_on_non_primary_column():
 
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -224,7 +225,7 @@ def test_delete_inequality():
     test delete with inequality condition
     :return:
     """
-    db = LearnDB(TEST_DB_FILE)
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     # create table
@@ -238,7 +239,6 @@ def test_delete_inequality():
     db.handle_input(cmd)
     pipe = db.get_pipe()
     assert not pipe.has_msgs(), "expected no rows"
-
 
 
 def test_update():

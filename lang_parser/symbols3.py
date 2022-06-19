@@ -391,8 +391,7 @@ class ToAst3(Transformer):
 
     @staticmethod
     def insert_stmnt(args):
-        stmtn = InsertStmnt(*args)
-        return stmtn
+        return InsertStmnt(*args)
 
     @staticmethod
     def delete_stmnt(args):
@@ -540,8 +539,7 @@ class ToAst3(Transformer):
 
     def table_name(self, args: list):
         assert len(args) == 1
-        val = args[0]
-        return val
+        return TableName(args[0])
 
     def column_def_list(self, args):
         return args
