@@ -408,19 +408,13 @@ class VirtualMachine(Visitor):
                 # end of join nesting
                 break
 
-        # todo: think about how to pass table_name info
-        # this may need to be something more complex
-        # table_name -> rsname
-        table_aliases = {}
         # now materialize joins
         # starting from stack top, each materialization is the left_source
         # in the nest iteration of joining
         first = stack.pop()
-        #table_alias = first.table_alias or first.table_name.table_name
         resp = self.materialize(first)
         assert resp.success
         rsname = resp.body
-        #table_aliases[table_alias] = rsname
         left_source_name = first.table_alias or first.table_name.table_name
         while stack:
             # join next source with existing rset
@@ -438,11 +432,18 @@ class VirtualMachine(Visitor):
             next_rsname = resp.body
 
             # join next_join with rsname
-            # TODO: I need to pass the table_name + alias, so the join condition can be evaluated
-            # so, this api must minimally also support some support for a naming_context
-            # perhaps a map table_name -> rsname
+            # NOTE: in the first joining, i.e. when 2 simple sources are joined, I need to pass
+            # the table_name for left and right sources. This creates a joined_recordsets, containing
+            # JoinedRecords. JoinedRecords, unlike (simple) Records, contain the table_name, where the
+            # record came from. Thus, in subsequent joinings, i.e. the previously joined with a simple
+            # source (containing Records), I only need to pass the alias for the right source, since
+            # the JoinedRecord already contains the table name info
+
+            # NOTE: this API could be made more consistent by always working with JoinedRecord, even
+            # for simple joins
+
             resp = self.join_recordset(next_join, rsname, next_rsname, left_source_name, right_source_name)
-            # todo: update left/right_ source name after first
+            left_source_name = None
             assert resp.success
             rsname = resp.body
 
@@ -520,9 +521,13 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
-    def join_recordset(self, join, left_rsname: str, right_rsname: str, left_sname: str, right_sname) -> Response:
+    def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: str, right_sname: str) -> Response:
         """
         join record based on record type and return joined recordset.
+
+        NOTE: this handles 2 cases:
+            - joins over simple sources (singular_join)
+            - joins over 1 simple source, and joined source (multi_join)
 
         TOOD: the tricky bit here, handling 2 single sources, and subsequently
         a single source, and a joined source
@@ -536,21 +541,24 @@ class VirtualMachine(Visitor):
         assert resp.success
         rsname = resp.body
 
+        # distinguish between simple and multi-join by checking if left_sname is set
+        singular_join = left_sname is not None
+
         left_iter = self.recordset_iter(left_rsname)
         right_iter = self.recordset_iter(right_rsname)
 
         # inner join
-        if join.join_type == JoinType.Inner:
+        if join_clause.join_type == JoinType.Inner:
             for left_rec in left_iter:
                 for right_rec in right_iter:
-                    # TODO: refactor join_records - should return record, with schema, and columns with proper scoped names
-                    #  , e.g. f.x instead of foo.x
-                    #record = join_records(left_rec, right_rec, left_rsname, right_sname)
-                    # TODO: this doesn't currently generalize to more than 2 joins
-                    record = JoinedRecord(left_rec, right_rec, left_sname, right_sname)
+
+                    if singular_join:
+                        record = JoinedRecord.from_simple_records(left_rec, right_rec, left_sname, right_sname)
+                    else:
+                        record = JoinedRecord.from_joined_and_simple_record(left_rec, right_rec, right_sname)
                     or_result = False
                     # TODO: below was copied from filter_results, and should be factored cleanly
-                    for and_clause in join.condition.and_clauses:
+                    for and_clause in join_clause.condition.and_clauses:
                         and_result = True
                         for predicate in and_clause.predicates:
                             assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
