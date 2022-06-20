@@ -137,13 +137,23 @@ class JoinedRecord:
     # TODO: this should handle init records as two simple records, or a simple and JoinedRecord
     # for a joinedRecord, it should determine be able to flatten and store it
     # think through how this will generalize
-    def __init__(self, left_rec, right_rec, left_alias, right_alias):
-        self.left_rec = left_rec
-        self.right_rec = right_rec
-        # perhaps, this can generalize like `alias_map`
-        # self.left_alias = left_alias
-        # self.right_alias = right_alias
-        self.aliases = {left_alias: left_rec, right_alias: right_rec}
+    def __init__(self, name_to_records: dict):
+        self.names = name_to_records
+
+    @classmethod
+    def from_simple_records(cls, left_rec: Record, right_rec: Record, left_alias, right_alias):
+        """
+        Construct a JoinedRecord for 2 simple records
+        """
+        names = {left_alias: left_rec, right_alias: right_rec}
+        return cls(names)
+
+    @classmethod
+    def from_joined_and_simple_record(cls, joined_rec: JoinedRecord, right_rec: Record, right_alias):
+        names = joined_rec.names
+        assert right_alias not in names
+        names[right_alias] = right_rec
+        return cls(names)
 
     def get(self, fqname):
         """
@@ -152,22 +162,22 @@ class JoinedRecord:
         parts = fqname.split(".")
         assert len(parts) == 2
         table, column = parts
-        if table not in self.aliases:
+        if table not in self.names:
             raise ValueError(f"Uknown table alias [{table}]")
-        record = self.aliases[table]
+        record = self.names[table]
         return record.get(column)
 
     def __repr__(self):
-        return f"JRec[{self.aliases}]"
+        return f"JRec[{self.names}]"
 
     def __str__(self):
-        return f"JRec[{self.aliases}]"
-
+        return f"JRecord[{self.names}]"
 
 
 def join_records(left_record: Union[Record, MultiRecord], right_record: Union[Record, MultiRecord],
                  left_alias: Optional[str], right_alias: Optional[str]):
     """
+    TODO: this and MultiRecord have be superseded by JoinedRecord; remove unused
     join records and return a multi-record
     left_, right_empty are used to handle left, right outer joined records
     :return:

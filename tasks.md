@@ -1,14 +1,8 @@
 # Tasks
 
 ## Top Priority
-- todo, remove ToAst
-- handle parser::unwrap_tree; this is causing issue in vm processing
-  - specifically, issues with insert stmnt
-- finish of insert
-- cleanup
-
--- this is blocking init_catalog, and anything that requires schema
-- then implement vm::join
+- write e2e tests for passing use cases
+- then implement rest of select_handler
 
 
 ## Lark
@@ -23,10 +17,6 @@
 ## Parser
 - ensure rules make sense with `expression` symbol
   - this (expression) should wrap or_clause
-
-## Lang
-  - Add support for nested select statements (uncorrelated)
-  - Add support for nested select statements (correlated)
 
 
 ## Storage (btree)
@@ -45,6 +35,8 @@
 - add stress tests (stress-tests.txt)
 
 ## VM
+- flow
+  - if a statement fails, should exec stop? how is this behavior controlled?
 - select statement
   - in addition to cursor iteration; select will have conditions
     and an optimizer
@@ -82,6 +74,8 @@
 - run mypy
 
 ## Bugs
+  - if I do create table colA, i.e. mixed case columnName, internally I seem to convert and store this as a lowercase identifier
+    - and this causes errors, e.g. when I query on colA
   - e2e_test.py::join_test should fail
   - duplicate key not erroring (this might be working now)
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
