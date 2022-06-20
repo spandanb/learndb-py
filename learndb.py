@@ -390,7 +390,7 @@ def devloop_old():
 
     db.handle_input("create table foo ( cola integer primary key, colb integer, colc integer)")
     db.handle_input("create table bar ( colx integer primary key, coly integer, colz integer)")
-    db.handle_input("create table car ( colx integer primary key, coly integer, colz integer)")
+    # db.handle_input("create table car ( colx integer primary key, coly integer, colz integer)")
     db.handle_input("insert into foo ( cola, colb, colc) values (1, 2, 3)")
     db.handle_input("insert into foo ( cola, colb, colc) values (2, 4, 6)")
     db.handle_input("insert into bar ( colx, coly, colz) values (30, 20, 40)")
@@ -398,9 +398,9 @@ def devloop_old():
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
     # db.handle_input("select cola, colb from foo where cola = 1 and colc = 3 or colb = 2")
     # db.handle_input("select cola, colb from foo f inner join bar r on f.cola = r.coly")
-    # db.handle_input("select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b")
-    # db.handle_input("select cola, colb from foo f cross join bar r on f.x = r.y")  # cross join should not have an on-clause
-    db.handle_input("select cola, colb from foo f left join bar r on f.x = r.y")
+    db.handle_input("select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b")
+    #db.handle_input("select cola, colb from foo f cross join bar r on f.x = r.y")  # cross join should not have an on-clause
+    #db.handle_input("select cola, colb from foo f left join bar r on f.x = r.y")
 
     assert db.get_pipe().has_msgs()
 
@@ -411,7 +411,7 @@ def devloop_old():
 
 
 def devloop():
-    db = LearnDB(DB_FILE)
+    db = LearnDB(DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
     text = "select cola from foo f cross join june"
@@ -437,15 +437,32 @@ def devloop():
         #"insert into foo ( cola, colb) values (4, 'hello melo')",
         #"insert into foo ( cola, colb) values (4002, 'heloPIESDS')",
         "insert into foo ( cola, colb) values (99, 'hello bobo')",
-        "select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
+        #"delete from foo where cola > 99",
+        # "delete from foo",
+        #"select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
+        "select cola from foo where cola = 1"
     ]
+
+    texts = [
+        "create table foo ( cola integer primary key, colb integer, colc integer)",
+        "create table bar ( colx integer primary key, coly integer, colz integer)",
+        # "create table car ( colx integer primary key, coly integer, colz integer)",
+        # insert into table
+        "insert into foo (cola, colb, colc) values (1, 2, 3)",
+        "insert into foo (cola, colb, colc) values (2, 4, 6)",
+        "insert into foo (cola, colb, colc) values (3, 10, 8)",
+        "insert into bar (colx, coly, colz) values (101, 10, 80)",
+        "insert into bar (colx, coly, colz) values (102, 4, 90)",
+        "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly",
+        #"select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly join car c on f.colb = b.coly",
+    ]
+
     for text in texts:
         logging.info(f"handling {text}")
         resp = db.handle_input(text)
         logging.info(f"received resp: {resp}")
         while db.pipe.has_msgs():
             logging.info("read from pipe: {}".format(db.pipe.read()))
-
 
     db.close()
 

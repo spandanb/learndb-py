@@ -37,8 +37,10 @@ from lang_parser.symbols3 import (
 from lang_parser.sqlhandler import SqlFrontEnd
 
 from record_utils import (
+    Record,
     create_catalog_record,
     join_records,
+    JoinedRecord,
     create_record,
 )
 
@@ -240,7 +242,7 @@ class VirtualMachine(Visitor):
 
             # 3. apply filter on source - where clause
             if from_clause.where_clause:
-                resp = self.filter_results(from_clause.where_clause, rsname)
+                resp = self.filter_recordset(from_clause.where_clause, rsname)
                 if not resp.success:
                     return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
                 # filtering produces a new resultset
@@ -301,7 +303,7 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         if stmnt.where_condition:
-            resp = self.filter_results(stmnt.where_condition, rsname)
+            resp = self.filter_recordset(stmnt.where_condition, rsname)
             assert resp.success
             rsname = resp.body
 
@@ -340,7 +342,7 @@ class VirtualMachine(Visitor):
 
     def materialize(self, source) -> Response:
         """
-        this and other materialize methods return Response(recordSetName: str);
+
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
@@ -387,31 +389,39 @@ class VirtualMachine(Visitor):
         return Response(True, body=rsname)
 
     def materialize_joining(self, source: Joining) -> Response:
-        resp = self.init_recordset()
-        assert resp.success
-        rsname = resp.body
-
-        stack = []
-        ptr = source
+        """
+        Materialize a joining.
+        After a pairwise joining of recordsets
+        """
         # parser places first table in a series of joins in the most nested
         # join; recursively traverse the join object(s) and construct a ordered list of
         # tables to materialize
+        stack = [source]  # (child, parent)
+        ptr = source
         while True:
-            # recurse down
-            if isinstance(ptr.source, Joining):
-                stack.append(ptr.source)
-                ptr = ptr.source
+            stack.append(ptr.left_source)
+            if isinstance(ptr.left_source, Joining):
+                # recurse down
+                ptr = ptr.left_source
             else:
-                assert isinstance(ptr.source, SingleSource)
-                # end of joining stack
-                stack.append(ptr.source)
+                assert isinstance(ptr.left_source, SingleSource)
+                # end of join nesting
                 break
 
+        # todo: think about how to pass table_name info
+        # this may need to be something more complex
+        # table_name -> rsname
+        table_aliases = {}
         # now materialize joins
+        # starting from stack top, each materialization is the left_source
+        # in the nest iteration of joining
         first = stack.pop()
+        #table_alias = first.table_alias or first.table_name.table_name
         resp = self.materialize(first)
         assert resp.success
         rsname = resp.body
+        #table_aliases[table_alias] = rsname
+        left_source_name = first.table_alias or first.table_name.table_name
         while stack:
             # join next source with existing rset
             next_join = stack.pop()
@@ -419,11 +429,20 @@ class VirtualMachine(Visitor):
             # NOTE: currently, materialize and join are separate steps
             # these could be combined; but for now keep them separate
             # to keep it simple
-            resp = self.materialize_single_source(next_join.other_source)
+
+            right_source = next_join.right_source
+            # name within local scope, i.e. tablename or alias
+            right_source_name = right_source.table_alias or right_source.table_name.table_name
+            resp = self.materialize_single_source(right_source)
             assert resp.success
             next_rsname = resp.body
 
-            resp = self.join_recordset(next_join, rsname, next_rsname)
+            # join next_join with rsname
+            # TODO: I need to pass the table_name + alias, so the join condition can be evaluated
+            # so, this api must minimally also support some support for a naming_context
+            # perhaps a map table_name -> rsname
+            resp = self.join_recordset(next_join, rsname, next_rsname, left_source_name, right_source_name)
+            # todo: update left/right_ source name after first
             assert resp.success
             rsname = resp.body
 
@@ -434,18 +453,25 @@ class VirtualMachine(Visitor):
         Check if the `operand` is logical name, if so
         attempt to resolve it from record
         """
-        if isinstance(operand, Token) and operand.type == "IDENTIFIER":
-            # check if we can resolve this
-            if operand in record.values:
-                return Response(True, body=record.values[operand])
-            return Response(False)
+        if isinstance(operand, Token):
+            if operand.type == "IDENTIFIER":
+                # check if we can resolve this
+                assert isinstance(record, Record)  # this may not needed, but this is what this logic is assuming
+                if operand in record.values:
+                    return Response(True, body=record.values[operand])
+            elif operand.type == "SCOPED_IDENTIFIER":
+                # attempt resolve scoped identifier
+                assert isinstance(record, JoinedRecord)
+                value = record.get(operand)
+                return Response(True, value)
+            return Response(False, f"Unable to resolve {operand.type}")
         else:
             # not name, return as is
             return Response(True, body=operand)
 
-    def filter_results(self, where_clause: WhereClause, source_rsname: str) -> Response:
+    def filter_recordset(self, where_clause: WhereClause, source_rsname: str) -> Response:
         """
-        Apply where_clause on source_rsname and return
+        Apply where_clause on source_rsname and return filtered resultset
         """
         assert isinstance(where_clause, WhereClause)
 
@@ -494,9 +520,17 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
-    def join_recordset(self, join, left_rsname: str, right_rsname: str) -> Response:
+    def join_recordset(self, join, left_rsname: str, right_rsname: str, left_sname: str, right_sname) -> Response:
         """
-        join record based on record type and return joined recordset
+        join record based on record type and return joined recordset.
+
+        TOOD: the tricky bit here, handling 2 single sources, and subsequently
+        a single source, and a joined source
+
+        :param left_rsname: left record set name (could be single or joined recordset)
+        :param right_rsname: right record set name (single source)
+        :param left_sname: left source name
+        :param left_sname: right source name
         """
         resp = self.init_recordset()
         assert resp.success
@@ -509,16 +543,62 @@ class VirtualMachine(Visitor):
         if join.join_type == JoinType.Inner:
             for left_rec in left_iter:
                 for right_rec in right_iter:
-                    if self.evaluate_on(join.condition, left_rec, right_rec):
-                        joined = join_records(left_rec, right_rec)
-                        self.append_recordset(rsname, joined)
+                    # TODO: refactor join_records - should return record, with schema, and columns with proper scoped names
+                    #  , e.g. f.x instead of foo.x
+                    #record = join_records(left_rec, right_rec, left_rsname, right_sname)
+                    # TODO: this doesn't currently generalize to more than 2 joins
+                    record = JoinedRecord(left_rec, right_rec, left_sname, right_sname)
+                    or_result = False
+                    # TODO: below was copied from filter_results, and should be factored cleanly
+                    for and_clause in join.condition.and_clauses:
+                        and_result = True
+                        for predicate in and_clause.predicates:
+                            assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
+                            # the predicate contains a condition, which contains
+                            # logical column refs and literal values
+                            # 1. resolve all names
+                            resp = self.check_resolve_name(predicate.left_op, record)
+                            assert resp.success
+                            left_value = resp.body
+                            resp = self.check_resolve_name(predicate.right_op, record)
+                            assert resp.success
+                            right_value = resp.body
+
+                            # 2. evaluate predicate
+                            # value of evaluated predicate
+                            pred_value = False
+                            if predicate.operator == ComparisonOp.Greater:
+                                pred_value = left_value > right_value
+                            elif predicate.operator == ComparisonOp.Less:
+                                pred_value = left_value < right_value
+                            elif predicate.operator == ComparisonOp.GreaterEqual:
+                                pred_value = left_value >= right_value
+                            elif predicate.operator == ComparisonOp.LessEqual:
+                                pred_value = left_value <= right_value
+                            elif predicate.operator == ComparisonOp.Equal:
+                                pred_value = left_value == right_value
+                            else:
+                                assert predicate.operator == ComparisonOp.NotEqual
+                                pred_value = left_value != right_value
+
+                            # optimization note: once an and_result is False, stop loop
+                            and_result = and_result and pred_value
+
+                        or_result = or_result or and_result
+
+                    if or_result:
+                        # join condition matched
+                        self.append_recordset(rsname, record)
+
 
         # todo: implement other joins
 
         return Response(True, body=rsname)
 
     def evaluate_on(self, condition, left_record, right_record):
-        pass
+        # TODO: implement
+        # this can be similar to filter_results
+        breakpoint()
 
 
     # section: record set utilities

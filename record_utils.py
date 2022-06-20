@@ -124,6 +124,46 @@ class MultiRecord:
 
 # section: utilities
 
+class JoinedRecord:
+    """
+    Represents a multi-record
+    Creating a sep class, so it can expose
+    easier api to
+
+    what iface it must support?
+        - find a value, given a fq-column name, i.e. f.cola
+        -
+    """
+    # TODO: this should handle init records as two simple records, or a simple and JoinedRecord
+    # for a joinedRecord, it should determine be able to flatten and store it
+    # think through how this will generalize
+    def __init__(self, left_rec, right_rec, left_alias, right_alias):
+        self.left_rec = left_rec
+        self.right_rec = right_rec
+        # perhaps, this can generalize like `alias_map`
+        # self.left_alias = left_alias
+        # self.right_alias = right_alias
+        self.aliases = {left_alias: left_rec, right_alias: right_rec}
+
+    def get(self, fqname):
+        """
+        Given a fq column name, e.g. f.cola
+        """
+        parts = fqname.split(".")
+        assert len(parts) == 2
+        table, column = parts
+        if table not in self.aliases:
+            raise ValueError(f"Uknown table alias [{table}]")
+        record = self.aliases[table]
+        return record.get(column)
+
+    def __repr__(self):
+        return f"JRec[{self.aliases}]"
+
+    def __str__(self):
+        return f"JRec[{self.aliases}]"
+
+
 
 def join_records(left_record: Union[Record, MultiRecord], right_record: Union[Record, MultiRecord],
                  left_alias: Optional[str], right_alias: Optional[str]):
