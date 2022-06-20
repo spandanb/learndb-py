@@ -403,8 +403,7 @@ class ToAst3(Transformer):
     def select_clause(args):
         return SelectClause(args)
 
-    @staticmethod
-    def from_clause(args) -> FromClause:
+    def from_clause(self, args) -> FromClause:
         # setup iteration over args
         args_iter = iter(args)
         count = len(args)
@@ -412,8 +411,13 @@ class ToAst3(Transformer):
 
         arg = next(args_iter)
         count -= 1
-        assert isinstance(arg, FromSource)
+        # assert isinstance(arg, FromSource)
+        assert isinstance(arg, SingleSource) or isinstance(arg, Joining)
+
+        # unwrap any nested FromSource
         fclause = FromClause(arg)
+        fclause.source = FromSource(fclause.source)
+
         if count == 0:
             return fclause
 
@@ -432,6 +436,10 @@ class ToAst3(Transformer):
                 fclause.order_by_clause = arg
 
         return fclause
+
+    def table_alias(self, args):
+        assert len(args) == 1
+        return args[0]
 
     def where_clause(self, args):
         assert len(args) == 1
@@ -455,7 +463,8 @@ class ToAst3(Transformer):
 
     def source(self, args):
         assert len(args) == 1
-        return FromSource(args[0])
+        # return FromSource(args[0])
+        return args[0]
 
     def single_source(self, args):
         assert len(args) <= 2

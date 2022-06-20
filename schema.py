@@ -15,7 +15,7 @@ from typing import List
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
-from lang_parser.symbols3 import DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
+from lang_parser.symbols3 import TableName, DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
 from dataexchange import Response
 
 
@@ -131,7 +131,8 @@ def schema_to_ddl(schema: Schema) -> str:
             null_cond = "" if column.is_nullable else "NOT NULL"
             column_defs.append(f'{column.name} {column.datatype.typename} {null_cond}')
     column_def_body = ", ".join(column_defs)
-    return f'CREATE TABLE {schema.name} ( {column_def_body} )'
+    assert isinstance(schema.name, TableName)
+    return f'CREATE TABLE {schema.name.table_name} ( {column_def_body} )'
 
 
 def validate_schema(schema: Schema) -> Response:
