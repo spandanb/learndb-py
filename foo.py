@@ -1,3 +1,4 @@
+from lang_parser.symbols3 import Joining, ConditionedJoin
 from lang_parser.sqlhandler import SqlFrontEnd
 
 
@@ -34,5 +35,7 @@ def driver():
         print(f'{fe.parsed}')
 
 
+def driver2():
+    print(isinstance(ConditionedJoin(None, None, None), Joining))
 
-driver()
+# driver()

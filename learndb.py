@@ -446,15 +446,18 @@ def devloop():
     texts = [
         "create table foo ( cola integer primary key, colb integer, colc integer)",
         "create table bar ( colx integer primary key, coly integer, colz integer)",
-        # "create table car ( colx integer primary key, coly integer, colz integer)",
+        "create table car ( colx integer primary key, coly integer, colz integer)",
         # insert into table
-        "insert into foo (cola, colb, colc) values (1, 2, 3)",
-        "insert into foo (cola, colb, colc) values (2, 4, 6)",
+        #"insert into foo (cola, colb, colc) values (1, 2, 3)",
+        #"insert into foo (cola, colb, colc) values (2, 4, 6)",
         "insert into foo (cola, colb, colc) values (3, 10, 8)",
         "insert into bar (colx, coly, colz) values (101, 10, 80)",
         "insert into bar (colx, coly, colz) values (102, 4, 90)",
+        "insert into car (colx, coly, colz) values (101, 10, 89)",
+        #"insert into car (colx, coly, colz) values (102, 5, 91)",
+        # "select b.colx, b.coly, b.colz from foo f",
         "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly",
-        #"select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly join car c on f.colb = b.coly",
+        "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly join car c on f.colb = c.coly",
     ]
 
     for text in texts:

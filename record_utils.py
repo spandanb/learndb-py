@@ -4,8 +4,8 @@ Contains definitions and utilities to create and modifies Records.
 Records are data containing objects that conform to a schema.
 """
 from typing import List, Optional, Union
-
 from lark import Token
+
 from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList
 from dataexchange import Response
 from schema import Schema
@@ -150,8 +150,9 @@ class JoinedRecord:
 
     @classmethod
     def from_joined_and_simple_record(cls, joined_rec: JoinedRecord, right_rec: Record, right_alias):
-        names = joined_rec.names
-        assert right_alias not in names
+        names = joined_rec.names.copy()
+        # make a shallow copy - don't need to copy records, since those are read-only
+        assert right_alias not in names, f"Create failed: {right_alias} already exists in [{names.keys()}]"
         names[right_alias] = right_rec
         return cls(names)
 
