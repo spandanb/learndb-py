@@ -396,7 +396,7 @@ class VirtualMachine(Visitor):
         # parser places first table in a series of joins in the most nested
         # join; recursively traverse the join object(s) and construct a ordered list of
         # tables to materialize
-        stack = [source]  # (child, parent)
+        stack = [source]
         ptr = source
         while True:
             stack.append(ptr.left_source)
@@ -440,12 +440,16 @@ class VirtualMachine(Visitor):
             # the JoinedRecord already contains the table name info
 
             # NOTE: this API could be made more consistent by always working with JoinedRecord, even
-            # for simple joins
+            # for simple joins; also no need to refactor this now; once I test more complex cases
+            # the API will become clearer
 
             resp = self.join_recordset(next_join, rsname, next_rsname, left_source_name, right_source_name)
             left_source_name = None
             assert resp.success
             rsname = resp.body
+            #for record in self.recordset_iter(rsname):
+            #    logging.info(f"Sanity: {record}")
+            #logging.info(f"Sanity end")
 
         return Response(True, body=rsname)
 
@@ -464,7 +468,7 @@ class VirtualMachine(Visitor):
                 # attempt resolve scoped identifier
                 assert isinstance(record, JoinedRecord)
                 value = record.get(operand)
-                return Response(True, value)
+                return Response(True, body=value)
             return Response(False, f"Unable to resolve {operand.type}")
         else:
             # not name, return as is
