@@ -8,13 +8,15 @@ from lark import Token
 
 from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList
 from dataexchange import Response
-from schema import Schema
+from schema import Schema, MultiSchema
 
 
 class Record:
     """
     Represents a record from table.
     This always corresponds to a given schema.
+    # TODO make this a readonly type  - since these are shallow copied,
+    # if the returned pipe allows
     """
     def __init__(self, values: dict = None, schema: Schema = None):
         # unordered mapping from: column-name -> column-value
@@ -62,9 +64,10 @@ class Record:
         return self.get(pkey_col)
 
 
-class MultiRecord:
+class MultiRecordOld:
     """
     Represents multiple records from multiple sources
+    # TODO: nuke me
     """
     def __init__(self):
         # keeps mapping of table alias -> record
@@ -124,7 +127,7 @@ class MultiRecord:
 
 # section: utilities
 
-class JoinedRecord:
+class MultiRecord:
     """
     Represents a multi-record
     Creating a sep class, so it can expose
@@ -137,24 +140,36 @@ class JoinedRecord:
     # TODO: this should handle init records as two simple records, or a simple and JoinedRecord
     # for a joinedRecord, it should determine be able to flatten and store it
     # think through how this will generalize
-    def __init__(self, name_to_records: dict):
+    def __init__(self, name_to_records: dict, schema: MultiSchema):
         self.names = name_to_records
+        self.schema = schema
 
     @classmethod
-    def from_simple_records(cls, left_rec: Record, right_rec: Record, left_alias, right_alias):
+    def from_records(cls, left_rec: Union[Record, MultiRecord], right_rec: Record, left_alias: Optional[str],
+                     right_alias: str, schema: MultiSchema):
+        if isinstance(left_rec, Record):
+            assert left_alias is not None
+            return cls.from_simple_records(left_rec, right_rec, left_alias, right_alias, schema)
+        else:
+            # this mimics arguments to invoking method in vm
+            assert isinstance(left_rec, MultiRecord) and left_alias is None
+            return cls.from_joined_and_simple_record(left_rec, right_rec, right_alias)
+
+    @classmethod
+    def from_simple_records(cls, left_rec: Record, right_rec: Record, left_alias, right_alias, schema: MultiSchema):
         """
         Construct a JoinedRecord for 2 simple records
         """
         names = {left_alias: left_rec, right_alias: right_rec}
-        return cls(names)
+        return cls(names, schema)
 
     @classmethod
-    def from_joined_and_simple_record(cls, joined_rec: JoinedRecord, right_rec: Record, right_alias):
+    def from_joined_and_simple_record(cls, joined_rec: MultiRecord, right_rec: Record, right_alias, schema: MultiSchema):
         names = joined_rec.names.copy()
         # make a shallow copy - don't need to copy records, since those are read-only
         assert right_alias not in names, f"Create failed: {right_alias} already exists in [{names.keys()}]"
         names[right_alias] = right_rec
-        return cls(names)
+        return cls(names, schema)
 
     def get(self, fqname):
         """
@@ -208,6 +223,8 @@ def create_null_record(schema: Schema) -> Record:
     :return:
     """
     values = {column.name: None for column in schema.columns}
+    # TODO: when should this generate JoinedRecord
+    # this will need a joined schema
     return Record(values, schema)
 
 

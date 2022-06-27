@@ -54,10 +54,11 @@
 
 ## User API
  - in addition to LearnDB do I want to support:
-  - cursor?
-  - python db api, i.e. natively supported ?
-  - repl should have help message at beginning
-    - have an additional/secondary command to output sql example/primer
+ - cursor?
+ - records should be immutable-since they're shallow copied; or final records returned to user should be separate
+ - python db api, i.e. natively supported ?
+ - repl should have help message at beginning
+   - have an additional/secondary command to output sql example/primer
 
 ## documentation/refactoring
 - complete architecture.md
