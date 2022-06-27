@@ -100,11 +100,19 @@ def test_select_equality():
     assert keys == [2, 3]
 
 
+def test_select_equality_1():
+    pass
+
+
+
 def test_select_inequality():
     """
 
     :return:
     """
+
+
+
 
 
 def test_inner_join():
@@ -129,10 +137,11 @@ def test_inner_join():
 
     keys = []
 
-    assert db.get_pipe().has_msgs()
+    pipe = db.get_pipe()
+    assert pipe.has_msgs()
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
-        keys.append(record.get("b", "colx"))
+        keys.append(record.get("b.colx"))
     keys.sort()
     assert keys == [101, 102]
 
@@ -155,16 +164,47 @@ def test_left_join():
     db.handle_input("insert into bar (colx, coly, colz) values (101, 10, 80)")
     db.handle_input("insert into bar (colx, coly, colz) values (102, 4, 90)")
     # select
-    db.handle_input("select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly")
+    db.handle_input("select b.colx, b.coly, b.colz from foo f left join bar b on f.colb = b.coly")
 
     keys = []
 
     assert db.get_pipe().has_msgs()
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
-        keys.append(record.get("b", "colx"))
+        keys.append(record.get("b.colx"))
     keys.sort()
     assert keys == [101, 102]
+
+
+def test_cross_join():
+    """
+    test left-outer join
+    :return:
+    """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colb integer)")
+    db.handle_input("create table bar ( colx integer primary key, coly integer)")
+    # insert into table
+    db.handle_input("insert into foo (cola, colb) values (1, 2)")
+    db.handle_input("insert into foo (cola, colb) values (2, 4)")
+    db.handle_input("insert into foo (cola, colb) values (3, 10)")
+    db.handle_input("insert into bar (colx, coly) values (98, 10)")
+    db.handle_input("insert into bar (colx, coly) values (99, 4)")
+    # select
+    db.handle_input("select b.colx, b.coly, b.colz from foo f cross join bar b")
+
+    keys = []
+
+    assert db.get_pipe().has_msgs()
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        keys.append((record.get("f.cola"), record.get("b.colx")))
+    keys.sort()
+    assert keys == [(1, 98), (2, 98), (3, 98), (1, 99), (2, 99), (3, 99)]
+
 
 
 def test_delete_equality_on_primary_column():

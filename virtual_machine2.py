@@ -8,12 +8,12 @@ import logging
 import random
 import string
 
-from typing import List
+from typing import List, Optional
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from schema import generate_schema, schema_to_ddl
+from schema import generate_schema, schema_to_ddl, MultiSchema
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -40,8 +40,9 @@ from record_utils import (
     Record,
     create_catalog_record,
     join_records,
-    JoinedRecord,
+    MultiRecord,
     create_record,
+    create_null_record
 )
 
 
@@ -88,6 +89,7 @@ class VirtualMachine(Visitor):
         # NOTE: some state is managed by the state_manager, and rest via
         # vm's instance variable. Ultimately, there should be a cleaner,
         # unified management of state
+        self.schemas = {}
         self.rsets = {}
         self.grouprsets = {}
         self.init_catalog()
@@ -368,13 +370,13 @@ class VirtualMachine(Visitor):
         return self.materialized_source_from_name(source.table_name)
 
     def materialized_source_from_name(self, table_name: str) -> Response:
-        resp = self.init_recordset()
-        assert resp.success
-        rsname = resp.body
-
         # get schema for table, and cursor on tree corresponding to table
         schema = self.get_schema(table_name)
         tree = self.get_tree(table_name)
+
+        resp = self.init_recordset(schema)
+        assert resp.success
+        rsname = resp.body
 
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # iterate over entire table
@@ -447,9 +449,6 @@ class VirtualMachine(Visitor):
             left_source_name = None
             assert resp.success
             rsname = resp.body
-            #for record in self.recordset_iter(rsname):
-            #    logging.info(f"Sanity: {record}")
-            #logging.info(f"Sanity end")
 
         return Response(True, body=rsname)
 
@@ -466,7 +465,7 @@ class VirtualMachine(Visitor):
                     return Response(True, body=record.values[operand])
             elif operand.type == "SCOPED_IDENTIFIER":
                 # attempt resolve scoped identifier
-                assert isinstance(record, JoinedRecord)
+                assert isinstance(record, MultiRecord)
                 value = record.get(operand)
                 return Response(True, body=value)
             return Response(False, f"Unable to resolve {operand.type}")
@@ -480,52 +479,20 @@ class VirtualMachine(Visitor):
         """
         assert isinstance(where_clause, WhereClause)
 
-        resp = self.init_recordset()
+        schema = self.get_recordset_schema(source_rsname)
+        resp = self.init_recordset(schema)
         assert resp.success
         # generate new result set
         rsname = resp.body
 
         for record in self.recordset_iter(source_rsname):
-            or_result = False
-            # or the result of each and_clause
-            for and_clause in where_clause.condition.and_clauses:
-                and_result = True
-                for predicate in and_clause.predicates:
-                    assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
-                    # resolve any logical names
-                    resp = self.check_resolve_name(predicate.left_op, record)
-                    assert resp.success
-                    left_value = resp.body
-                    resp = self.check_resolve_name(predicate.right_op, record)
-                    assert resp.success
-                    right_value = resp.body
-                    # value of evaluated predicate
-                    pred_value = False
-                    if predicate.operator == ComparisonOp.Greater:
-                        pred_value = left_value > right_value
-                    elif predicate.operator == ComparisonOp.Less:
-                        pred_value = left_value < right_value
-                    elif predicate.operator == ComparisonOp.GreaterEqual:
-                        pred_value = left_value >= right_value
-                    elif predicate.operator == ComparisonOp.LessEqual:
-                        pred_value = left_value <= right_value
-                    elif predicate.operator == ComparisonOp.Equal:
-                        pred_value = left_value == right_value
-                    else:
-                        assert predicate.operator == ComparisonOp.NotEqual
-                        pred_value = left_value != right_value
-
-                    # optimization note: once an and_result is False, stop loop
-                    and_result = and_result and pred_value
-
-                or_result = or_result or and_result
-
-            if or_result:
+            if self.evaluate_condition(where_clause.condition, record):
                 self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
 
-    def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: str, right_sname: str) -> Response:
+    def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: Optional[str],
+                       right_sname: str) -> Response:
         """
         join record based on record type and return joined recordset.
 
@@ -538,87 +505,156 @@ class VirtualMachine(Visitor):
 
         :param left_rsname: left record set name (could be single or joined recordset)
         :param right_rsname: right record set name (single source)
-        :param left_sname: left source name
-        :param left_sname: right source name
+        :param left_sname: left source name (optional); when nulled' when left is joinedrecord
+        :param right_sname: right source name
         """
-        resp = self.init_recordset()
+        left_schema = self.get_recordset_schema(left_rsname)
+        right_schema = self.get_recordset_schema(right_rsname)
+        schema = MultiSchema.from_schemas(left_schema, right_schema, left_sname, right_sname)
+        resp = self.init_recordset(schema)
         assert resp.success
         rsname = resp.body
 
-        # distinguish between simple and multi-join by checking if left_sname is set
-        singular_join = left_sname is not None
-
         left_iter = self.recordset_iter(left_rsname)
-        right_iter = self.recordset_iter(right_rsname)
-
         # inner join
         if join_clause.join_type == JoinType.Inner:
             for left_rec in left_iter:
+                # for each left record we need to iterate over each right_record
+                right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-
-                    if singular_join:
-                        record = JoinedRecord.from_simple_records(left_rec, right_rec, left_sname, right_sname)
-                    else:
-                        record = JoinedRecord.from_joined_and_simple_record(left_rec, right_rec, right_sname)
-                    or_result = False
-                    # TODO: below was copied from filter_results, and should be factored cleanly
-                    for and_clause in join_clause.condition.and_clauses:
-                        and_result = True
-                        for predicate in and_clause.predicates:
-                            assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
-                            # the predicate contains a condition, which contains
-                            # logical column refs and literal values
-                            # 1. resolve all names
-                            resp = self.check_resolve_name(predicate.left_op, record)
-                            assert resp.success
-                            left_value = resp.body
-                            resp = self.check_resolve_name(predicate.right_op, record)
-                            assert resp.success
-                            right_value = resp.body
-
-                            # 2. evaluate predicate
-                            # value of evaluated predicate
-                            pred_value = False
-                            if predicate.operator == ComparisonOp.Greater:
-                                pred_value = left_value > right_value
-                            elif predicate.operator == ComparisonOp.Less:
-                                pred_value = left_value < right_value
-                            elif predicate.operator == ComparisonOp.GreaterEqual:
-                                pred_value = left_value >= right_value
-                            elif predicate.operator == ComparisonOp.LessEqual:
-                                pred_value = left_value <= right_value
-                            elif predicate.operator == ComparisonOp.Equal:
-                                pred_value = left_value == right_value
-                            else:
-                                assert predicate.operator == ComparisonOp.NotEqual
-                                pred_value = left_value != right_value
-
-                            # optimization note: once an and_result is False, stop loop
-                            and_result = and_result and pred_value
-
-                        or_result = or_result or and_result
-
-                    if or_result:
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    if self.evaluate_condition(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
 
+        elif join_clause.join_type == JoinType.LeftOuter:
+            # there should be at least one record each left record
+            left_record_added = False
+            for left_rec in left_iter:
+                right_iter = self.recordset_iter(right_rsname)
+                for right_rec in right_iter:
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    if self.evaluate_condition(join_clause.condition, record):
+                        # join condition matched
+                        self.append_recordset(rsname, record)
+                        left_record_added = True
+                if not left_record_added:
+                    # add a null right record
+                    # create and join records
+                    right_rec = create_null_record(right_schema)
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    self.append_recordset(rsname, record)
 
-        # todo: implement other joins
+        elif join_clause.join_type == JoinType.RightOuter:
+            # there should be at least one record for each right record
+            # NOTE: since the right is the inner record_set, we maintain the index on the
+            # index positions records in the right record set, and whether they have been joined.
+            # this is problematic because it assumes the iter order of records in a recordset
+            # will be the same, which isn't explicitly part of the recordset API
+            right_joined_index = [False for _ in self.recordset_iter(right_rsname)]
+            for left_rec in left_iter:
+                right_iter = self.recordset_iter(right_rsname)
+                for index, right_rec in enumerate(right_iter):
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    if self.evaluate_condition(join_clause.condition, record):
+                        # join condition matched
+                        self.append_recordset(rsname, record)
+                        right_joined_index[index] = True
+
+            # handle any un-joined right records
+            for index, right_rec in self.recordset_iter(right_rsname):
+                if right_joined_index[index]:
+                    continue
+                left_rec = create_null_record(left_schema)
+                record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                self.append_recordset(rsname, record)
+
+        elif join_clause.join_type == JoinType.FullOuter:
+            # there should be atleast one record for each left and right record
+            left_record_added = False
+            right_joined_index = [False for _ in self.recordset_iter(right_rsname)]
+            for left_rec in left_iter:
+                right_iter = self.recordset_iter(right_rsname)
+                for index, right_rec in enumerate(right_iter):
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    if self.evaluate_condition(join_clause.condition, record):
+                        # join condition matched
+                        self.append_recordset(rsname, record)
+                        left_record_added = True
+                        right_joined_index[index] = True
+                if not left_record_added:
+                    # add a null right record
+                    # create and join records
+                    right_rec = create_null_record(right_schema)
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    self.append_recordset(rsname, record)
+            # handle any un-joined right records
+            for index, right_rec in self.recordset_iter(right_rsname):
+                if right_joined_index[index]:
+                    continue
+                left_rec = create_null_record(left_schema)
+                record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                self.append_recordset(rsname, record)
+
+        else:
+            assert join_clause.join_type == JoinType.Cross
+            for left_rec in left_iter:
+                right_iter = self.recordset_iter(right_rsname)
+                for right_rec in right_iter:
+                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
 
-    def evaluate_on(self, condition, left_record, right_record):
-        # TODO: implement
-        # this can be similar to filter_results
-        breakpoint()
+    def evaluate_condition(self, condition, record) -> bool:
+        """
+        Evaluate condition on record Union(Record, JoinedRecord) and return bool result
+        """
+        or_result = False
+        for and_clause in condition.and_clauses:
+            and_result = True
+            for predicate in and_clause.predicates:
+                assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
+                # the predicate contains a condition, which contains
+                # logical column refs and literal values
+                # 1. resolve all names
+                resp = self.check_resolve_name(predicate.left_op, record)
+                assert resp.success
+                left_value = resp.body
+                resp = self.check_resolve_name(predicate.right_op, record)
+                assert resp.success
+                right_value = resp.body
 
+                # 2. evaluate predicate
+                # value of evaluated predicate
+                pred_value = False
+                if predicate.operator == ComparisonOp.Greater:
+                    pred_value = left_value > right_value
+                elif predicate.operator == ComparisonOp.Less:
+                    pred_value = left_value < right_value
+                elif predicate.operator == ComparisonOp.GreaterEqual:
+                    pred_value = left_value >= right_value
+                elif predicate.operator == ComparisonOp.LessEqual:
+                    pred_value = left_value <= right_value
+                elif predicate.operator == ComparisonOp.Equal:
+                    pred_value = left_value == right_value
+                else:
+                    assert predicate.operator == ComparisonOp.NotEqual
+                    pred_value = left_value != right_value
+
+                # optimization note: once an and_result is False, stop inner loop
+                and_result = and_result and pred_value
+
+            or_result = or_result or and_result
+        return or_result
 
     # section: record set utilities
 
-    def gen_randkey(self, size=10):
+    @staticmethod
+    def gen_randkey(size=10):
         return "".join(random.choice(string.ascii_letters) for i in range(size))
 
-    def init_recordset(self) -> Response:
+    def init_recordset(self, schema) -> Response:
         """
         initialize recordset; this requires a unique name
         for each recordset
@@ -628,7 +664,11 @@ class VirtualMachine(Visitor):
             # generate while non-unique
             name = self.gen_randkey()
         self.rsets[name] = []
+        self.schemas[name] = schema
         return Response(True, body=name)
+
+    def get_recordset_schema(self, name: str):
+        return self.schemas[name]
 
     def append_recordset(self, name: str, record):
         assert name in self.rsets
@@ -638,5 +678,7 @@ class VirtualMachine(Visitor):
         del self.rsets[name]
 
     def recordset_iter(self, name: str):
-        """return an iterator over recordset"""
+        """Return an iterator over recordset
+        NOTE: The iterator will be consumed after one iteration
+        """
         return iter(self.rsets[name])

@@ -11,7 +11,7 @@ specified by the schema-, and related utilities are contained in record_utils.py
 """
 
 
-from typing import List
+from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
@@ -70,6 +70,29 @@ class Schema:
                 return column.name
 
         return None
+
+
+class MultiSchema:
+    """
+    Represents a joined schema
+    """
+    def __init__(self, schemas: dict):
+        self.schemas = schemas  # table_name -> Schema
+
+    def get_table_names(self):
+        return self.schemas.keys()
+
+    @classmethod
+    def from_schemas(cls, left_schema: Union[Schema, MultiSchema], right_schema: Schema, left_alias: Optional[str],
+                     right_alias: str):
+        if isinstance(left_schema, Schema):
+            assert left_alias is not None
+            return cls({left_alias: left_schema, right_alias: right_schema})
+        else:
+            assert isinstance(left_schema, MultiSchema) and left_alias is None
+            schemas = left_schema.schemas.copy()
+            schemas[right_alias] = right_schema
+            return cls(schemas)
 
 
 class CatalogSchema(Schema):
