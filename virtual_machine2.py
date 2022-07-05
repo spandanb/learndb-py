@@ -13,7 +13,7 @@ from typing import List, Optional
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from schema import generate_schema, schema_to_ddl, MultiSchema
+from schema import generate_schema, schema_to_ddl, MultiSchema, ScopedSchema, make_grouped_schema
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -244,6 +244,7 @@ class VirtualMachine(Visitor):
 
             # 3. apply filter on source - where clause
             if from_clause.where_clause:
+                # TODO: for simple sql statement, this condition could contain scoped or unscoped column names
                 resp = self.filter_recordset(from_clause.where_clause, rsname)
                 if not resp.success:
                     return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
@@ -251,7 +252,8 @@ class VirtualMachine(Visitor):
                 rsname = resp.body
 
             if from_clause.group_by_clause:
-                pass
+                resp = self.group_recordset(from_clause.group_by_clause, rsname)
+
             if from_clause.having_clause:
                 pass
             if from_clause.order_by_clause:
@@ -354,7 +356,7 @@ class VirtualMachine(Visitor):
             return self.materialize_joining(source)
 
         elif isinstance(source, TableName):
-            return self.materialized_source_from_name(source.table_name)
+            return self.materialize_source_from_name(source.table_name)
 
         else:
             raise ValueError(f"Unknown materialization source type {source}")
@@ -367,14 +369,23 @@ class VirtualMachine(Visitor):
         assert isinstance(source, SingleSource), f"Unexpected {source}"
 
         # does table_names need to be resolved?
-        return self.materialized_source_from_name(source.table_name)
+        return self.materialize_source_from_name(source.table_name, source.table_alias)
 
-    def materialized_source_from_name(self, table_name: str) -> Response:
+    def materialize_source_from_name(self, table_name: str, table_alias: str = None) -> Response:
         # get schema for table, and cursor on tree corresponding to table
         schema = self.get_schema(table_name)
         tree = self.get_tree(table_name)
 
-        resp = self.init_recordset(schema)
+        if table_alias is not None:
+            # record set schema is a scoped schema
+            # vs. a schema for table
+            # THIS FEELS ODD - why should there be 2 schemas
+            # table schema doesnt understand aliases
+            rs_schema = ScopedSchema.from_single_schema(schema, table_alias)
+        else:
+            rs_schema = schema
+
+        resp = self.init_recordset(rs_schema)
         assert resp.success
         rsname = resp.body
 
@@ -465,7 +476,9 @@ class VirtualMachine(Visitor):
                     return Response(True, body=record.values[operand])
             elif operand.type == "SCOPED_IDENTIFIER":
                 # attempt resolve scoped identifier
-                assert isinstance(record, MultiRecord)
+                if not isinstance(record, MultiRecord):
+                    breakpoint()
+                assert isinstance(record, MultiRecord), f"Received {type(record)}"
                 value = record.get(operand)
                 return Response(True, body=value)
             return Response(False, f"Unable to resolve {operand.type}")
@@ -648,22 +661,66 @@ class VirtualMachine(Visitor):
             or_result = or_result or and_result
         return or_result
 
+    def group_recordset(self, group_by_clause, source_rsname):
+        """
+        Apply by group-by on records in rsname
+        """
+        # generate grouped schema
+
+        source_schema = self.get_recordset_schema(source_rsname)
+        resp = make_grouped_schema(source_schema, group_by_clause.columns)
+        assert resp.success
+        grouped_schema = resp.body
+
+        # init new grouped-recordset
+        resp = self.init_grouped_recordset(grouped_schema)
+        assert resp.success
+        rsname = resp.body
+
+        # iterate over records, get group-key
+        for record in self.recordset_iter(source_rsname):
+            pass
+        # add record
+
+
+        # below is logic to insert into old groupedRecordSets
+        ptr = self.groups
+        for idx, group in enumerate(group_path):
+            if group not in ptr:
+                # groups are nested dicts; except last level, which is a set of records
+                ptr[group] = [] if idx + 1 == len(group_path) else {}
+            # advance group ptr
+            ptr = ptr[group]
+        return ptr
+
     # section: record set utilities
 
     @staticmethod
-    def gen_randkey(size=10):
-        return "".join(random.choice(string.ascii_letters) for i in range(size))
+    def gen_randkey(size=10, prefix=""):
+        return prefix + "".join(random.choice(string.ascii_letters) for i in range(size))
 
     def init_recordset(self, schema) -> Response:
         """
         initialize recordset; this requires a unique name
         for each recordset
         """
-        name = self.gen_randkey()
+        name = self.gen_randkey(prefix="r")
         while name in self.rsets:
             # generate while non-unique
-            name = self.gen_randkey()
+            name = self.gen_randkey(prefix="r")
         self.rsets[name] = []
+        self.schemas[name] = schema
+        return Response(True, body=name)
+
+    def init_grouped_recordset(self, schema):
+        """
+        init a grouped recordset
+        """
+        name = self.gen_randkey(prefix="g")
+        while name in self.grouprsets:
+            # generate while non-unique
+            name = self.gen_randkey(prefix="g")
+        self.grouprsets[name] = []
         self.schemas[name] = schema
         return Response(True, body=name)
 
@@ -673,6 +730,9 @@ class VirtualMachine(Visitor):
     def append_recordset(self, name: str, record):
         assert name in self.rsets
         self.rsets[name].append(record)
+
+    def append_grouped_recordset(self, group_path, record):
+        pass
 
     def drop_recordset(self, name: str):
         del self.rsets[name]

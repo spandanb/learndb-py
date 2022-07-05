@@ -129,9 +129,9 @@ class MultiRecordOld:
 
 class MultiRecord:
     """
-    Represents a multi-record
-    Creating a sep class, so it can expose
-    easier api to
+    Represents scoped collection of record.
+    NOTE: MultiRecord is somewhat a misnomer, since it
+    is used to hold a single scoped record
 
     what iface it must support?
         - find a value, given a fq-column name, i.e. f.cola

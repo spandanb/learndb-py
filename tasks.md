@@ -1,6 +1,8 @@
 # Tasks
 
 ## Top Priority
+- how to handle simple select with(out) alias
+  - should multiSchema be more of an alias managing entity?
 - write e2e tests for passing use cases
 - then implement rest of select_handler
 

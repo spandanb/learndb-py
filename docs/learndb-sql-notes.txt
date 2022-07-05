@@ -1,0 +1,8 @@
+This documents aspects of learndb-sql that may lead to gotchas.
+
+* Simple select with alias
+If an alias is used in a simple select, e.g. select * from foo f where f.cola > 4,
+then all column references must be fully scoped, i.e. f.<col>. Thus, the following would be invalid:
+select * from foo f where f.cola > 4
+
+

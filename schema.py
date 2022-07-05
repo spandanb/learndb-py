@@ -47,14 +47,18 @@ class Schema:
 
     NOTE: once constructed a schema should be treated as read-only
     """
-    def __init__(self, name: str = None, columns: List[Column] = []):
+    def __init__(self, name: str = None, columns: List[Column] = None):
         # name of object/entity defined
         self.name = name
         # list of column objects ordered by definition order
-        self.columns = columns
+        self.cols = columns
+
+    @property
+    def columns(self):
+        return self.cols
 
     def __str__(self):
-        body = ' '.join([col.name for col in self.columns])
+        body = ' '.join([col.name for col in self.cols])
         return f'Schema({str(self.name)}, {str(body)})'
 
     def __repr__(self):
@@ -74,13 +78,18 @@ class Schema:
 
 class MultiSchema:
     """
-    Represents a joined schema
+    Represents a scoped (by table_alias) collection of schema
+    TODO: rename to ScopedSchema
     """
     def __init__(self, schemas: dict):
         self.schemas = schemas  # table_name -> Schema
 
     def get_table_names(self):
         return self.schemas.keys()
+
+    @classmethod
+    def from_single_schema(cls, schema: Schema, alias: str):
+        return cls({alias: schema})
 
     @classmethod
     def from_schemas(cls, left_schema: Union[Schema, MultiSchema], right_schema: Schema, left_alias: Optional[str],
@@ -93,6 +102,27 @@ class MultiSchema:
             schemas = left_schema.schemas.copy()
             schemas[right_alias] = right_schema
             return cls(schemas)
+
+    @property
+    def columns(self):
+        return [f"{table_alias}.{col}" for table_alias, schema in self.schemas.items() for col in schema.columns]
+
+
+# create name alias, to ease deprecation
+ScopedSchema = MultiSchema
+
+
+class GroupedSchema:
+    """
+    Represents a grouped multi or simple schema
+    """
+    def __init__(self, schema: Union[Schema, MultiSchema], group_by_columns):
+        self.schema = schema
+        self.group_by_columns = group_by_columns
+
+    @property
+    def columns(self):
+        return self.schema.columns
 
 
 class CatalogSchema(Schema):
@@ -116,13 +146,12 @@ class CatalogSchema(Schema):
     """
 
     def __init__(self):
-        super().__init__('catalog')
-        self.columns = [
+        super().__init__('catalog', [
             Column('pkey', Integer, is_primary_key=True),
             Column('name', Text),
             Column('root_pagenum', Integer),
             Column('sql_text', Text)
-        ]
+        ])
 
 
 def schema_to_ddl(schema: Schema) -> str:
@@ -224,8 +253,7 @@ def generate_schema(create_stmnt) -> Response:
     :param create_stmnt:
     :return:
     """
-    table_name = create_stmnt.table_name
-    schema = Schema(name=table_name)
+
     columns = []
     for coldef in create_stmnt.columns:
         resp = token_to_datatype(coldef.datatype)
@@ -235,7 +263,7 @@ def generate_schema(create_stmnt) -> Response:
         column_name = coldef.column_name.name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
-    schema.columns = columns
+    schema = Schema(name=create_stmnt.table_name, columns=columns)
 
     # validate schema
     resp = validate_schema(schema)
@@ -243,3 +271,10 @@ def generate_schema(create_stmnt) -> Response:
         return Response(False, error_message=f'schema validation due to [{resp.error_message}]')
     return Response(True, body=schema)
 
+
+def make_grouped_schema(schema, group_by_columns: List) -> Response:
+    """
+    Generate a grouped schema from a non-grouped schema. How
+    will this handle both simple, and multi-schema
+    """
+    return Response(True, body=GroupedSchema(schema, group_by_columns))
