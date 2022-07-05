@@ -474,6 +474,22 @@ def devloop():
         #"select cola from bar"
     ]
 
+    # group by
+    texts = [
+        "create table foo ( cola integer primary key, colb integer, colc integer)",
+        "insert into foo (cola, colb, colc) values (1, 2, 3)",
+        "select f.cola from foo f group by f.colb, f.cola",
+    ]
+
+    # scoped select
+    texts = [
+        "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
+        "insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)",
+        "insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)",
+        "insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)",
+        "select f.cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3"
+    ]
+
     for text in texts:
         logging.info(f"handling {text}")
         resp = db.handle_input(text)

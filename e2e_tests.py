@@ -100,8 +100,28 @@ def test_select_equality():
     assert keys == [2, 3]
 
 
-def test_select_equality_1():
-    pass
+def test_select_equality_with_alias():
+    """
+    For a simple select, i.e. single data source with no-joins,
+    the source may or may not have an alias.
+    Not sure if this ANSI SQL; but I will enforce that
+    """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colB integer, colc integer, cold integer)")
+    # insert into table
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)")
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)")
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)")
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (4, 6, 90, 8)")
+    # NOTE: since f is an alias for foo; all columns must be scoped with f
+    db.handle_input("select cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3")
+    keys = []
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        keys.append(record.get("cola"))
+    assert keys == [2, 3]
 
 
 
@@ -203,7 +223,7 @@ def test_cross_join():
         record = db.get_pipe().read()
         keys.append((record.get("f.cola"), record.get("b.colx")))
     keys.sort()
-    assert keys == [(1, 98), (2, 98), (3, 98), (1, 99), (2, 99), (3, 99)]
+    assert keys == [(1, 98), (1, 99), (2, 98), (2, 99), (3, 98), (3, 99)]
 
 
 

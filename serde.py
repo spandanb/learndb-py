@@ -186,6 +186,7 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     key_bytes = cell[offset: offset + key_size]
     key = Integer.deserialize(key_bytes)
     key_columns = [col.name for col in schema.columns if col.is_primary_key]
+
     assert len(key_columns) == 1, "More than 1 key column"
     key_column_name = key_columns[0]
     values[key_column_name] = key
