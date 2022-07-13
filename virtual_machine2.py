@@ -9,6 +9,7 @@ import random
 import string
 
 from typing import List, Optional
+from collections import defaultdict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
@@ -396,6 +397,9 @@ class VirtualMachine(Visitor):
             resp = deserialize_cell(cell, schema)
             assert resp.success
             record = resp.body
+            # if an alias is defined
+            record = MultiRecord.from_single_simple_record(record, table_alias, rs_schema) if table_alias else record
+
             self.append_recordset(rsname, record)
             # advance cursor
             cursor.advance()
@@ -476,20 +480,10 @@ class VirtualMachine(Visitor):
                     return Response(True, body=record.values[operand])
             elif operand.type == "SCOPED_IDENTIFIER":
                 # attempt resolve scoped identifier
-                if isinstance(record, Record):
-                    # this is a scoped name in a single source
-                    # thus we can drop the scope
-                    # e.g. select * from foo f where f.x = 1
-                    _, column = operand.split(".")
-                    value = record.get(column)
-                    return Response(True, body=value)
-                elif isinstance(record, MultiRecord):
-                    # this operand is <alias>.<column>
-                    value = record.get(operand)
-                    return Response(True, body=value)
-                else:
-                    raise ValueError(f"Expected record type; {type(record)}")
-
+                assert isinstance(record, MultiRecord), f"Expected MultiRecord; received {type(record)}"
+                # this operand is <alias>.<column>
+                value = record.get(operand)
+                return Response(True, body=value)
             return Response(False, f"Unable to resolve {operand.type}")
         else:
             # not name, return as is
@@ -686,21 +680,14 @@ class VirtualMachine(Visitor):
         assert resp.success
         rsname = resp.body
 
-        # iterate over records, get group-key
+        # iterate over records, get group-key, add record to group
         for record in self.recordset_iter(source_rsname):
-            pass
-        # add record
-
-
-        # below is logic to insert into old groupedRecordSets
-        ptr = self.groups
-        for idx, group in enumerate(group_path):
-            if group not in ptr:
-                # groups are nested dicts; except last level, which is a set of records
-                ptr[group] = [] if idx + 1 == len(group_path) else {}
-            # advance group ptr
-            ptr = ptr[group]
-        return ptr
+            # get group-key
+            group_values = []
+            for col in grouped_schema.group_by_columns:
+                group_values.append(record.get(col))
+            group_key = tuple(group_values)
+            self.append_grouped_recordset(rsname, group_key, record)
 
     # section: record set utilities
 
@@ -723,13 +710,15 @@ class VirtualMachine(Visitor):
 
     def init_grouped_recordset(self, schema):
         """
-        init a grouped recordset
+        init a grouped recordset.
+        NOTE: A grouped record set is internally stored like
+        {group_key_tuple -> list_of_records}
         """
         name = self.gen_randkey(prefix="g")
         while name in self.grouprsets:
             # generate while non-unique
             name = self.gen_randkey(prefix="g")
-        self.grouprsets[name] = []
+        self.grouprsets[name] = defaultdict(list)
         self.schemas[name] = schema
         return Response(True, body=name)
 
@@ -740,8 +729,8 @@ class VirtualMachine(Visitor):
         assert name in self.rsets
         self.rsets[name].append(record)
 
-    def append_grouped_recordset(self, group_path, record):
-        pass
+    def append_grouped_recordset(self, name: str, group_key: tuple, record):
+        self.grouprsets[name][group_key].append(record)
 
     def drop_recordset(self, name: str):
         del self.rsets[name]
