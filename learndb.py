@@ -488,6 +488,7 @@ def devloop():
         "insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)",
         "insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)",
         "select f.cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3"
+        #"select f.cola from foo f where f.colb = 4"
     ]
 
     for text in texts:
