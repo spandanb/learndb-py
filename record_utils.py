@@ -129,6 +129,7 @@ class MultiRecordOld:
 
 class MultiRecord:
     """
+    # TODO: rename ScopedRecord
     Represents scoped collection of record.
     NOTE: MultiRecord is somewhat a misnomer, since it
     is used to hold a single scoped record
@@ -162,6 +163,10 @@ class MultiRecord:
         """
         names = {left_alias: left_rec, right_alias: right_rec}
         return cls(names, schema)
+
+    @classmethod
+    def from_single_simple_record(cls, record, alias, schema: MultiSchema):
+        return cls({alias: record}, schema)
 
     @classmethod
     def from_joined_and_simple_record(cls, joined_rec: MultiRecord, right_rec: Record, right_alias, schema: MultiSchema):
