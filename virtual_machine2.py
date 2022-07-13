@@ -245,6 +245,7 @@ class VirtualMachine(Visitor):
             # 3. apply filter on source - where clause
             if from_clause.where_clause:
                 # TODO: for simple sql statement, this condition could contain scoped or unscoped column names
+                # I need a ma
                 resp = self.filter_recordset(from_clause.where_clause, rsname)
                 if not resp.success:
                     return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
@@ -346,7 +347,7 @@ class VirtualMachine(Visitor):
 
     def materialize(self, source) -> Response:
         """
-
+        Materialize source
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
@@ -377,10 +378,9 @@ class VirtualMachine(Visitor):
         tree = self.get_tree(table_name)
 
         if table_alias is not None:
-            # record set schema is a scoped schema
-            # vs. a schema for table
-            # THIS FEELS ODD - why should there be 2 schemas
-            # table schema doesnt understand aliases
+            # record set schema is a scoped schema, since that contains
+            # table alias info; however, the cursor requires a (simple)
+            # schema
             rs_schema = ScopedSchema.from_single_schema(schema, table_alias)
         else:
             rs_schema = schema
@@ -476,11 +476,20 @@ class VirtualMachine(Visitor):
                     return Response(True, body=record.values[operand])
             elif operand.type == "SCOPED_IDENTIFIER":
                 # attempt resolve scoped identifier
-                if not isinstance(record, MultiRecord):
-                    breakpoint()
-                assert isinstance(record, MultiRecord), f"Received {type(record)}"
-                value = record.get(operand)
-                return Response(True, body=value)
+                if isinstance(record, Record):
+                    # this is a scoped name in a single source
+                    # thus we can drop the scope
+                    # e.g. select * from foo f where f.x = 1
+                    _, column = operand.split(".")
+                    value = record.get(column)
+                    return Response(True, body=value)
+                elif isinstance(record, MultiRecord):
+                    # this operand is <alias>.<column>
+                    value = record.get(operand)
+                    return Response(True, body=value)
+                else:
+                    raise ValueError(f"Expected record type; {type(record)}")
+
             return Response(False, f"Unable to resolve {operand.type}")
         else:
             # not name, return as is
