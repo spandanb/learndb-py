@@ -474,13 +474,6 @@ def devloop():
         #"select cola from bar"
     ]
 
-    # group by
-    texts = [
-        "create table foo ( cola integer primary key, colb integer, colc integer)",
-        "insert into foo (cola, colb, colc) values (1, 2, 3)",
-        "select f.cola from foo f group by f.colb, f.cola",
-    ]
-
     # scoped select
     texts = [
         "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
@@ -489,6 +482,27 @@ def devloop():
         "insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)",
         "select f.cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3"
         #"select f.cola from foo f where f.colb = 4"
+    ]
+
+    # group by
+    texts = [
+        "create table foo ( cola integer primary key, colb integer, colc integer)",
+        "insert into foo (cola, colb, colc) values (1, 2, 3)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        "select f.cola from foo f group by f.colb",
+    ]
+
+    # group by + having
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        #"select count(custid), country from items group by country",
+        "select count(custid), country from items group by country having count(cust_id) > 1",
     ]
 
     for text in texts:

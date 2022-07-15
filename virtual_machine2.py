@@ -14,7 +14,7 @@ from collections import defaultdict
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from schema import generate_schema, schema_to_ddl, MultiSchema, ScopedSchema, make_grouped_schema
+from schema import generate_schema, schema_to_ddl, MultiSchema, ScopedSchema, make_grouped_schema, GroupedSchema
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -32,7 +32,8 @@ from lang_parser.symbols3 import (
     Comparison,
     ComparisonOp,
     WhereClause,
-    TableName
+    TableName,
+    HavingClause
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -235,6 +236,7 @@ class VirtualMachine(Visitor):
         self.output_pipe.reset()
 
         # 2. check and handle from clause
+        rsname = None  # name of result set
         from_clause = stmnt.from_clause
         if from_clause:
             # materialize source in from clause
@@ -245,19 +247,39 @@ class VirtualMachine(Visitor):
 
             # 3. apply filter on source - where clause
             if from_clause.where_clause:
-                # TODO: for simple sql statement, this condition could contain scoped or unscoped column names
-                # I need a ma
                 resp = self.filter_recordset(from_clause.where_clause, rsname)
                 if not resp.success:
                     return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
                 # filtering produces a new resultset
                 rsname = resp.body
 
+            # 4. apply group by clause
             if from_clause.group_by_clause:
                 resp = self.group_recordset(from_clause.group_by_clause, rsname)
+                if not resp.success:
+                    return Response(False, error_message=f"[group_by_clause] failed due to {resp.error_message}")
+                rsname = resp.body
 
+            # 5. apply having clause
             if from_clause.having_clause:
-                pass
+                # having without group - by should treat entire
+                # resultset as one group
+                self.filter_grouped_recordset(from_clause.having_clause, rsname)
+
+        # 6. handle select columns
+        # because order by and limit depend on a materialized/flattened,
+        # resultset; flattened, means any non-group by columns are aggregated
+        # e.g. order by count(*)
+        # NOTE: select may not refer to any columns, since from is optional
+        if rsname is None:
+            # there is no from clause
+            pass
+        else:
+            # iterate over resultset and flatten it
+            pass
+
+        # 4.
+        if from_clause:
             if from_clause.order_by_clause:
                 pass
             if from_clause.limit_clause:
@@ -507,6 +529,25 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
+    def filter_grouped_recordset(self, having_clause: HavingClause, source_rsname: str):
+        """
+        A having op, i.e. filtering on grouped recordset can also
+        be applied on an ungrouped set where the the whole group is treated as
+        set. SEE: https://stackoverflow.com/a/9099170/1008921
+        """
+        assert isinstance(having_clause, HavingClause)
+
+        schema = self.get_recordset_schema(source_rsname)
+        # todo: evaluate any aggregation functions
+
+        if isinstance(schema, GroupedSchema):
+            pass
+        elif isinstance(schema, MultiSchema):
+            raise NotImplementedError
+        else:
+            # Schema - not sure if this needs to be split
+            raise NotImplementedError
+
     def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: Optional[str],
                        right_sname: str) -> Response:
         """
@@ -685,9 +726,11 @@ class VirtualMachine(Visitor):
             # get group-key
             group_values = []
             for col in grouped_schema.group_by_columns:
-                group_values.append(record.get(col))
+                group_values.append(record.get(col.name))
             group_key = tuple(group_values)
             self.append_grouped_recordset(rsname, group_key, record)
+
+        return Response(True, body=rsname)
 
     # section: record set utilities
 
