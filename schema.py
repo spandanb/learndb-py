@@ -109,6 +109,7 @@ class MultiSchema:
 
 
 # create name alias, to ease deprecation
+#
 ScopedSchema = MultiSchema
 
 
