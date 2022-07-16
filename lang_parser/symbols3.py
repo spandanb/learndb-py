@@ -5,6 +5,8 @@ from lark import Lark, Transformer, Tree, v_args, ast_utils
 from enum import Enum, auto
 from typing import Any, List, Union
 from dataclasses import dataclass
+
+import datatypes
 from .visitor import Visitor
 
 
@@ -350,6 +352,18 @@ class ColumnName(Symbol):
     name: Any
 
 
+@dataclass
+class FuncCall(Symbol):
+    name: str
+    args: List
+
+
+@dataclass
+class Literal(Symbol):
+    value: Any
+    type: DataType
+
+
 # todo: rename ToAst
 class ToAst3(Transformer):
     """
@@ -544,6 +558,16 @@ class ToAst3(Transformer):
         assert len(args) == 1
         return args[0]
 
+    # func calls - right now only used in select
+    def func_name(self, args):
+        return args[0]
+
+    def func_arg_list(self, args):
+        return args
+
+    def func_call(self, args):
+        return FuncCall(args[0], args[1])
+
     # create stmnt components
 
     def table_name(self, args: list):
@@ -613,10 +637,10 @@ class ToAst3(Transformer):
         return ValueList(args)
 
     def INTEGER_NUMBER(self, arg):
-        return int(arg)
+        return Literal(int(arg), DataType.Integer)
 
     def FLOAT_NUMBER(self, arg):
-        return float(arg)
+        return Literal(float(arg), DataType.Float)
 
     # comparison ops
 
@@ -638,4 +662,9 @@ class ToAst3(Transformer):
     def NOT_EQUAL(self, arg):
         return ComparisonOp.NotEqual
 
+    def STRING(self, arg):
+        # remove quotes
+        assert arg[0] == "'" == arg[-1] or arg[0] == '"' == arg[-1]
+        unquoted = arg[1:-1]
+        return Literal(unquoted, DataType.Text)
 

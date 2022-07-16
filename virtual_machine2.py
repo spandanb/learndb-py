@@ -33,7 +33,10 @@ from lang_parser.symbols3 import (
     ComparisonOp,
     WhereClause,
     TableName,
-    HavingClause
+    HavingClause,
+    SelectClause,
+    FuncCall,
+    ColumnName
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -52,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 class RecordSet:
+    # todo: nuke me - unused
     pass
 
 
@@ -61,6 +65,14 @@ class GroupedRecordSet(RecordSet):
 
 class NullRecordSet(RecordSet):
     pass
+
+
+class UnGroupedColumnException(Exception):
+    pass
+
+
+AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
+SCALAR_FUNCTIONS = ["CURRENT_DATETIME"]
 
 
 class VirtualMachine(Visitor):
@@ -271,14 +283,9 @@ class VirtualMachine(Visitor):
         # resultset; flattened, means any non-group by columns are aggregated
         # e.g. order by count(*)
         # NOTE: select may not refer to any columns, since from is optional
-        if rsname is None:
-            # there is no from clause
-            pass
-        else:
-            # iterate over resultset and flatten it
-            pass
+        self.evaluate_select_clause(stmnt.select_clause, rsname)
 
-        # 4.
+        # 7.
         if from_clause:
             if from_clause.order_by_clause:
                 pass
@@ -292,6 +299,74 @@ class VirtualMachine(Visitor):
         # output pipe for sanity
         # for msg in self.output_pipe.store:
         #    logger.info(msg)
+
+    def is_agg_func(self, func_name: str):
+        return func_name.lower() in AGGREGATE_FUNCTIONS
+
+    def is_group_by_col(self, schema: GroupedSchema, column: ColumnName) -> bool:
+        """
+        Determine if column is a groupby column
+        """
+        for col in schema.group_by_columns:
+            if col == column:
+                return True
+        return False
+
+    def evaluate_function(self, func_name: str, func_args, schema, source_rsname) -> Response:
+        """
+        Evaluate a function
+        """
+        # TODO: where should computed results be stored
+
+    def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+
+        """
+        if source_rsname is None:
+            # no source
+            pass
+        else:
+            schema = self.get_recordset_schema(source_rsname)
+            if isinstance(schema, GroupedSchema):
+                for selectable in select_clause.selectables:
+                    # function could be agg or non-agg
+                    if isinstance(selectable, FuncCall):
+                        func = selectable
+                        if self.is_agg_func(func.name):
+                            # agg func; it's arguments must be non-group-by columns
+                            for arg in selectable.args:
+                                if isinstance(arg, ColumnName):
+                                    if self.is_group_by_col(schema, arg):
+                                        raise ValueError(f"Column [{arg}] cannot appears in both "
+                                                         f"group-by and aggregation function")
+                            self.evaluate_function(func.name, func.args, schema, source_rsname)
+                        else:
+                            # non-agg function can only be applied to group-by columns
+                            for arg in selectable.args:
+                                if isinstance(arg, ColumnName):
+                                    if not self.is_group_by_col(schema, arg):
+                                        raise UnGroupedColumnException(f"Column [{arg}] must appears either in both "
+                                                                       f"group-by or in aggregation function")
+
+                    elif isinstance(selectable, ColumnName):
+                        # this must be a group-by column
+                        is_groupby_col = self.is_group_by_col(schema, selectable)
+                        if not is_groupby_col:
+                            raise UnGroupedColumnException(f"Column [{selectable}] must appears either in both group-by "
+                                                           f"or in aggregation function")
+                    else:
+                        # this value should be used as is
+                        pass
+
+
+
+            elif isinstance(schema, ScopedSchema):
+                pass
+            else:
+                # Schema
+                pass
+
+            # iterate over resultset and flatten it
 
     def visit_insert_stmnt(self, stmnt) -> Response:
         """

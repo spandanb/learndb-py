@@ -443,3 +443,28 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     then in the transformer method for the rule, and finally in the AST symbol class. Albeit, the mapping between grammar
     rule and AST symbol class is not 1:1, hence the 3 definitions, which allow the arbitrariness of mapping.
  
+7/12
+     How should scoping and name aliasing in leardb-sql work. Currently, scope alias info is stored in multi-record.
+     And single-source recordset, don't have any alias info. Specifically,
+
+        select *
+        from foo f
+        join bar b
+         on f.x = b.y
+
+       This stores recordset, like {'f': FOORECORD, 'b': BARRECORD}. i.e. the multi-record stores the alias mapping.
+       ...
+
+       Right now I was able to get the aliasing to work; but it doesn't seem very elegant. And this inelegance is likely
+       hiding inconsistencies; and bugs. At some point I should revisit, how table_name aliases are handled. Some things,
+       to consider, is that Should I keep the mapping externally, e.g. in vm::current_scope? Here, external, means
+       external to the record/recordset.
+
+       Another way to consider this is, how should we handle table aliases in a select with only 1 source. This is only
+       an issue for 1 source, since a multi-record stores the name mapping. One solution would be to rewrite the query
+       and drop any alias e.g. select * from foo f group f.x -> select * from foo group by x; or I could do the reverse;
+       or I could handle the two as separate cases.
+
+ 7/15
+     Right now, group by and non-group by cases are handled separately. But actually, a non-grouped select, can have aggregates
+     performed on it, which behave like an aggregatable group.
