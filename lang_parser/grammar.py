@@ -57,9 +57,8 @@ GRAMMAR = '''
                          | factor ( "/" | "*" ) unary
         unary           : primary
                          | ( "!" | "-" ) unary
-        primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
-                         | IDENTIFIER 
-                         | SCOPED_IDENTIFIER
+        primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL 
+                         | column_name
                          | nested_select
                          | func_call
 

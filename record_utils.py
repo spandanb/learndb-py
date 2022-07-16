@@ -6,7 +6,7 @@ Records are data containing objects that conform to a schema.
 from typing import List, Optional, Union
 from lark import Token
 
-from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList
+from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList, Literal
 from dataexchange import Response
 from schema import Schema, MultiSchema
 
@@ -273,21 +273,7 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
     values = {}
     for idx, col_name in enumerate(column_name_list.names):
         value = value_list.values[idx]
-
-        # handle any type conversion
-        if isinstance(value, Token):
-            # where should this type checking be codified?
-            # TODO: these are likely not needed
-            #if value.type == "INTEGER_NUMBER":
-            #    value = int(value)
-            #elif value.type == "FLOAT_NUMBER":
-            #    value = float(value)
-            pass
-
-            # else: leave as string
-            # do other types need to be converted?
-
-        values[col_name.name] = value
+        values[col_name.name] = value.value if isinstance(value, Literal) else value
 
     record = Record(values, schema)
 

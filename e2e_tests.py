@@ -132,6 +132,26 @@ def test_select_inequality():
     """
 
 
+def test_select_group_by_having():
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        #"select count(custid), country from items group by country",
+        "select count(custid), country from items group by country having count(cust_id) > 1",
+    ]
+
+
+def test_select_having():
+    """
+    No group by, only having
+    "select "T" from items having count(cust_id) > 1",
+    """
+
 
 
 
