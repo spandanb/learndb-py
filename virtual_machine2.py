@@ -301,7 +301,7 @@ class VirtualMachine(Visitor):
         #    logger.info(msg)
 
     def is_agg_func(self, func_name: str):
-        return func_name.lower() in AGGREGATE_FUNCTIONS
+        return func_name.upper() in AGGREGATE_FUNCTIONS
 
     def is_group_by_col(self, schema: GroupedSchema, column: ColumnName) -> bool:
         """
@@ -312,11 +312,52 @@ class VirtualMachine(Visitor):
                 return True
         return False
 
-    def evaluate_function(self, func_name: str, func_args, schema, source_rsname) -> Response:
+    def evaluate_agg_function(self, func_name: str, func_args, schema, source_rsname) -> Response:
         """
-        Evaluate a function
+        Evaluate function and return computed result
         """
-        # TODO: where should computed results be stored
+        # this should a map from group_key -> value
+        # if source is a simple recordset - the group key will be None
+        computed = defaultdict(int)
+        func_name = func_name.lower()
+        # TODO: validate args; for all agg funcs, only * or a single column name is accepted
+        if func_name == "min":
+            raise NotImplementedError
+        elif func_name == "max":
+            raise NotImplementedError
+        elif func_name == "avg":
+            raise NotImplementedError
+        elif func_name == "count":
+            # 1. validate args
+            assert len(func_args) == 1
+            # todo: validate function args: column or *
+            # todo; handle * arg; currently parser fails
+            if isinstance(func_args[0], ColumnName):
+                column = func_args[0]
+                # 2. evaluate function
+                for group_key, group_rset in self.grouped_recordset_iter(source_rsname):
+                    group_value = 0
+                    for record in group_rset:
+                        group_value += 1 if record.get(column.name) is not None else 0
+                    computed[group_key] += group_value
+
+        elif func_name == "sum":
+            # 1. validate args
+            assert len(func_args) == 1
+            column = func_args[0]
+            # 2. evaluate function
+            for group_key, group_rset in self.grouped_recordset_iter(source_rsname):
+                group_value = 0
+                for record in group_rset:
+                    group_value += record.get(column.name)
+                computed[group_key] += group_value
+        else:
+            raise ValueError(f"Unrecognized aggregation function: {func_name}")
+
+        return Response(True, body=computed)
+
+    def evaluate_scalar_function(self, func_name, func_args, schema, source_rsname) -> Response:
+        pass
 
     def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -337,9 +378,9 @@ class VirtualMachine(Visitor):
                             for arg in selectable.args:
                                 if isinstance(arg, ColumnName):
                                     if self.is_group_by_col(schema, arg):
-                                        raise ValueError(f"Column [{arg}] cannot appears in both "
+                                        raise ValueError(f"Column [{arg}] cannot appear in both "
                                                          f"group-by and aggregation function")
-                            self.evaluate_function(func.name, func.args, schema, source_rsname)
+                            self.evaluate_agg_function(func.name, func.args, schema, source_rsname)
                         else:
                             # non-agg function can only be applied to group-by columns
                             for arg in selectable.args:
@@ -858,3 +899,9 @@ class VirtualMachine(Visitor):
         NOTE: The iterator will be consumed after one iteration
         """
         return iter(self.rsets[name])
+
+    def grouped_recordset_iter(self, name):
+        """
+        return a pair of (group_key, group_recordset_iterator)
+        """
+        return [(group_key, iter(group_rset)) for group_key, group_rset in self.grouprsets[name].items()]
