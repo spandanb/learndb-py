@@ -83,6 +83,7 @@
   - duplicate key not erroring (this might be working now)
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
   - create table def , requires space after final column and final ')'
+  - select count(*) from countries group by country_name
 
 ## Release Requirements
   - support join (inner, left?, outer?), group by, having

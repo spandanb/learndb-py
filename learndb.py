@@ -505,7 +505,8 @@ def devloop():
         "insert into items (custid, country) values (100, 2)",
         "insert into items (custid, country) values (200, 2)",
         "insert into items (custid, country) values (300, 2)",
-        "select count(custid), country, 'cargo' from items group by country",
+        "select count(custid), country from items group by country",
+        #"select count(*), country from items group by country", # TODO: this fails to parse
     ]
 
 
