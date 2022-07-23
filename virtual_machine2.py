@@ -9,12 +9,13 @@ import random
 import string
 
 from typing import List, Optional
+from enum import Enum, auto
 from collections import defaultdict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from schema import generate_schema, schema_to_ddl, MultiSchema, ScopedSchema, make_grouped_schema, GroupedSchema
+from schema import generate_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema, make_grouped_schema, GroupedSchema
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -73,6 +74,17 @@ class UnGroupedColumnException(Exception):
 
 AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
 SCALAR_FUNCTIONS = ["CURRENT_DATETIME"]
+
+
+class SelectClauseSourceType(Enum):
+    """
+    Represents the kind of source that the select clause is executed over;
+    This passed from validation layer of select clause to evaluator
+    """
+    NoSource = auto()
+    SimpleSource = auto()
+    ScopedSource = auto()
+    GroupedSource = auto()
 
 
 class VirtualMachine(Visitor):
@@ -307,6 +319,23 @@ class VirtualMachine(Visitor):
     def is_agg_func(self, func_name: str):
         return func_name.upper() in AGGREGATE_FUNCTIONS
 
+    def has_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
+        """
+        Returns True if func uses group by columns as arguments
+        :param func_name:
+        :param func_args:
+        :param group_by_schema:
+        :return:
+        """
+    def has_non_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
+        """
+        Return true if func does not use any group by columsn 
+        :param func_name:
+        :param func_args:
+        :param group_by_schema:
+        :return:
+        """
+
     def is_group_by_col(self, schema: GroupedSchema, column: ColumnName) -> bool:
         """
         Determine if column is a groupby column
@@ -374,69 +403,74 @@ class VirtualMachine(Visitor):
         source for ungrouped recordsets; and will have one record
         for each group for a grouped recordsets.
         """
-        # 1. generate schema
+        # 1. validate select clause and generate schema
         columns = []
+        source_schema = None
         if source_rsname is None:
             # no source
+            # selectables can be literals, or scalar functions
             for selectable in select_clause.selectables:
-                column = ColumnName
+                column = ColumnName()
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
                 for selectable in select_clause.selectables:
                     if isinstance(selectable, FuncCall):
-                        pass
-                    elif isinstance(selectable, ColumnName):
-                        pass
-
-
-
-        # 2. generate schema
-        if source_rsname is None:
-            # no source
-            pass
-        else:
-            source_schema = self.get_recordset_schema(source_rsname)
-            if isinstance(source_schema, GroupedSchema):
-                for selectable in select_clause.selectables:
-                    # function could be agg or non-agg
-                    if isinstance(selectable, FuncCall):
+                        # agg functions can be applied on non-grouped columns
                         func = selectable
                         if self.is_agg_func(func.name):
-                            # agg func; it's arguments must be non-group-by columns
                             for arg in selectable.args:
-                                if isinstance(arg, ColumnName):
-                                    if self.is_group_by_col(source_schema, arg):
-                                        raise ValueError(f"Column [{arg}] cannot appear in both "
-                                                         f"group-by and aggregation function")
-                            resp = self.evaluate_agg_function(func.name, func.args, source_schema, source_rsname)
-                            assert resp.success
-                            resp.body  # dict of group -> group_val
-                        else:
-                            # non-agg function can only be applied to group-by columns
-                            for arg in selectable.args:
-                                if isinstance(arg, ColumnName):
-                                    if not self.is_group_by_col(source_schema, arg):
-                                        raise UnGroupedColumnException(f"Column [{arg}] must appears either in both "
-                                                                       f"group-by or in aggregation function")
+                                pass
+
 
                     elif isinstance(selectable, ColumnName):
-                        # this must be a group-by column
-                        is_groupby_col = self.is_group_by_col(source_schema, selectable)
-                        if not is_groupby_col:
+                        pass
+            elif isinstance(source_schema, ScopedSchema):
+                raise NotImplementedError
+            else:
+                assert isinstance(source_schema, Schema)
+
+        # 2. generate schema
+        if source_schema is None:
+            raise NotImplementedError
+        elif isinstance(source_schema, GroupedSchema):
+            for selectable in select_clause.selectables:
+                # function could be agg or non-agg
+                if isinstance(selectable, FuncCall):
+                    func = selectable
+                    if self.is_agg_func(func.name):
+                        # agg func; it's arguments must be non-group-by columns
+                        for arg in selectable.args:
+                            if isinstance(arg, ColumnName):
+                                if self.is_group_by_col(source_schema, arg):
+                                    raise ValueError(f"Column [{arg}] cannot appear in both "
+                                                     f"group-by and aggregation function")
+                        resp = self.evaluate_agg_function(func.name, func.args, source_schema, source_rsname)
+                        assert resp.success
+                        resp.body  # dict of group -> group_val
+                    else:
+                        # non-agg function can only be applied to group-by columns
+                        for arg in selectable.args:
+                            if isinstance(arg, ColumnName):
+                                if not self.is_group_by_col(source_schema, arg):
+                                    raise UnGroupedColumnException(f"Column [{arg}] must appears either in both "
+                                                                   f"group-by or in aggregation function")
+
+                elif isinstance(selectable, ColumnName):
+                    # this must be a group-by column
+                    is_groupby_col = self.is_group_by_col(source_schema, selectable)
+                    if not is_groupby_col:
                             raise UnGroupedColumnException(f"Column [{selectable}] must appears either in both group-by "
                                                            f"or in aggregation function")
                     else:
                         # this value should be used as is
                         pass
 
-
-
-            elif isinstance(source_schema, ScopedSchema):
-                pass
-            else:
-                # Schema
-                pass
+        elif isinstance(source_schema, ScopedSchema):
+            pass
+        else:
+            # Schema
+            pass
 
             # iterate over resultset and flatten it
 
