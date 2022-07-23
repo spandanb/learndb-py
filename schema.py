@@ -1,19 +1,21 @@
+from __future__ import annotations
 """
 This contain structures to generate and manipulate
-schema- including the logical schema (column name, column type),
-and the physical representation (number of bytes,
-length of encoding) thereof.
+logical schema- (column name, column type).
 
-This should be split into logical (schema.py) and physical schema (serde.py)
+The physical representation (number of bytes,
+length of encoding) of the schema is contained in serde.py.
 
-The physical encoding is the file format.
+While, records- i.e. data-containing objects with the structure
+specified by the schema-, and related utilities are contained in record_utils.py
 """
 
 
-from typing import List
+from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
-from lang_parser.tokens import TokenType
+# from lang_parser.tokens import TokenType, Token
+from lang_parser.symbols3 import TableName, DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
 from dataexchange import Response
 
 
@@ -37,23 +39,30 @@ class Column:
 class Schema:
     """
     Represents a schema. This includes
-    logical aspects (name, is_primary_key) and physical aspects
+    logical aspects (name) and physical aspects
     (number of bytes of storage, fixed vs. variable length encoding)
 
-    Note a schema must be valid. If the schema is invalid, this
-    should be raised prior to creating.
+    Note: a schema must be valid. If the schema is invalid, this
+    should be raised prior to creating. This is particularly important,
+    since schemas will correspond: 1) to a real data sources,
+    2) computed schema for output resultset. For (1) we would have
+    constraints like primary key; but for (2) we would not; and hence
+    these constraints should be external to the schema definition
 
     NOTE: once constructed a schema should be treated as read-only
     """
-    def __init__(self, name: str = None, columns: List[Column] = []):
+    def __init__(self, name: str = None, columns: List[Column] = None):
         # name of object/entity defined
         self.name = name
         # list of column objects ordered by definition order
-        self.columns = columns
+        self.cols = columns
+
+    @property
+    def columns(self):
+        return self.cols
 
     def __str__(self):
-        # return 'Schema()'
-        body = ' '.join([col.name for col in self.columns])
+        body = ' '.join([col.name for col in self.cols])
         return f'Schema({str(self.name)}, {str(body)})'
 
     def __repr__(self):
@@ -69,6 +78,56 @@ class Schema:
                 return column.name
 
         return None
+
+
+class MultiSchema:
+    """
+    Represents a scoped (by table_alias) collection of schema
+    TODO: rename to ScopedSchema
+    """
+    def __init__(self, schemas: dict):
+        self.schemas = schemas  # table_name -> Schema
+
+    def get_table_names(self):
+        return self.schemas.keys()
+
+    @classmethod
+    def from_single_schema(cls, schema: Schema, alias: str):
+        return cls({alias: schema})
+
+    @classmethod
+    def from_schemas(cls, left_schema: Union[Schema, MultiSchema], right_schema: Schema, left_alias: Optional[str],
+                     right_alias: str):
+        if isinstance(left_schema, Schema):
+            assert left_alias is not None
+            return cls({left_alias: left_schema, right_alias: right_schema})
+        else:
+            assert isinstance(left_schema, MultiSchema) and left_alias is None
+            schemas = left_schema.schemas.copy()
+            schemas[right_alias] = right_schema
+            return cls(schemas)
+
+    @property
+    def columns(self):
+        return [f"{table_alias}.{col}" for table_alias, schema in self.schemas.items() for col in schema.columns]
+
+
+# create name alias, to ease deprecation
+#
+ScopedSchema = MultiSchema
+
+
+class GroupedSchema:
+    """
+    Represents a grouped multi or simple schema
+    """
+    def __init__(self, schema: Union[Schema, MultiSchema], group_by_columns):
+        self.schema = schema
+        self.group_by_columns = group_by_columns
+
+    @property
+    def columns(self):
+        return self.schema.columns
 
 
 class CatalogSchema(Schema):
@@ -92,13 +151,12 @@ class CatalogSchema(Schema):
     """
 
     def __init__(self):
-        super().__init__('catalog')
-        self.columns = [
+        super().__init__('catalog', [
             Column('pkey', Integer, is_primary_key=True),
             Column('name', Text),
             Column('root_pagenum', Integer),
             Column('sql_text', Text)
-        ]
+        ])
 
 
 def schema_to_ddl(schema: Schema) -> str:
@@ -130,36 +188,8 @@ def schema_to_ddl(schema: Schema) -> str:
             null_cond = "" if column.is_nullable else "NOT NULL"
             column_defs.append(f'{column.name} {column.datatype.typename} {null_cond}')
     column_def_body = ", ".join(column_defs)
-    return f'CREATE TABLE {schema.name} ( {column_def_body} )'
-
-
-class Record:
-    """
-    Represents a record from table.
-    This always corresponds to a given schema.
-    """
-    def __init__(self, values: dict = None, schema: Schema = None):
-        # unordered mapping from: column-name -> column-value
-        self.values = values
-        self.schema = schema
-
-    def __str__(self):
-        if self.values is None:
-            return "Record(-)"
-        body = ", ".join([f"{k}: {v}" for k, v in self.values.items()])
-        return f"Record({body})"
-
-    def __repr__(self):
-        return str(self)
-
-    def get(self, key: str):
-        """
-        column names are internally represented as lowercase versions
-        of their names; thus the key must be lowercased for the lookup
-        :param key:
-        :return:
-        """
-        return self.values[key.lower()]
+    assert isinstance(schema.name, TableName)
+    return f'CREATE TABLE {schema.name.table_name} ( {column_def_body} )'
 
 
 def validate_schema(schema: Schema) -> Response:
@@ -202,44 +232,43 @@ def validate_schema(schema: Schema) -> Response:
     return Response(True)
 
 
-def token_to_datatype(datatype_token: 'Token') -> Response:
+def token_to_datatype(datatype: DataType) -> Response:
     """
     parse datatype token into DataType
     :param datatype_token:
     :return:
     """
-    token_type = datatype_token.token_type
-    if token_type == TokenType.INTEGER:
+    if datatype == SymbolDataType.Integer:
         return Response(True, body=Integer)
-    elif token_type == TokenType.TEXT:
+    elif datatype == SymbolDataType.Text:
         return Response(True, body=Text)
-    elif token_type == TokenType.BLOB:
+    elif datatype == SymbolDataType.Blob:
         return Response(True, body=Blob)
-    elif token_type == TokenType.REAL:
+    elif datatype == SymbolDataType.Real:
         return Response(True, body=Float)
-    return Response(False, error_message=f'Unrecognized datatype: [{datatype_token}]')
+    return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
 
 
-def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
+def generate_schema(create_stmnt) -> Response:
     """
-    construct schema corresponding to schema object.
+    Generate schema from a create stmnt. There is a very thin
+    layer of translation between the stmnt and the schema object.
+    But I want to distinguish the (create) stmnt from the schema.
     Note if the operation is successful, a valid schema was read.
     :param create_stmnt:
     :return:
     """
-    # construct schema
-    table_name = create_stmnt.table_name.literal
-    schema = Schema(name=table_name)
+
     columns = []
-    for coldef in create_stmnt.column_def_list:
+    for coldef in create_stmnt.columns:
         resp = token_to_datatype(coldef.datatype)
         if not resp.success:
             return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
         datatype = resp.body
-        column_name = coldef.column_name.literal.lower()
+        column_name = coldef.column_name.name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
-    schema.columns = columns
+    schema = Schema(name=create_stmnt.table_name, columns=columns)
 
     # validate schema
     resp = validate_schema(schema)
@@ -248,73 +277,9 @@ def generate_schema(create_stmnt: 'CreateStmnt') -> Response:
     return Response(True, body=schema)
 
 
-def validate_record(record) -> Response:
+def make_grouped_schema(schema, group_by_columns: List) -> Response:
     """
-    Validate whether record data types are as expected
-    and primary key and non-nullable columns are set
-
-    :param record:
-    :return:
+    Generate a grouped schema from a non-grouped schema. How
+    will this handle both simple, and multi-schema
     """
-    has_primary_key = False
-    for column in record.schema.columns:
-        value = record.values.get(column.name)
-        # check if value must be set
-        if value is None and not column.is_nullable:
-            return Response(False, error_message=f'non-nullable field [{column.name}] is unset')
-        # check if literals have valid value
-        if value is not None and not column.datatype.is_valid_term(value):
-            return Response(False, error_message=f'Column [{column.name}, type: {column.datatype}] has invalid term [{value}]')
-        # check if column is primary key
-        if column.is_primary_key:
-            has_primary_key = True
-
-    if not has_primary_key:
-        return Response(False, error_message='missing primary key')
-
-    return Response(True)
-
-
-def create_record(column_name_list: List, value_list: List, schema: Schema) -> Response:
-    """
-    Create record. Note if the operation is successful, a valid record was read.
-    :return:
-    """
-    if len(column_name_list) != len(value_list):
-        return Response(False, error_message=f'Number of column names [{len(column_name_list)}] '
-                                             f'does not equal number of values[{len(value_list)}]')
-
-    # create record
-    values = {}
-    for idx, col_name in enumerate(column_name_list):
-        value = value_list[idx]
-
-        # todo: verify this
-        extracted = getattr(value, 'literal', value)
-        values[col_name] = extracted
-
-    record = Record(values, schema)
-
-    # validate record
-    resp = validate_record(record)
-    if not resp.success:
-        return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
-
-    return Response(True, body=record)
-
-
-def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):
-    """
-    Create a catalog record
-    :param pkey:
-    :param table_name:
-    :param root_page_num:
-    :param catalog_schema:
-    :return:
-    """
-
-    return create_record(['pkey', 'name', 'root_pagenum', 'sql_text'],
-                         [pkey, table_name, root_page_num, sql_text],
-                         catalog_schema)
-
-
+    return Response(True, body=GroupedSchema(schema, group_by_columns))

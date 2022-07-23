@@ -1,5 +1,5 @@
-from lang_parser.tokenizer import Tokenizer
-from lang_parser.sqlparser import Parser
+import pytest
+
 from lang_parser.sqlhandler import SqlFrontEnd
 
 
@@ -13,6 +13,50 @@ def test_select_stmnt():
     for cmd in cmds:
         handler.parse(cmd)
         assert handler.is_success()
+
+
+def test_misc_succ_stmnt():
+    """
+    Collection of misc statements that should
+    succeed successfully
+    - should be moved into statement type specific tests
+
+    :return:
+    """
+    cmds = ["select cola, colb from foo where cola = 1 and colb = 2 or colc = 3",
+            "select cola, colb from foo where cola = 1 and colb = 2 and colc = 3",
+            "select cola, colb from foo where cola = 1 and colb = 2 or colc = 3 and cold = 4",
+            "select cola, colb from foo f join bar b on f.cola = b.colb",
+            "select cola, colb from foo f inner join bar b on f.cola = b.colb",
+            "select cola, colb from foo f inner join bar r on f.cola = r.coly",
+            "select cola, colb from foo f inner join bar r on f.b = r.y inner join car c on c.x = f.b",
+            "select cola, colb from foo f inner join bar r on f.b = r.y left join car c on c.x = f.b",
+            "select cola, colb from foo f left outer join bar r on f.b = r.y right join car c on c.x = f.b",
+            "select cola, colb from foo f cross join bar r",
+            "select cola, colb from foo f left join bar r on (select max(fig, farce) from fodo where x = 1)"
+            ]
+    for cmd in cmds:
+        handler = SqlFrontEnd()
+        handler.parse(cmd)
+        assert handler.is_success()
+
+
+def test_misc_fail_stmnt():
+    """
+    misc collections of statements that should fail
+    :return:
+
+    """
+    cmds = [
+        # NOTE: That there be no on-clause in cross-join must be enforced when parse tree is being converted to AST
+        # this is currently not implemented
+        # "select cola, colb from foo f cross join bar r on f.x = r.y",  # cross join should not have an on-clause
+    ]
+    for cmd in cmds:
+        with pytest.raises(AssertionError):
+            handler = SqlFrontEnd()
+            handler.parse(cmd)
+            assert handler.is_success()
 
 
 def test_create_stmnt():
@@ -61,7 +105,7 @@ def test_multi_stmnt():
 def test_insert_stmnt():
     cmds = [
         "insert into table_name (col_a, col_b) values ('val_a', 32)",
-        "insert into table_name (col_a, col_b) values ('val_a', 'val_b')"
+        "insert into table_name (col_a, col_b) values ('val_a', 'val_b')",
         "insert into table_name (col_a, col_b) values (11, 92)"
     ]
 
@@ -73,8 +117,8 @@ def test_insert_stmnt():
 
 def test_update_stmnt():
     cmds = [
-        "update table_name set column_name = value where foo = 'bar'",
-        "update table_name set column_name = value"
+        "update table_name set column_name = 'value' where foo = bar",
+        "update table_name set column_name = 32"
         ]
     handler = SqlFrontEnd()
     for cmd in cmds:

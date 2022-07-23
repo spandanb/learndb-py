@@ -53,7 +53,7 @@ class Response:
         if self.error_message:
             return f'Response(fail, {self.error_message})'
         else:
-            return f'Response(success, {str(self.body)}'
+            return f'Response(success, {str(self.body)})'
 
     def __repr__(self):
         return self.__str__()

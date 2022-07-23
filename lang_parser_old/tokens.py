@@ -20,7 +20,7 @@ class TokenType(Enum):
     LESS = auto()  # <
     GREATER = auto()  # >
     COMMA = auto()  # ,
-    SEMI_COLON = auto(), # ;
+    SEMI_COLON = auto(),  # ;
 
     # 2-char tokens
     LESS_EQUAL = auto()  # <=
@@ -50,6 +50,13 @@ class TokenType(Enum):
     INTO = auto()
     VALUES = auto()
     JOIN = auto()
+    INNER = auto()
+    LEFT = auto()
+    RIGHT = auto()
+    FULL = auto()
+    OUTER = auto()
+    CROSS = auto()
+
     CASE = auto()
     HAVING = auto()
     GROUP = auto()
@@ -73,13 +80,25 @@ class TokenType(Enum):
     KEY = auto()
     NOT = auto()
 
+    # fixed-value literals
+    TRUE = auto()
+    FALSE = auto()
+
 
 KEYWORDS = {
     'select',
     'from',
     'where',
+
     'join',
     'on',
+    'inner',
+    'left',
+    'right',
+    'full',
+    'outer',
+    'cross',
+
     'group',
     'order',
     'by',
@@ -107,7 +126,11 @@ KEYWORDS = {
 
     'primary',
     'key',
-    'not'
+    'not',
+
+    # fixed-value literals
+    'true',
+    'false'
 
 }
 

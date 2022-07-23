@@ -11,7 +11,7 @@ class ParseError(Exception):
 
 def camel_to_snake(name: str) -> str:
     """
-    change casing
+    change casing abcdXyz -> abcd_xyz
     """
     return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
 

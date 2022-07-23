@@ -9,7 +9,8 @@ from constants import (CELL_KEY_SIZE_SIZE,
 
 from datatypes import DataType, Null, Integer, Text, Blob, Float
 from dataexchange import Response
-from schema import Integer, Record, Schema
+from schema import Integer, Schema
+from record_utils import Record
 
 
 class InvalidCell(Exception):
@@ -113,6 +114,8 @@ def serialize_record(record: Record) -> Response:
         if column.is_primary_key:
             # ensure primary key is an int
             # this validation should be done at schema generation time
+            #if value is None:
+            #    breakpoint()
             assert column.datatype == Integer, "Primary key must be an integer"
             assert value is not None, "Primary key must exist"
             key = column.datatype.serialize(value)
@@ -183,6 +186,7 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
     key_bytes = cell[offset: offset + key_size]
     key = Integer.deserialize(key_bytes)
     key_columns = [col.name for col in schema.columns if col.is_primary_key]
+
     assert len(key_columns) == 1, "More than 1 key column"
     key_column_name = key_columns[0]
     values[key_column_name] = key

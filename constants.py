@@ -6,8 +6,25 @@ DB_FILE = 'db.file'
 TEST_DB_FILE = 'testdb.file'
 
 # storage constants
+# NOTE: storage and btree constants that affect how the
+# db file is written, should not be changed once a db file is created.
 PAGE_SIZE = 4096
 WORD = 4
+
+# file header constants
+FILE_HEADER_OFFSET = 0
+FILE_HEADER_SIZE = 100
+FILE_PAGE_AREA_OFFSET = FILE_HEADER_SIZE
+FILE_HEADER_VERSION_FIELD_OFFSET = 0
+FILE_HEADER_VERSION_FIELD_SIZE = 16
+# NOTE: The diff between size and len(FILE_HEADER_VERSION_VALUE) should be padding
+FILE_HEADER_VERSION_VALUE = b'learndb v1'
+FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET = FILE_HEADER_VERSION_FIELD_OFFSET + FILE_HEADER_VERSION_FIELD_SIZE
+FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE = WORD
+FILE_HEADER_PADDING = FILE_HEADER_SIZE - FILE_HEADER_VERSION_FIELD_SIZE - FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE
+# pager constants
+FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET = 0
+FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE = WORD
 
 # btree constants
 TABLE_MAX_PAGES = 100
@@ -114,6 +131,11 @@ LEAF_NODE_MAX_CELLS = 3
 INTEGER_SIZE = WORD
 FLOAT_SIZE = WORD
 
+# Higher-level constanst
+# name of catalog
+CATALOG = 'catalog'
+
+
 USAGE = '''
 Supported meta-commands:
 ------------------------
@@ -137,7 +159,7 @@ Create table
 > create table customers ( cust_id integer primary key, cust_name text, cust_height float)
 
 Insert records
-> insert into customers ( cust_id, cust_name, cust_height) values (1, "Bob Maharaj", 162.5 )
+> insert into customers ( cust_id, cust_name, cust_height) values (1, 'Bob Maharaj', 162.5 )
 
 Select some rows, only supports equality predicate
 > select cust_name, cust_height from customers

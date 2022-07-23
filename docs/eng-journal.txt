@@ -328,3 +328,143 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     serializability levels.
 
     Second, free list is unsorted; later I can get fancy with sorting the list, but for now this is good.
+
+1/16
+    A lot of records objects are being created, e.g. when doing joins. Also, the joins are implemented
+    via scans over the entire joined record sets. These result in high space and time usage respectively. Some of
+    this usage could be reduced; but the code would get trickier. Right now, I'm optimizing for code completion and
+    correctness- space and time concerns should be addressed after running proper benchmarks; and only once I know
+    what correct code and behavior looks like. Further, if I do end up writing more optimized handlers, I will have
+    a reference implementation - which while inefficient should be easier to reason about.
+
+1/20
+    Joins are implemented as nested loop. This works for inner join. To handle outer join, I'll need to use extra
+    space to track what rows have been joined. Specifically, consider, right outer join.
+    I'll keep track (via a seen index) of rows from the right source (inner loop) that have not been joined, and hence not added to
+    the result set. Then after the nested loop, I'll iterate over the seen index and add null'ed copies of rows to the
+    result set.
+
+1/21
+    If-else and dumb objects vs. conditional flag aware objects
+
+    Anytime I have an if-else branch, I can replace it with a data-structure, that can handle the condition. This is the
+    functional - object split. Specifically, this is a concern in the handling select statements, since there are many
+    stages, e.g. from, where, group by,... and each stage, modifies the result set of the previous stage. Initially, I was
+    preferring iterating, since it keeps the data structures dumb iterates. But, group by splits the result set into multiple
+    grouped sets. And using the above approach would require iterating over each group, to apply filters and aggregates, and
+    reconstruct a new group after- and this looks and feels quiet ugly. So, here I'm leaning towards having the ResultSet
+    and GroupedResultSet, have truncate and aggregate methods- i.e. the data structures are not so dumb.
+
+1/27
+    Extending parser and virtual machine to support all clauses
+
+    I'm working on extending the parser and VM to support group by, having, limit, clauses, as well as nested select
+    statements. This will rework the parser to have a few more symbol types. Also, the VM handler methods will be updated.
+
+2/20
+    Finally got lark to work. My language had various types of ambiguities and left and right recursions. Changing, those,
+    and broadly, rethinking how to construct the grammar such that these scenarios are avoided helped. However, unlike
+    the hand-rolled recursive descent, where I could do some tran-parser processing, e.g. attach joinType enum based on
+    the modifier to join keyword, I will need a secondary indirection, either as a layer of processing, that
+    transforms the tree, or a wrapper around the parsed tree, that enables retrieving fields.
+
+2/27
+    Still had some issues with the language parser, but looks like it's finally works. Now, trying to convert parse
+    tree into an Ast, ie. only with the desired classes in the hierarchy and string converted to literal values.
+
+2/28
+    Some ideas on how to organize vm::select_stmnt logic; VM will have method to help construct the RecordSet
+    and GroupedRecordSet. This way, the logic for interpreting a stmnt would not have to be duplicated in vm
+    and recordSet. Here the record set will be dumb. This makes the VM explicitly single threaded.
+
+    Joins will be implemented as double-for loop. There maybe some optimizations here, e.g. avoiding full scans
+    when doing an equi-join; but for now I will pass on that. Later, I can revisit this and apply optimization.
+
+
+3/21
+    Constructing the AST using Lark classes leads to issues when rules have optional symbols which are not
+    at the tail. Thus, the tokens are assigned to the right instance vars. One fix is to accept names as pos args,
+    while also requiring a user defined mapping of required args and types they could assume. e.g.
+    tokens = [
+        left_src: Field(Optional=True, types=Union[Joining, SingleSource]),
+        ...
+    ]
+    The other way to avoid this is to write the grammar in a way that rules don't have intermediate optional.
+    The third way, and the one I've opted for, is to use lark's ast construction utilities for rules, which
+    don't have optional terminals in body of the rule. For rules which have optional in the body, I explicitly
+    resolve the field names with the right arguments. This "resolution" requires me to specify the rule_name or
+    the ast types an arg could be. The resolution also fails e.g. for cases with duplicated symbols, where one of those is
+    optional. But these can be avoided.
+
+4/16
+    I've been spinning on the most manageable parser solution. Lark's utilities for transforming parse tree to AST are
+    somewhat lacking; e.g. it can't assign rules based on kwargs for an AST's init method. Actually, the reason it doesn't
+    is that it's solving a more general problem, and specifically, you can have a rule where a symbol is repeated twice. This
+    can't be mapped to an init. However, I have written, and I suppose a simple enough grammar like sql can be written to avoid
+    this issue.
+
+    Anyways, there were 2 problems, one of optional's in the middle of a rule body- this is solved by mapping the rule names to
+    init kw args, manually in the transformer class. The second is of repeating rule_names- this can be solved by defining an alias
+    for a symbol, i.e. the write the grammar in a way that avoids this issue. This is not the purest solution- but again, this parsing
+    business is a can of worms for an imperative programmar.
+
+
+5/14
+    Is the catalog a table, that must be protected, i.e. can't be dropped unless whole db is dropped. Or is it something special,
+    i.e. not a table. This distinction is important, because it affects how we think about the VM apis. i.e. do we use
+    the same api/functions to operate on table and catalog (with if conditions), or do we think about them as fundamentally
+    different types of objects and hence hitting different flows (albeit, common helper functions can still be shared).
+    The above point is a broader point, about what are the core functionalities and APIs that, e.g. the VM operates on.
+
+5/27
+    Generating the AST from text has been the biggest tailspin for the last little bit.
+    This is how the parsing evolved
+        - static parsing, e.g. only parse primary key
+        - handle rolled recursive descent parser;
+            - this had a lexer, and a parser. However, my grammar was poorly written with
+              many ambiguities. To resolve the ambiguities, I had to understand how
+              to write the grammar without ambiguities. When I had spent enough time iterating on this,
+              I didn't care for a hand- rolled RD parser, and so I went looking for parser generator, to automate this.
+        - experiment with lark, pyparsing; opting for lark
+        - lark, use to_ast helper
+        - this has problems when trying to handle rules with optional symbols not at the tail,
+        - simultaneously, I want to automate generating the AST classes for to_ast, from the grammar spec
+        - this eats a lot of time, i.e. to first parse the grammar file itself, then trying to use lark, itself
+          to parse the lark grammar file
+        - to avoid this, I try to store the rule_name (which is included in the parse_tree node) but not in
+          the AST node, since that's generated by me. I also try to create a map of rule_name/ast class name
+        - to keep the rule_name, I use @v_args(tree=True), but this makes unwrapping the tree object tricky,
+          and after a few itertions of unwrapping all trees, it still doesn't work.
+        - the above approaches could have worked, but they each have their own edge cases, and introduce more complexity
+        - Custom transformer, where I handle AST node generation via handlers. These handlers unwrap any nodes etc,
+        - Ultimately, this is the approach that worked.
+
+    Note, the current approach essentially requires 3 different locations where a symbol is defined. Once, in grammar,
+    then in the transformer method for the rule, and finally in the AST symbol class. Albeit, the mapping between grammar
+    rule and AST symbol class is not 1:1, hence the 3 definitions, which allow the arbitrariness of mapping.
+ 
+7/12
+     How should scoping and name aliasing in leardb-sql work. Currently, scope alias info is stored in multi-record.
+     And single-source recordset, don't have any alias info. Specifically,
+
+        select *
+        from foo f
+        join bar b
+         on f.x = b.y
+
+       This stores recordset, like {'f': FOORECORD, 'b': BARRECORD}. i.e. the multi-record stores the alias mapping.
+       ...
+
+       Right now I was able to get the aliasing to work; but it doesn't seem very elegant. And this inelegance is likely
+       hiding inconsistencies; and bugs. At some point I should revisit, how table_name aliases are handled. Some things,
+       to consider, is that Should I keep the mapping externally, e.g. in vm::current_scope? Here, external, means
+       external to the record/recordset.
+
+       Another way to consider this is, how should we handle table aliases in a select with only 1 source. This is only
+       an issue for 1 source, since a multi-record stores the name mapping. One solution would be to rewrite the query
+       and drop any alias e.g. select * from foo f group f.x -> select * from foo group by x; or I could do the reverse;
+       or I could handle the two as separate cases.
+
+ 7/15
+     Right now, group by and non-group by cases are handled separately. But actually, a non-grouped select, can have aggregates
+     performed on it, which behave like an aggregatable group.

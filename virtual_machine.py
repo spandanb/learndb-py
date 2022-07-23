@@ -1,17 +1,212 @@
-# from __future__ import annotations
+from __future__ import annotations
 import logging
+from typing import Optional, List, Tuple, Union
 
+from constants import CATALOG
 from cursor import Cursor
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from statemanager import StateManager
-from schema import create_record, create_catalog_record, generate_schema, schema_to_ddl
+from schema import generate_schema, Schema, schema_to_ddl
 from serde import serialize_record, deserialize_cell
 from dataexchange import Response
 
 from lang_parser.visitor import Visitor
-from lang_parser.tokens import TokenType
-from lang_parser.symbols import Symbol, Program, CreateStmnt, SelectExpr, InsertStmnt, DeleteStmnt
+from lang_parser.symbols import (
+    Program,
+    SelectStmnt,
+    Joining,
+    SingleSource,
+    ConditionedJoin,
+    UnconditionedJoin
+)
+#from lang_parser.tokens import TokenType
+#from lang_parser.symbols import (
+#    Symbol,
+#    Program,
+#    CreateStmnt,
+#    SelectExpr,
+#    DropStmnt,
+#    InsertStmnt,
+#    DeleteStmnt,
+#    UpdateStmnt,
+#    TruncateStmnt,
+#    Joining,
+#    JoinType,
+#    OnClause,
+#    AliasableSource,
+#    WhereClause
+#)
 from lang_parser.sqlhandler import SqlFrontEnd
+from record_utils import (
+    create_record,
+    create_null_record,
+    create_catalog_record,
+    join_records,
+    MultiRecord,
+    Record,
+)
+
+# section: exceptions
+
+
+class NameResolutionError(Exception):
+    """
+    Unable to resolve name
+    """
+    pass
+
+
+class ExecutionException(Exception):
+    """
+    Some error while VM was running
+    """
+    pass
+
+
+# section: helper classes
+
+class RecordSetIter:
+    """
+    This is an iterator over a RecordSet
+    """
+    def __init__(self, record_set: RecordSet):
+        self.record_set = record_set
+        self.recordidx = 0
+
+    def __next__(self):
+        if self.recordidx >= len(self.record_set):
+            raise StopIteration
+        value = self.record_set[self.recordidx]
+        self.recordidx += 1
+        return value
+
+
+class SerializedRecordIter:
+    """
+    This is an iterator of serialized records.
+    This should encapsulate the entire logic around
+    cursor advancing and yielding records.
+
+    The reason for creating and naming this, is so that
+    there can be uniform API around DeserializedRecordIter,
+    which would contain in-memory record objects, e.g. from a join
+    op.
+    """
+    def __init__(self, cursor, schema):
+        self.cursor = cursor
+        self.schema = schema
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.cursor.end_of_table:
+            raise StopIteration
+
+        cell = self.cursor.get_cell()
+        resp = deserialize_cell(cell, self.schema)
+        assert resp.success
+        record = resp.body
+        self.cursor.advance()
+        return record
+
+
+class RecordSet:
+    """
+    A iterable set of records.
+    """
+    def __init__(self):
+        self.records = []
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, idx: int):
+        return self.records[idx]
+
+    def __iter__(self):
+        return RecordSetIter(self)
+
+    def get_record(self, idx: int):
+        return self.records[idx]
+
+    def append(self, record):
+        self.records.append(record)
+
+
+class GroupedRecordSet:
+    """
+    A grouping of records that allow storing and apply
+    aggregates to groups.
+    """
+    def __init__(self):
+        """
+        groups are nested dicts, one dict for each level of nesting
+        i.e. if there is a group by column, then groups: {col_val: set()}
+        for 2 group by clauses, this is groups: {col0_val: {col2_val: set()}}, etc.
+        """
+        self.groups = {}
+
+    def add_grouped_record(self, group_path: List[str], record: Record):
+        """
+        :param group_path:
+        :param record:
+        :return:
+        """
+        # ptr to current group
+        ptr = self.groups
+        for idx, group in enumerate(group_path):
+            if group not in ptr:
+                # groups are nested dicts; except last level, which is a set of records
+                ptr[group] = [] if idx + 1 == len(group_path) else {}
+            # advance group ptr
+            ptr = ptr[group]
+        return ptr
+
+
+class RecordAccessor:
+    """
+    Transparently provides a uniform access to column values in Record
+    and MultiRecord objects.
+    This is primarily intended to simplify how values are accessed
+    when evaluating select clause
+
+    """
+    def __init__(self):
+        # map of table name -> record
+        self.records = {}
+        self.multi_records = []
+
+    def add_record(self, alias: str, record: Record):
+        assert alias not in self.records
+        self.records[alias] = record
+
+    def add_multi_record(self, mrecord: MultiRecord):
+        self.multi_records.append(mrecord)
+
+    def get(self, name: str):
+        """
+        resolve name and return value corresponding to name
+        first attempt to resolve from records dict; then multi_records
+        name is in format <table alias>.<column name>
+        :param name:
+        :return:
+        """
+        assert '.' in name
+        name_parts = name.split('.')
+        assert len(name_parts) == 2
+        table_alias, column_name = name_parts
+        if table_alias in self.records:
+            return self.records[table_alias].get(column_name)
+
+        for mrecord in self.multi_records:
+            if mrecord.contains(table_alias, column_name):
+                return mrecord.get(table_alias, column_name)
+
+        raise NameResolutionError(f"Unable to resolve [{name}]")
+
+
+# section: VM
 
 
 class VirtualMachine(Visitor):
@@ -19,6 +214,14 @@ class VirtualMachine(Visitor):
     Execute prepared statements corresponding to some sql statements, on some
     state. The state is encoded as a catalog (which maps to the table
     containing information of all objects (tables + indices).
+
+    The VM implements different top-level methods corresponding
+    to different sql statement type, e.g. create, update, delete, truncate statements.
+    Each of these ops will typically have some of the following phases:
+        - name resolution
+        - optimize
+        - execute op
+
     """
     def __init__(self, state_manager: StateManager, output_pipe: 'Pipe'):
         self.state_manager = state_manager
@@ -48,7 +251,7 @@ class VirtualMachine(Visitor):
 
             # get schema by parsing sql_text
             sql_text = table_record.get("sql_text")
-            print(f"bootstrapping schema from [{sql_text}]")
+            logging.info(f"bootstrapping schema from [{sql_text}]")
             parser.parse(sql_text)
             assert parser.is_success(), "catalog sql parse failed"
             program = parser.get_parsed()
@@ -80,10 +283,10 @@ class VirtualMachine(Visitor):
             try:
                 result.append(self.execute(stmt))
             except Exception:
-                print(f"ERROR: virtual machine failed on: [{stmt}]")
+                logging.error(f"ERROR: virtual machine failed on: [{stmt}]")
                 raise
 
-    def execute(self, stmnt: 'Symbol'):
+    def execute(self, stmnt: Symbol):
         """
         execute statement
         :param stmnt:
@@ -128,7 +331,7 @@ class VirtualMachine(Visitor):
         # NOTE: for now using page_num as unique int key
         pkey = page_num
         sql_text = schema_to_ddl(table_schema)
-        print(f'visit_create_stmnt: generated DDL: {sql_text}')
+        # logging.info(f'visit_create_stmnt: generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
         response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
         if not response.success:
@@ -151,41 +354,90 @@ class VirtualMachine(Visitor):
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
 
-    def visit_select_expr(self, expr: SelectExpr):
+    def visit_select_stmnt(self, expr: SelectStmnt, parent_context=None):
         """
-        Handle select expr
-        For now prints rows/ or return entire result set
-        Later I can consider some fancier/performant mechanism like pipes
+        Handle select expr.
+
+        NOTE: this will need to handle 2 things
+            - other clauses, i.e.. join, group by, order by, having
+            - nested select expr
+                -- this will require rethinking how select is exec'ed and results outputted
 
         :param expr:
+        :param parent_context: unused- would be needed for correlated queries
         :return:
         """
-        print(f"In vm: select expr")
+        # 1. setup
         self.output_pipe.reset()
 
-        table_name = expr.from_location.literal
-        if table_name.lower() == 'catalog':
-            tree = self.state_manager.get_catalog_tree()
-            schema = self.state_manager.get_catalog_schema()
-        else:
-            tree = self.state_manager.get_tree(table_name)
-            schema = self.state_manager.get_schema(table_name)
+        # the output is constructed in layers
+        # by modifying recordset; the recordset should
+        # support ordering, grouping, etc. but condition evaluations
+        # will reside in vm - since this will require walking AST, and
+        # I don't want this logic duplicated in recordset
 
-        cursor = Cursor(self.state_manager.get_pager(), tree)
+        # 2. materialize from_clause
+        record_set = self.materialize_source(expr.from_clause)
 
-        # iterate cursor
-        while cursor.end_of_table is False:
-            cell = cursor.get_cell()
-            resp = deserialize_cell(cell, schema)
-            assert resp.success
-            record = resp.body
-            # print(f"printing record: {record}")
-            self.output_pipe.write(record)
-            cursor.advance()
+        filtered = RecordSet()
+        # 3. evaluate where clause
+        # iterate record set over all records
+        for record in record_set:
+            # evaluate where condition and filter non-matching rows
+            # pass parent_context since where clause may contain correlated sub-query
+            if self.evaluate_where_clause(expr.where_clause, record, parent_context) is True:
+                # write to output if matches condition
+                # todo: piped record should only contain selected column
+                filtered.append(record)
+
+        # 4. evaluate group by
+        if expr.group_by_clause is not None:
+            # a grouped set should be able to represent
+            grouped = GroupedRecordSet()
+            group_order = [] # should be grouping columns
+            group_vals = []  # this is the group path record will be stored at
+            for record in filtered:
+                # list of values of group by columns
+                group_vals = []
+                for grp in group_order:
+                    group_val = record.get(grp.name)
+                    group_vals.append(group_val)
+                grouped.add_grouped_record(group_vals, record)
+
+        # 5. evaluate having clause
+        # applies on group
+        self.evaluate_having_clause(expr.having_clause)
+
+        # 6. order by
+        # i.e. record set should be sortable
+
+        # 7. limit
+
+        # select
+        selected = RecordSet()
+        # materialize any groupings into 
+        selections = {}
+        
+        for selectable in select.selectables:
+            # if non-grouped, seletctable is either column name or subquery;
+            # if grouped, select is agg column
+            if sub_query:
+                handle_select_expr()
+
+        
+        # replace pipe with resultset
+
+        # write to pipe
+        self.output_pipe.write(record)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt):
-        # identifier are case sensitive, so don't convert
-        table_name = stmnt.table_name.literal
+        """
+        Handle insert stmnt
+
+        :param stmnt:
+        :return:
+        """
+        table_name = self.resolve_name(stmnt)
 
         # get schema
         schema = self.state_manager.get_schema(table_name)
@@ -211,6 +463,8 @@ class VirtualMachine(Visitor):
 
     def visit_delete_stmnt(self, stmnt: DeleteStmnt):
         """
+        Handle delete stmnt.
+
         NOTE: the delete condition can cover multiple rows
         for now where cond is restricted to equality condition
 
@@ -218,30 +472,17 @@ class VirtualMachine(Visitor):
         :return:
         """
         # identifier are case sensitive, so don't convert
-        table_name = stmnt.table_name.literal
+        table_name = self.resolve_name(stmnt)
         # check table is not catalog
-        assert table_name.lower() != 'catalog', "cannot delete table from catalog; use drop table"
+        assert table_name != CATALOG, "cannot delete table from catalog; use drop table"
 
         # get tree and schema
-        tree = self.state_manager.get_tree(table_name)
-        schema = self.state_manager.get_schema(table_name)
+        schema, tree = self.get_schema_and_tree(stmnt)
 
         # scan table and determine which keys to delete, based on where condition
         cursor = Cursor(self.state_manager.get_pager(), tree)
         # keys to delete based on where condition
         del_keys = []
-
-        # for now will restrict where cond to be a single equality
-        assert stmnt.where_clause is not None
-        assert len(stmnt.where_clause.and_clauses) == 1
-        and_clause = stmnt.where_clause.and_clauses[0]
-        assert len(and_clause.predicates) == 1
-        predicate = and_clause.predicates[0]
-        assert predicate.op.token_type == TokenType.EQUAL
-        pred_column = predicate.first.value.literal
-        pred_value = predicate.second.value.literal
-
-        logging.debug(f'in delete pred-col: {pred_column}, pred-val: {pred_value}')
 
         # get primary key column name
         primary_key_col = schema.get_primary_key_column()
@@ -255,8 +496,7 @@ class VirtualMachine(Visitor):
             assert resp.success
             record = resp.body
 
-            # only support equality condition
-            if record.get(pred_column) == pred_value:
+            if self.evaluate_where_clause(stmnt.where_clause, record):
                 del_key = record.get(primary_key_col)
                 del_keys.append(del_key)
 
@@ -266,3 +506,368 @@ class VirtualMachine(Visitor):
         for del_key in del_keys:
             resp = tree.delete(del_key)
             assert resp == TreeDeleteResult.Success, f"delete failed for key {del_key}"
+
+    def visit_drop_stmnt(self, stmnt: DropStmnt):
+        """
+        handle drop statement to drop a table from catalog
+        :param stmnt:
+        :return:
+        """
+        table_name = self.resolve_name(stmnt)
+
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_schema = self.state_manager.get_catalog_schema()
+        # scan table and determine which keys to delete, based on where condition
+        cursor = Cursor(self.state_manager.get_pager(), catalog_tree)
+        # keys to delete based on where condition
+        # there should only be a single key, i.e. the table with name
+        del_keys = []
+
+        raise NotImplementedError
+
+    def visit_truncate_stmnt(self, stmnt: TruncateStmnt):
+        pass
+
+    def visit_update_stmnt(self, stmnt: UpdateStmnt):
+        pass
+
+    # section : sub-statement handlers
+
+    @staticmethod
+    def evaluate_on_clause(on_clause: OnClause, raccessor: RecordAccessor) -> bool:
+        """
+        evaluate on condition
+
+        :return:
+        """
+        if on_clause is None:
+            # no-condition; all results pass
+            return True
+
+        # result of or over all or-clauses
+        or_result = False
+        # NOTE: `on_clause.or_clause` is a list of and'ed predicates
+        # at least one and clause must be true for condition to be true
+        for and_clause in on_clause.or_clause:
+            # result of and over and clauses within or-clause
+            and_result = True
+            for predicate in and_clause.predicates:
+                # decompose predicate, and resolve value
+                # the predicate contains 2 operands: left and right;
+                # the operands could either be a column reference, e.g. foo.colx or a literal value, e.g. 4
+                left_token = predicate.first.value
+                right_token = predicate.second.value
+
+                if left_token.token_type == TokenType.IDENTIFIER:
+                    # left_token is a column reference
+                    left_value = raccessor.get(left_token.literal)
+                else:
+                    # left token is a literal value
+                    left_value = left_token.literal
+
+                if right_token.token_type == TokenType.IDENTIFIER:
+                    right_value = raccessor.get(right_token.literal)
+                else:
+                    right_value = right_token.literal
+
+                # evaluate predicate
+                if predicate.op.token_type == TokenType.EQUAL:
+                    pred_val = left_value == right_value
+                elif predicate.op.token_type == TokenType.NOT_EQUAL:
+                    pred_val = left_value != right_value
+                elif predicate.op.token_type == TokenType.LESS_EQUAL:
+                    pred_val = left_value <= right_value
+                elif predicate.op.token_type == TokenType.LESS:
+                    pred_val = left_value < right_value
+                elif predicate.op.token_type == TokenType.GREATER_EQUAL:
+                    pred_val = left_value >= right_value
+                else:
+                    assert predicate.op.token_type == TokenType.GREATER
+                    pred_val = left_value > right_value
+
+                and_result = and_result and pred_val
+
+            or_result = or_result or and_result
+            if or_result:
+                # condition is true, eagerly exit
+                return True
+        return False
+
+    @staticmethod
+    def evaluate_where_clause(where_clause: WhereClause, record: Record, parent_context=None) -> bool:
+        """
+        evaluate condition
+
+        on (join) could be implemented similarly
+        :param where_clause:
+        :param record:
+        :return:
+        """
+        if where_clause is None:
+            # no-condition; all results pass
+            return True
+
+        # result of or over all or-clauses
+        or_result = False
+        # NOTE: `where_clause.or_clause` is a list of and'ed predicates
+        # at least one and clause must be true for condition to be true
+        for and_clause in where_clause.or_clause:
+            # result of and over and clauses within or-clause
+            and_result = True
+            for predicate in and_clause.predicates:
+                # decompose predicate
+                # determine which operand contains value and which contains column name
+                left_token = predicate.first.value
+                right_token = predicate.second.value
+                if left_token.token_type == TokenType.IDENTIFIER:
+                    column = left_token.literal
+                    cond_value = right_token.literal
+                else:
+                    cond_value = left_token.literal
+                    column = right_token.literal
+
+                # determine the record's value for given column
+                record_value = record.get(column)
+                # evaluate predicate
+                if predicate.op.token_type == TokenType.EQUAL:
+                    pred_val = record_value == cond_value
+                elif predicate.op.token_type == TokenType.NOT_EQUAL:
+                    pred_val = record_value != cond_value
+                elif predicate.op.token_type == TokenType.LESS_EQUAL:
+                    pred_val = record_value <= cond_value
+                elif predicate.op.token_type == TokenType.LESS:
+                    pred_val = record_value < cond_value
+                elif predicate.op.token_type == TokenType.GREATER_EQUAL:
+                    pred_val = record_value >= cond_value
+                else:
+                    assert predicate.op.token_type == TokenType.GREATER
+                    pred_val = record_value > cond_value
+
+                and_result = and_result and pred_val
+
+            or_result = or_result or and_result
+            if or_result:
+                # condition is true, eagerly exit
+                return True
+        return False
+
+    @staticmethod
+    def resolve_name(symbol: Symbol) -> str:
+        """
+        attempt to resolve table name by inspecting argument symbol
+        :param symbol:
+        :return:
+        """
+        if isinstance(symbol, AliasableSource):
+            return symbol.source_name.literal.lower()
+        elif isinstance(symbol, (DeleteStmnt, InsertStmnt, DropStmnt, TruncateStmnt, UpdateStmnt)):
+            return symbol.table_name.literal.lower()
+        raise NameResolutionError(f"Unable to resolve [{symbol}]")
+
+    def get_record_iter(self, source: AliasableSource) -> SerializedRecordIter:
+        """
+        Return iterator over source records.
+
+        :return:
+        """
+        schema, tree = self.get_schema_and_tree(source)
+        cursor = Cursor(self.state_manager.get_pager(), tree)
+        return SerializedRecordIter(cursor, schema)
+
+    def get_null_record(self, source: AliasableSource) -> Record:
+        """
+        Return a null record for given source.
+        A null record is one which has the structure consistent with
+        the schema, but all the values are set to null.
+
+        :param source:
+        :return:
+        """
+        schema = self.get_schema(source)
+        return create_null_record(schema)
+
+    def get_schema(self, source: Symbol) -> Schema:
+        """
+        helper to resolve name and return schema
+        :param source:
+        :return:
+        """
+        table_name = self.resolve_name(source)
+        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+            raise ExecutionException(f"table [{table_name}] does not exist")
+
+        return self.state_manager.get_catalog_schema() if table_name == CATALOG else \
+            self.state_manager.get_schema(table_name)
+
+    def get_schema_and_tree(self, source: Symbol) -> Tuple[Schema, Tree]:
+        """
+        helper to resolve name and return schema and tree corresponding
+        to name
+        :param source:
+        :return:
+        """
+        table_name = self.resolve_name(source)
+        if table_name != CATALOG and not self.state_manager.table_exists(table_name):
+            raise ExecutionException(f"table [{table_name}] does not exist")
+
+        if table_name == CATALOG:
+            # system table/objects
+            schema = self.state_manager.get_catalog_schema()
+            tree = self.state_manager.get_catalog_tree()
+        else:
+            # user tables/objects
+            schema = self.state_manager.get_schema(table_name)
+            tree = self.state_manager.get_tree(table_name)
+
+        return schema, tree
+
+    def materialize_source(self, from_clause) -> RecordSet:
+        """
+        This should handle the materialization of source.
+        The source is whatever is in the from clause.
+        For now, this includes:
+            - single tables
+            - joined tables
+        eventually, will also have to handle nested select expr,
+        both correlated and uncorrelated.
+
+        TODO: make sure variable names are clear and in-line comments are clear
+
+        :return:
+        """
+        rset = RecordSet()
+        source = from_clause.source
+        # 1. handle single source
+        if isinstance(source, SingleSource):
+
+            pass
+        else:
+            assert isinstance(source, ConditionedJoin) or isinstance(source, UnconditionedJoin)
+            # handle joined source
+            # write in a way that's extensible
+            pass
+
+        # todo: old stuff below
+        assert isinstance(source, Joining)
+        # 2. handle joined sources
+        stack = []
+        # 2.1. materialize the most nested element in the joining first
+        while isinstance(source, Joining):
+            stack.append(source)
+            # 2.2. check if joining has a nested joining
+            # the parser nests joins s.t. left source is the child join
+            source = source.left_source
+
+        # 3. perform join by walking up the recursive stack
+        is_innermost_join = True
+        while stack:
+            joining = stack.pop()
+            # 3.1. get left source
+            # NOTE: in most nested joining, left source will be a table
+            # however, after that, it will be a previously joined recordSet
+            if is_innermost_join:
+                left_src = joining.left_source
+                left_record_iter = self.get_record_iter(left_src)
+                assert left_src.alias_name and left_src.alias_name.literal is not None, "alias is required"
+                left_alias = left_src.alias_name.literal
+            else:
+                left_record_iter = RecordSetIter(rset)
+                left_alias = None
+
+            # 3.2. get right source
+            right_src = joining.right_source
+            assert right_src.alias_name and right_src.alias_name.literal is not None, "alias is required"
+            right_alias = right_src.alias_name.literal
+
+            # 3.3. rset created for next join
+            next_rset = RecordSet()
+
+            # for left, right, and full outer join, if evaluation fails,
+            # there should be one and only one record
+            # with other side column set to null
+
+            # track first iter of right source
+            # so we can build index of right source record indices
+            right_src_first_iter = True
+            # track row ids of right records that have not been joined
+            right_src_non_joined_rowids = set()
+
+            # 3.4. do nested loop to join left and right sources
+            for left_record in left_record_iter:
+                # flag to track whether `left_record` has joined with any
+                # records in right_record; this is needed for left, and full outer join
+                has_joined_right_record = False
+
+                # 3.4.1. iterate over record in right source
+                for right_rowid, right_record in enumerate(self.get_record_iter(right_src)):
+                    # add joined record if cross join or on condition is true
+                    # 3.4.1.1. create a record accessor to access column values in `left_` and `right_record`
+                    raccessor = RecordAccessor()
+                    # 3.4.1.2. add left_record to record accessor
+                    if left_alias is None:
+                        # left is a multi-record
+                        raccessor.add_multi_record(left_record)
+                    else:
+                        raccessor.add_record(left_alias, left_record)
+
+                    # 3.4.1.3. add right_record to record accessor
+                    raccessor.add_record(right_alias, right_record)
+
+                    if right_src_first_iter:
+                        # only add during first iteration of right src
+                        right_src_non_joined_rowids.add(right_rowid)
+
+                    # 3.4.1.4. check if the on clause evaluates to true
+                    evaluation = self.evaluate_on_clause(joining.on_clause, raccessor)
+                    if evaluation:
+                        # on-condition evaluated true; add joined record
+                        # to result set
+                        joined_record = join_records(left_record, right_record, left_alias, right_alias)
+                        next_rset.append(joined_record)
+                        has_joined_right_record = True
+                        # remove this row id- since we've
+                        right_src_non_joined_rowids.remove(right_rowid)
+
+                # 3.4.2. check if we need to add empty record for left or outer join
+                if not has_joined_right_record and \
+                        (joining.join_type == JoinType.LeftOuter or joining.join_type == JoinType.FullOuter):
+                    # create null right record
+                    right_null_record = self.get_null_record(right_src)
+                    # join record
+                    joined_record = join_records(left_record, right_null_record, left_alias, right_alias)
+                    # attach to record set
+                    next_rset.append(joined_record)
+
+                right_src_first_iter = False
+
+            # 3.5. for right, and full outer join add any records from right source
+            # that was not joined add added to result set
+            if joining.join_type == JoinType.RightOuter or joining.join_type == JoinType.FullOuter:
+                # create null record for left src; this depends on whether left src
+                # is a raw source; or a joined source
+                if is_innermost_join:
+                    left_src = joining.left_source
+                    left_null_record = self.get_null_record(left_src)
+                else:
+                    # TODO: how do I create a null record for a joined source?
+                    # this goes to a previous decision, i.e. whether to create a schema for the joined
+                    # source; I punted on that before; but I'm reconsidering that now
+                    # because to create a left_null_record for joined record, now, I'll
+                    # have to get an actual record
+                    # Also, this code is getting quiet hard to read, and this doesn't even
+                    # include sub-queries
+                    left_null_record = None
+
+                for right_rowid, right_record in enumerate(self.get_record_iter(right_src)):
+                    if right_rowid in right_src_non_joined_rowids:
+                        # join record
+                        joined_record = join_records(left_null_record, right_record, left_alias, right_alias)
+                        # attach to record set
+                        next_rset.append(joined_record)
+
+            # prepare for next join op
+            # inner_most join is only True one
+            is_innermost_join = False
+            rset = next_rset
+
+        return rset

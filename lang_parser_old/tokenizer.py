@@ -176,11 +176,11 @@ class Tokenizer:
 
     def tokenize_identifier(self):
         """
-        tokenize identifer
+        tokenize identifier
         :return:
         """
-        # consume until we see an alphanumeric char
-        while self.peek().isidentifier():
+        # consume until we see an alphanumeric char or a dot (scoped identifier)
+        while self.peek().isidentifier() or self.peek() == '.':
             self.advance()
 
         # NOTE: keywords are case-insensitive; internally we'll

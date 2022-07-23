@@ -1,82 +1,68 @@
 from __future__ import annotations
+import logging
 
-from .tokenizer import Tokenizer
-from .sqlparser import Parser
-# from .interpreter import Interpreter
+from lark import Lark, ast_utils, Tree, Token
+from lark.exceptions import UnexpectedInput  # root of all lark exceptions
+
+from . import symbols
+from .symbols import _Symbol
+from .symbols2 import ToAst, SecondTransformer
+from .symbols3 import ToAst3
+from .grammar import GRAMMAR
+
+
+logger = logging.getLogger(__name__)
 
 
 class SqlFrontEnd:
     """
-    A high level interface to tokenize + parser functionality
+    Parser for learndb lang, based on lark definition
     """
     def __init__(self, raise_exception=False):
-        self.tokenizer = None
         self.parser = None
+        self.parsed = None  # parsed AST
+        self.exc = None  # exception
+        self.is_succ = False
         self.raise_exception = raise_exception
-        # result of parse operation
-        self.parsed = None
+        self._init()
+
+    def _init(self):
+        self.parser = Lark(GRAMMAR, parser='earley', start="program", debug=True)
+
+    def error_summary(self):
+        if self.exc is not None:
+            return str(self.exc)
 
     def is_success(self):
         """
         whether parse operation is success
+        # TODO: this and other methods should raise if no parse
         :return:
         """
-        return len(self.tokenizer.errors) == 0 and len(self.parser.errors) == 0
-
-    def error_summary(self) -> str:
-        """
-        if fail, summary of why
-        :return:
-        """
-        summary = ""
-        if len(self.tokenizer.errors) > 0:
-            summary += str(self.tokenizer.errors)
-        if len(self.parser.errors) > 0:
-            summary += str(self.parser.errors)
-        return summary
+        return self.is_succ
 
     def get_parsed(self):
         return self.parsed
 
     def parse(self, text: str):
         """
-        parse provided text.
-        NOTE: this must be called before any of the other method can be invoked
-        TODO: raise exception if other methods are invoked without first invoking this
+
+        :param text:
         :return:
         """
-        self.tokenizer = Tokenizer(text, self.raise_exception)
-        tokens = self.tokenizer.scan_tokens()
-        if len(self.tokenizer.errors) == 0:
-            # parse
-            self.parser = Parser(tokens, self.raise_exception)
-            self.parsed = self.parser.parse()
+        # parse tree
+        try:
+            tree = self.parser.parse(text)
+            transformer = ToAst3()
+            tree = transformer.transform(tree)
+            self.parsed = tree
+            self.is_succ = True
+            self.exc = None
+        except UnexpectedInput as e:
+            self.exc = e
+            self.parsed = None
+            self.is_succ = False
+            if self.raise_exception:
+                raise
 
-
-def sql_handler(source: str):
-    """
-    tokenize, parse input and return representation of source
-
-    :param source: input to parse
-    :return: tuple: (is_success, parsed)
-    """
-    # tokenize
-    tokenizer = Tokenizer(source, None)
-    tokens = tokenizer.scan_tokens()
-    print(f'scanned tokens: {tokens}')
-    if tokenizer.errors:
-        print("Error: scanner failed with following errors:")
-        print(tokenizer.errors)
-        return False, None
-
-    # parse the tokens
-    parser = Parser(tokens)
-    program = parser.parse()
-    print(f'parsed statements: {program}')
-    if parser.errors:
-        print("Error: parser failed with following errors:")
-        print(parser.errors)
-        return False, None
-
-    return True, program
 

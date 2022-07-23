@@ -90,6 +90,9 @@ class StateManager:
     def get_catalog_schema(self):
         return self.catalog_schema
 
+    def has_schema(self, table_name: str):
+        return table_name in self.schemas
+
     def get_schema(self, table_name: str):
         return self.schemas[table_name]
 

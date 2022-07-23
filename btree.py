@@ -43,7 +43,6 @@ from constants import (NULLPTR,
                        LEAF_NODE_MAX_CELL_SIZE,
                        LEAF_NODE_MAX_CELLS,  # for debugging
 
-                       # below are newly defined consts
                        LEAF_NODE_CELL_POINTER_START,
                        LEAF_NODE_CELL_POINTER_SIZE,
                        LEAF_NODE_NON_HEADER_SPACE,
@@ -396,7 +395,7 @@ class Tree:
             # update free list nodes, and total_
             # copy cell onto block
             # todo: complete me
-            pass
+            raise NotImplementedError
         # check if allocation block will satisfy
         elif alloc_block_space >= space_needed:
             # copy cell onto block
@@ -419,6 +418,7 @@ class Tree:
             # perform compaction on node
             # todo: complete me
             # todo: this could be done with a check above allocate; whether node should be compacted before alloc
+            raise NotImplementedError
 
         # new key was inserted at largest index, i.e. new max-key - update parent
         if cell_num == num_cells and cell_num != 0:

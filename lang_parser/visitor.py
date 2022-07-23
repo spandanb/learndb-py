@@ -1,3 +1,4 @@
+import logging
 from .utils import camel_to_snake
 
 
@@ -35,5 +36,5 @@ class Visitor:
         if hasattr(self, handler):
             return getattr(self, handler)(symbol)
         else:
-            print(f"Visitor does not have {handler}")
-            raise HandlerNotFoundException()
+            logging.warning(f"Visitor does not have {handler}")
+            raise HandlerNotFoundException(f"Visitor does not have {handler}")
