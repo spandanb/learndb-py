@@ -276,14 +276,18 @@ class VirtualMachine(Visitor):
             if from_clause.having_clause:
                 # having without group - by should treat entire
                 # resultset as one group
-                self.filter_grouped_recordset(from_clause.having_clause, rsname)
+                resp = self.filter_grouped_recordset(from_clause.having_clause, rsname)
+                assert resp.success
+                rsname = resp.body
 
         # 6. handle select columns
         # because order by and limit depend on a materialized/flattened,
         # resultset; flattened, means any non-group by columns are aggregated
         # e.g. order by count(*)
         # NOTE: select may not refer to any columns, since from is optional
-        self.evaluate_select_clause(stmnt.select_clause, rsname)
+        resp = self.evaluate_select_clause(stmnt.select_clause, rsname)
+        assert resp.success
+        rsname = resp.body
 
         # 7.
         if from_clause:
@@ -361,14 +365,39 @@ class VirtualMachine(Visitor):
 
     def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
+        Evaluate the select clause, i.e. flatten any operations on any groups
 
+        First generate, the schema for the result rset.
+        This schema will be Schema (or ScopedSchema)
+        Then evaluate
+        The result rset will have one record for each record in the
+        source for ungrouped recordsets; and will have one record
+        for each group for a grouped recordsets.
         """
+        # 1. generate schema
+        columns = []
+        if source_rsname is None:
+            # no source
+            for selectable in select_clause.selectables:
+                column = ColumnName
+        else:
+            source_schema = self.get_recordset_schema(source_rsname)
+            if isinstance(source_schema, GroupedSchema):
+                for selectable in select_clause.selectables:
+                    if isinstance(selectable, FuncCall):
+                        pass
+                    elif isinstance(selectable, ColumnName):
+                        pass
+
+
+
+        # 2. generate schema
         if source_rsname is None:
             # no source
             pass
         else:
-            schema = self.get_recordset_schema(source_rsname)
-            if isinstance(schema, GroupedSchema):
+            source_schema = self.get_recordset_schema(source_rsname)
+            if isinstance(source_schema, GroupedSchema):
                 for selectable in select_clause.selectables:
                     # function could be agg or non-agg
                     if isinstance(selectable, FuncCall):
@@ -377,21 +406,23 @@ class VirtualMachine(Visitor):
                             # agg func; it's arguments must be non-group-by columns
                             for arg in selectable.args:
                                 if isinstance(arg, ColumnName):
-                                    if self.is_group_by_col(schema, arg):
+                                    if self.is_group_by_col(source_schema, arg):
                                         raise ValueError(f"Column [{arg}] cannot appear in both "
                                                          f"group-by and aggregation function")
-                            self.evaluate_agg_function(func.name, func.args, schema, source_rsname)
+                            resp = self.evaluate_agg_function(func.name, func.args, source_schema, source_rsname)
+                            assert resp.success
+                            resp.body  # dict of group -> group_val
                         else:
                             # non-agg function can only be applied to group-by columns
                             for arg in selectable.args:
                                 if isinstance(arg, ColumnName):
-                                    if not self.is_group_by_col(schema, arg):
+                                    if not self.is_group_by_col(source_schema, arg):
                                         raise UnGroupedColumnException(f"Column [{arg}] must appears either in both "
                                                                        f"group-by or in aggregation function")
 
                     elif isinstance(selectable, ColumnName):
                         # this must be a group-by column
-                        is_groupby_col = self.is_group_by_col(schema, selectable)
+                        is_groupby_col = self.is_group_by_col(source_schema, selectable)
                         if not is_groupby_col:
                             raise UnGroupedColumnException(f"Column [{selectable}] must appears either in both group-by "
                                                            f"or in aggregation function")
@@ -401,7 +432,7 @@ class VirtualMachine(Visitor):
 
 
 
-            elif isinstance(schema, ScopedSchema):
+            elif isinstance(source_schema, ScopedSchema):
                 pass
             else:
                 # Schema
