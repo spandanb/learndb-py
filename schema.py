@@ -42,8 +42,12 @@ class Schema:
     logical aspects (name) and physical aspects
     (number of bytes of storage, fixed vs. variable length encoding)
 
-    Note a schema must be valid. If the schema is invalid, this
-    should be raised prior to creating.
+    Note: a schema must be valid. If the schema is invalid, this
+    should be raised prior to creating. This is particularly important,
+    since schemas will correspond: 1) to a real data sources,
+    2) computed schema for output resultset. For (1) we would have
+    constraints like primary key; but for (2) we would not; and hence
+    these constraints should be external to the schema definition
 
     NOTE: once constructed a schema should be treated as read-only
     """
