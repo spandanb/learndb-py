@@ -1,3 +1,7 @@
+"""
+Database, i.e. storage layer datatypes, as distinct from: 1) parsed AST datatype, 2) execution datatype (i.e. impl
+language datatype)
+"""
 import sys
 import struct
 from abc import ABCMeta

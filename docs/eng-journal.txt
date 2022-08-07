@@ -468,3 +468,12 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
  7/15
      Right now, group by and non-group by cases are handled separately. But actually, a non-grouped select, can have aggregates
      performed on it, which behave like an aggregatable group.
+
+ 7/23
+    Implementing the vm::select_clause, i.e. taking a (un)grouped set and materializing the select clause. Which can
+    contain functions. This brings the question of how should the type system be like? And how are functions written?
+    What is the type signature of max? max(Int)? what about max(Real). Then I am implementing polymorphism?
+
+8/6
+    Datatypes
+    There are 3 datatypes: 1) the storage type, 2) the in-memory type, 3) the parsed type symbols.

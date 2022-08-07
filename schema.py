@@ -76,7 +76,13 @@ class Schema:
         for column in self.columns:
             if column.is_primary_key:
                 return column.name
+        return None
 
+    def get_column_by_name(self, name) -> Column:
+        name = name.lower()
+        for column in self.cols:
+            if column.name.lower() == name:
+                return column
         return None
 
 
