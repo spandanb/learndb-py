@@ -15,7 +15,9 @@ from collections import defaultdict
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from schema import generate_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema, make_grouped_schema, GroupedSchema
+from functions import get_function_signature
+from schema import (generate_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema, make_grouped_schema,
+                    GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -402,35 +404,67 @@ class VirtualMachine(Visitor):
         The result rset will have one record for each record in the
         source for ungrouped recordsets; and will have one record
         for each group for a grouped recordsets.
+
         """
-        # 1. validate select clause and generate schema
-        columns = []
+        # 1. validate select clause and get columns of output schema
+        out_columns = []
         source_schema = None
         if source_rsname is None:
             # no source
             # selectables can be literals, or scalar functions
             for selectable in select_clause.selectables:
-                column = ColumnName()
+                pass
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
                 for selectable in select_clause.selectables:
                     if isinstance(selectable, FuncCall):
-                        # agg functions can be applied on non-grouped columns
                         func = selectable
+                        # validate arguments
+                        # very crude way to ensuring argument size matches function arity, i.e. 1 for all existing
+                        # functions; when I have the function declaration story better scoped out, I should revisit this
+                        assert len(func.args) == 1, f"Expected 1 argument; received {len(func.args)}"
                         if self.is_agg_func(func.name):
-                            for arg in selectable.args:
-                                pass
-
+                            # agg functions must be applied to non-grouped columns
+                            for arg in func.args:
+                                if isinstance(arg, ColumnName) and self.is_group_by_col(source_schema, arg):
+                                    raise ValueError(f"Column [{arg}] cannot appear in both "
+                                                     f"group-by and aggregation function")
+                        # determine return type of function
+                        funcsig = get_function_signature(func.name)
+                        # generate Column object corresponding to applied func
+                        otype = funcsig.output_type
+                        oname = f"{func.name}_{func.args[0].name}"
+                        ocolumn = Column(oname, otype)
+                        out_columns.append(ocolumn)
 
                     elif isinstance(selectable, ColumnName):
-                        pass
+                        # a raw column must be a group-by column
+                        if not self.is_group_by_col(source_schema, selectable):
+                            raise UnGroupedColumnException(f"Column [{arg}] must appears either in "
+                                                           f"group-by or in aggregation function")
+
+                        # find selectable in source schema
+                        otype = source_schema.schema.get_column_by_name(selectable.name).datatype
+                        ocolumn = Column(selectable.name, otype)
+                        out_columns.append(ocolumn)
+
             elif isinstance(source_schema, ScopedSchema):
                 raise NotImplementedError
             else:
                 assert isinstance(source_schema, Schema)
+                raise NotImplementedError
 
-        # 2. generate schema
+        # 2. generate output schema
+        output_schema = Schema("result_set", out_columns)
+
+        # 3. generate N single column result sets
+        # where N is the number of selectables in select clause
+        # next we'll zip each stream to create records corresponding to `output_schema`
+        # NOTE, the parallel between steps 1: get output schema columns, 2: generate output schema, and
+        # 3 generate single column result sets for output columns, 4: weave single column RSs into one result set
+
+        column_result_sets = []
         if source_schema is None:
             raise NotImplementedError
         elif isinstance(source_schema, GroupedSchema):
@@ -439,15 +473,12 @@ class VirtualMachine(Visitor):
                 if isinstance(selectable, FuncCall):
                     func = selectable
                     if self.is_agg_func(func.name):
-                        # agg func; it's arguments must be non-group-by columns
-                        for arg in selectable.args:
-                            if isinstance(arg, ColumnName):
-                                if self.is_group_by_col(source_schema, arg):
-                                    raise ValueError(f"Column [{arg}] cannot appear in both "
-                                                     f"group-by and aggregation function")
                         resp = self.evaluate_agg_function(func.name, func.args, source_schema, source_rsname)
                         assert resp.success
-                        resp.body  # dict of group -> group_val
+                        computed = resp.body  # dict of group -> group_val
+                        # TODO: convert computed into RecordSet
+                        # TODO: map group by columns to select column order
+                        
                     else:
                         # non-agg function can only be applied to group-by columns
                         for arg in selectable.args:
@@ -464,15 +495,19 @@ class VirtualMachine(Visitor):
                                                            f"or in aggregation function")
                     else:
                         # this value should be used as is
-                        pass
+                        raise NotImplementedError
 
         elif isinstance(source_schema, ScopedSchema):
-            pass
+            raise NotImplementedError
         else:
             # Schema
-            pass
+            raise NotImplementedError
 
             # iterate over resultset and flatten it
+
+        # 4. weave into one resultsets
+        # TODO: actually I'm not sure if this step is needed
+        # not needed for grouped recordset, for sure
 
     def visit_insert_stmnt(self, stmnt) -> Response:
         """
