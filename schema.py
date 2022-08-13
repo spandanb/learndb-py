@@ -85,6 +85,12 @@ class Schema:
                 return column
         return None
 
+    def has_column(self, name: str) -> bool:
+        """
+        Whether schema has column with given name
+        """
+        return self.get_column_by_name(name) is not None
+
 
 class MultiSchema:
     """
@@ -116,6 +122,9 @@ class MultiSchema:
     @property
     def columns(self):
         return [f"{table_alias}.{col}" for table_alias, schema in self.schemas.items() for col in schema.columns]
+
+    def has_column(self, name: str) -> bool:
+        raise NotImplementedError
 
 
 # create name alias, to ease deprecation
@@ -281,6 +290,13 @@ def generate_schema(create_stmnt) -> Response:
     if not resp.success:
         return Response(False, error_message=f'schema validation due to [{resp.error_message}]')
     return Response(True, body=schema)
+
+
+def generate_unvalidated_schema(source_name: str, columns: List[Column]) -> Response:
+    """Generate an unavalidate schema with argument `columns`
+    This is used for output schema, which doesn't have primary key;
+    TODO: apply any validations that do hold, e.g. column name uniqueness?"""
+    return Response(True, body=Schema(name=source_name, columns=columns))
 
 
 def make_grouped_schema(schema, group_by_columns: List) -> Response:
