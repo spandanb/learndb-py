@@ -16,6 +16,7 @@ class Record:
     Represents a record from table.
     This always corresponds to a given schema.
     # TODO make this a readonly type  - since these are shallow copied,
+    # TODO: rename SimpleRecord?
     # if the returned pipe allows
     """
     def __init__(self, values: dict = None, schema: Schema = None):
@@ -188,6 +189,11 @@ class MultiRecord:
         record = self.names[table]
         return record.get(column)
 
+    def contains(self, *args):
+        """
+        Intended to mimick simple
+        """
+
     def __repr__(self):
         return f"JRec[{self.names}]"
 
@@ -283,6 +289,28 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
         return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
 
     return Response(True, body=record)
+
+
+def create_record_from_raw_values(column_names: List[str], values: List[str], schema: Schema) -> Response:
+    if len(column_names) != len(values):
+        return Response(False, error_message=f'Number of column names [{len(column_name_list)}] '
+                                             f'does not equal number of values[{len(value_list)}]')
+
+    # create record
+    values = {}
+    for idx, col_name in enumerate(column_names):
+        value = values[idx]
+        values[col_name] = value.value if isinstance(value, Literal) else value
+
+    record = Record(values, schema)
+
+    # validate record
+    resp = validate_record(record)
+    if not resp.success:
+        return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
+
+    return Response(True, body=record)
+
 
 
 def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):

@@ -8,7 +8,7 @@ import logging
 import random
 import string
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from enum import Enum, auto
 from collections import defaultdict
 
@@ -16,8 +16,8 @@ from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
 from functions import get_function_signature
-from schema import (generate_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema, make_grouped_schema,
-                    GroupedSchema, Column)
+from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema,
+                    make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -50,7 +50,8 @@ from record_utils import (
     join_records,
     MultiRecord,
     create_record,
-    create_null_record
+    create_null_record,
+    create_record_from_raw_values
 )
 
 
@@ -321,6 +322,9 @@ class VirtualMachine(Visitor):
     def is_agg_func(self, func_name: str):
         return func_name.upper() in AGGREGATE_FUNCTIONS
 
+    def is_scalar_func(self, func_name: str):
+        return func_name.upper() in SCALAR_FUNCTIONS
+
     def has_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
         """
         Returns True if func uses group by columns as arguments
@@ -392,9 +396,100 @@ class VirtualMachine(Visitor):
         return Response(True, body=computed)
 
     def evaluate_scalar_function(self, func_name, func_args, schema, source_rsname) -> Response:
+        raise NotImplementedError
+
+    def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str):
+        """
+        Doing a rewrite- old func was too big and messy;
+        Dispatcher
+
+        Evaluate the select clause.
+        The select clause can be evaluated on 3 kinds of data sources:
+            - ungrouped data_source (i.e. no group by)
+            - grouped data_source (i.e. with a group by)
+            - no data_source
+
+        The grouping can be implicit from the function, e.g.
+        select max(id)
+        from foo
+        having
+        """
+        # 1. no source
+        if source_rsname is None:
+            return self.evaluate_select_clause_no_source()
+        else:
+            source_schema = self.get_recordset_schema(source_rsname)
+            if isinstance(source_schema, GroupedSchema):
+                return self.evaluate_select_clause_grouped_source()
+            else:
+                return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
+
+    def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+        This is a select on non-grouped source
+        """
+        # 1. iterate over selectables and
+        # 1.1. validate output selectables
+        # 1.2. generate output mapping; that allows constructing
+        # output record from input record
+        source_schema = self.get_recordset_schema(source_rsname)
+        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, Schema)
+        out_columns = []
+        # the mapping is currently list of output columns
+        # this will change, e.g. when I add support for column remapping via "AS"
+        out_column_names = []
+        for selectable in select_clause.selectables:
+            if isinstance(selectable, FuncCall):
+                # 1.1. only scalar functions can be used
+                func = selectable
+                assert self.is_scalar_func(func.name)
+                # determine return type of function
+                funcsig = get_function_signature(func.name)
+                # generate Column object corresponding to applied func
+                otype = funcsig.output_type
+                oname = f"{func.name}_{func.args[0].name}"
+                ocolumn = Column(oname, otype)
+                out_columns.append(ocolumn)
+            elif isinstance(selectable, ColumnName):
+                # 1.2. assert this column occurs in source schema
+                assert source_schema.has_column(selectable.name)
+                # I can start constructing the output schema here
+                out_column_names.append(selectable.name)
+
+        # 2. generate output_schema
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        assert resp.success
+        out_schema = resp.body
+
+        # 3. evaluate select clause; populate output resultset
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        for record in self.recordset_iter(source_rsname):
+            #if isinstance(source_schema, ScopedSchema):
+            # use out_column_names mapping to construct value list
+            value_list = []
+            for out_column in out_column_names:
+                value_list.append(record.get(out_column))
+
+            # create an output record
+            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            assert resp.success
+            out_record = resp.body
+            self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
+
+    def evaluate_select_clause_no_source(self):
         pass
 
-    def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str) -> Response:
+    def evaluate_select_clause_grouped_source(self):
+        pass
+
+
+
+    def evaluate_select_clause_old(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
         Evaluate the select clause, i.e. flatten any operations on any groups
 
@@ -464,6 +559,10 @@ class VirtualMachine(Visitor):
         # NOTE, the parallel between steps 1: get output schema columns, 2: generate output schema, and
         # 3 generate single column result sets for output columns, 4: weave single column RSs into one result set
 
+        # NOTE: the selectables must be mapped to columns in the resutlset
+        # if the resultset is grouped, then' it'll need to be eval via evaluate_agg_function
+        # otherwise the source resultset is used
+
         column_result_sets = []
         if source_schema is None:
             raise NotImplementedError
@@ -478,7 +577,7 @@ class VirtualMachine(Visitor):
                         computed = resp.body  # dict of group -> group_val
                         # TODO: convert computed into RecordSet
                         # TODO: map group by columns to select column order
-                        
+
                     else:
                         # non-agg function can only be applied to group-by columns
                         for arg in selectable.args:
