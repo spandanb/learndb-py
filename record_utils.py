@@ -241,27 +241,27 @@ def create_null_record(schema: Schema) -> Record:
 
 def validate_record(record) -> Response:
     """
-    Validate whether record data types are as expected
-    and primary key and non-nullable columns are set
+    Validate record based on schema:
+        - literals are valid
+        - if columns are primary key or non-nullable columns are set
 
     :param record:
     :return:
     """
     has_primary_key = False
     for column in record.schema.columns:
+        # TODO: distinguish null from unset field
         value = record.values.get(column.name)
         # check if value must be set
         if value is None and not column.is_nullable:
-            return Response(False, error_message=f'non-nullable field [{column.name}] is unset')
+            return Response(False, error_message=f'non-nullable field [{column.name}] is unset/null')
+        elif value is None and column.is_primary_key:
+            # TODO: should I assert primary key is int?
+            return Response(False, error_message=f'primary-key field [{column.name}] is unset/null')
+
         # check if literals have valid value
         if value is not None and not column.datatype.is_valid_term(value):
             return Response(False, error_message=f'Column [{column.name}, type: {column.datatype}] has invalid term [{value}] [term type: {type(value)}]')
-        # check if column is primary key
-        if column.is_primary_key:
-            has_primary_key = True
-
-    if not has_primary_key:
-        return Response(False, error_message='missing primary key')
 
     return Response(True)
 
@@ -283,7 +283,7 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
 
     record = Record(values, schema)
 
-    # validate record
+    # validate record; i.e. is consistent with schema
     resp = validate_record(record)
     if not resp.success:
         return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
@@ -291,26 +291,30 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
     return Response(True, body=record)
 
 
-def create_record_from_raw_values(column_names: List[str], values: List[str], schema: Schema) -> Response:
-    if len(column_names) != len(values):
-        return Response(False, error_message=f'Number of column names [{len(column_name_list)}] '
+def create_record_from_raw_values(column_names: List[str], value_list: List[str], schema: Schema) -> Response:
+    """
+    Needed for creating final output recordset;
+    Uses raw values, i.e. unboxed values
+    """
+
+    if len(column_names) != len(value_list):
+        return Response(False, error_message=f'Number of column names [{len(column_names)}] '
                                              f'does not equal number of values[{len(value_list)}]')
 
     # create record
     values = {}
     for idx, col_name in enumerate(column_names):
-        value = values[idx]
+        value = value_list[idx]
         values[col_name] = value.value if isinstance(value, Literal) else value
 
     record = Record(values, schema)
 
-    # validate record
+    # validate record; i.e. is consistent with schema
     resp = validate_record(record)
     if not resp.success:
         return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
 
     return Response(True, body=record)
-
 
 
 def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):
