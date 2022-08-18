@@ -36,7 +36,22 @@ class Column:
         return self.__str__()
 
 
-class Schema:
+class BaseSchema:
+    """
+    Defines interface for all schema types to follow?
+    """
+    @property
+    def columns(self):
+        raise NotImplementedError
+
+    def get_column_by_name(self, name: str) -> Column:
+        raise NotImplementedError
+
+    def has_column(self, name) -> bool:
+        raise NotImplementedError
+
+
+class Schema(BaseSchema):
     """
     Represents a schema. This includes
     logical aspects (name) and physical aspects
@@ -80,7 +95,7 @@ class Schema:
 
     def get_column_by_name(self, name) -> Column:
         name = name.lower()
-        for column in self.cols:
+        for column in self.columns:
             if column.name.lower() == name:
                 return column
         return None
@@ -92,7 +107,7 @@ class Schema:
         return self.get_column_by_name(name) is not None
 
 
-class MultiSchema:
+class MultiSchema(BaseSchema):
     """
     Represents a scoped (by table_alias) collection of schema
     TODO: rename to ScopedSchema
@@ -132,7 +147,7 @@ class MultiSchema:
 ScopedSchema = MultiSchema
 
 
-class GroupedSchema:
+class GroupedSchema(BaseSchema):
     """
     Represents a grouped multi or simple schema
     """
@@ -143,6 +158,13 @@ class GroupedSchema:
     @property
     def columns(self):
         return self.schema.columns
+
+    def get_column_by_name(self, name) -> Column:
+        name = name.lower()
+        for column in self.columns:
+            if column.name.lower() == name:
+                return column
+        return None
 
 
 class CatalogSchema(Schema):

@@ -10,7 +10,7 @@ import string
 
 from typing import List, Optional, Union
 from enum import Enum, auto
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
@@ -64,10 +64,12 @@ class RecordSet:
 
 
 class GroupedRecordSet(RecordSet):
+    # todo: nuke me - unused
     pass
 
 
 class NullRecordSet(RecordSet):
+    # todo: nuke me - unused
     pass
 
 
@@ -75,6 +77,39 @@ class UnGroupedColumnException(Exception):
     pass
 
 
+
+# below are 3 mapper classes, used to support input to output mapping
+# I might need to iterate on the interface
+class ValueFromValueMapper:
+    """
+    # NOTE: should this be called valuefromColumMapper?
+    This is simplest value mapper, i.e. generates
+    a single output column value from a record
+    """
+    def __init__(self, column_name: str):
+        self.column_name = column_name
+
+    def get_value(self, input_record):
+        return input_record.get(self.column_name)
+
+
+class ValueFromScalarFuncMapper:
+    def __init__(self, func_invocation):
+        pass
+
+    def get_value(self, input_record):
+        pass
+
+
+class ValueFromAggregateFuncMapper:
+    def __init__(self, func_invocation):
+        pass
+
+    def get_value(self, input_records_iter):
+        pass
+
+
+# names of supported builtin functions
 AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
 SCALAR_FUNCTIONS = ["CURRENT_DATETIME"]
 
@@ -416,13 +451,16 @@ class VirtualMachine(Visitor):
         """
         # 1. no source
         if source_rsname is None:
-            return self.evaluate_select_clause_no_source()
+            return self.evaluate_select_clause_no_source(select_clause)
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
-                return self.evaluate_select_clause_grouped_source()
+                return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
             else:
                 return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
+
+    def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
+        raise NotImplementedError
 
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -434,10 +472,11 @@ class VirtualMachine(Visitor):
         # output record from input record
         source_schema = self.get_recordset_schema(source_rsname)
         assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, Schema)
-        out_columns = []
-        # the mapping is currently list of output columns
-        # this will change, e.g. when I add support for column remapping via "AS"
-        out_column_names = []
+        # NOTE: the output columns are used to construct output schema
+        # but also, are the "mapping" from the input to output schema
+        # this implementation of mapping will change when I introduce selectable remapping via "AS"
+        out_columns = OrderedDict()
+        value_generators = []
         for selectable in select_clause.selectables:
             if isinstance(selectable, FuncCall):
                 # 1.1. only scalar functions can be used
@@ -449,26 +488,127 @@ class VirtualMachine(Visitor):
                 otype = funcsig.output_type
                 oname = f"{func.name}_{func.args[0].name}"
                 ocolumn = Column(oname, otype)
-                out_columns.append(ocolumn)
-            elif isinstance(selectable, ColumnName):
+                out_columns[oname] = ocolumn
+                value_generators.append(ValueFromScalarFuncMapper())
+            else:
+                assert isinstance(selectable, ColumnName)
                 # 1.2. assert this column occurs in source schema
-                assert source_schema.has_column(selectable.name)
-                # I can start constructing the output schema here
-                out_column_names.append(selectable.name)
+                scolumn = source_schema.get_column_by_name(selectable.name)
+                if scolumn is None:
+                    # source schema doesn't contain columns, i.e. column doesn't exist
+                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
+                ocolumn = Column(selectable.name, scolumn.datatype)
+                out_columns[ocolumn.name] = ocolumn
+                value_generators.append(ValueFromValueMapper(ocolumn.name))
 
         # 2. generate output_schema
-        resp = generate_unvalidated_schema("output_set", out_columns)
+        resp = generate_unvalidated_schema("output_set", list(out_columns.values()))
         assert resp.success
         out_schema = resp.body
 
-        # 3. evaluate select clause; populate output resultset
+        # 3. generate output resultset
         resp = self.init_recordset(out_schema)
         assert resp.success
         out_rsname = resp.body
 
+        # 4. evaluate select clause; populate output resultset
+        out_column_names = list(out_columns.keys())
         for record in self.recordset_iter(source_rsname):
-            #if isinstance(source_schema, ScopedSchema):
             # use out_column_names mapping to construct value list
+            value_list = []
+
+            for value_gen in value_generators:
+                value_list.append(value_gen.get_value(record))
+
+            # old code; doesn't handle func invocation
+            # for out_column in out_column_names:
+            #     value_list.append(record.get(out_column))
+
+            # create an output record
+            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            assert resp.success
+            out_record = resp.body
+            self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
+
+    def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+        This is a select on a grouped source
+        """
+        # 1. iterate over selectables and
+        # 1.1. validate output selectables
+        # 1.2. generate output mapping; that allows constructing
+        # output record from input record
+        source_schema = self.get_recordset_schema(source_rsname)
+        assert isinstance(source_schema, GroupedSchema)
+        # NOTE: the output columns are used to construct output schema
+        # but also, are the "mapping" from the input to output schema
+        # this implementation of mapping will change when I introduce selectable remapping via "AS"
+        out_columns = OrderedDict()
+        # one value generator for each output column
+        value_generators = []
+        for selectable in select_clause.selectables:
+            if isinstance(selectable, FuncCall):
+                # 1.1. only aggregate functions can be used
+                func = selectable
+                assert self.is_agg_func(func.name)
+                # determine return type of function
+                funcsig = get_function_signature(func.name)
+                # generate Column object corresponding to applied func
+                otype = funcsig.output_type
+                oname = f"{func.name}_{func.args[0].name}"
+                ocolumn = Column(oname, otype)
+                out_columns[oname] = ocolumn
+                value_generators.append(ValueFromAggregateFuncMapper())
+            else:
+                assert isinstance(selectable, ColumnName)
+
+                # a raw column must be a group-by column
+                if not self.is_group_by_col(source_schema, selectable):
+                    raise UnGroupedColumnException(f"Column [{selectable.name}] must appears either in "
+                                                   f"group-by or in aggregation function")
+
+                # find selectable in source schema
+                otype = source_schema.schema.get_column_by_name(selectable.name).datatype
+                ocolumn = Column(selectable.name, otype)
+                out_columns[ocolumn.name] = ocolumn
+                value_generators.append(ValueFromValueMapper())
+
+                # 1.2. assert this column occurs in source schema
+                scolumn = source_schema.get_column_by_name(selectable.name)
+                if scolumn is None:
+                    # source schema doesn't contain columns, i.e. column doesn't exist
+                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
+                ocolumn = Column(selectable.name, scolumn.datatype)
+                out_columns[ocolumn.name] = ocolumn
+
+        # 2. generate output_schema
+        resp = generate_unvalidated_schema("output_set", list(out_columns.values()))
+        assert resp.success
+        out_schema = resp.body
+
+        # 3. generate output resultset
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        # 4. evaluate select clause; populate output resultset
+        out_column_names = list(out_columns.keys())
+        for group_key, group_rsiter in self.grouped_recordset_iter(source_rsname):
+
+            # NOTE: group_key must be special-handled, since it
+            # actually how do the mappers work here?
+            for value_gen in value_generators:
+                pass
+            # each group_key is a row in output
+
+
+            # how to use out_column_names mapping to construct value list?
+            # how do we generalize the mapping
+            for out_column in out_column_names:
+
+
             value_list = []
             for out_column in out_column_names:
                 value_list.append(record.get(out_column))
@@ -481,11 +621,6 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=out_rsname)
 
-    def evaluate_select_clause_no_source(self):
-        pass
-
-    def evaluate_select_clause_grouped_source(self):
-        pass
 
 
 
@@ -500,6 +635,7 @@ class VirtualMachine(Visitor):
         source for ungrouped recordsets; and will have one record
         for each group for a grouped recordsets.
 
+        TODO: Nuke me
         """
         # 1. validate select clause and get columns of output schema
         out_columns = []
@@ -1104,3 +1240,4 @@ class VirtualMachine(Visitor):
         return a pair of (group_key, group_recordset_iterator)
         """
         return [(group_key, iter(group_rset)) for group_key, group_rset in self.grouprsets[name].items()]
+
