@@ -523,17 +523,17 @@ class ToAst3(Transformer):
     def term(self, args):
         if len(args) == 1:
             return args[0]
-        breakpoint()
+        return args
 
     def factor(self, args):
         if len(args) == 1:
             return args[0]
-        breakpoint()
+        return args
 
     def unary(self, args):
         if len(args) == 1:
             return args[0]
-        breakpoint()
+        return args
 
     def or_clause(self, args):
         if len(args) == 1:
@@ -557,6 +557,19 @@ class ToAst3(Transformer):
     def primary(self, args):
         assert len(args) == 1
         return args[0]
+
+    def expr(self, args):
+        if len(args) == 1:
+            return args[0]
+        else:
+            breakpoint()
+
+    def literal(self, args):
+        if len(args) == 1:
+            return args[0]
+        else:
+            breakpoint()
+            raise ValueError()
 
     # func calls - right now only used in select
     def func_name(self, args):

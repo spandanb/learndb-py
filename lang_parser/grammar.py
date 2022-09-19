@@ -12,9 +12,13 @@ GRAMMAR = '''
         // and so is nested under from clause                       
         select_stmnt     : select_clause from_clause? 
 
-        select_clause    : "select"i primary ("," primary)* //selectables
+        //select_clause    : "select"i expr ("," expr)* //selectables        
+        select_clause    : "select"i selectable ("," selectable)*
+        
         //selectables    : column_name ("," column_name)*
-        //selectables      : primary ("," primary)*
+        //selectables     : primary ("," primary)*
+        selectable        :  condition | column_name | func_call
+        
         from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
         where_clause     : "where"i condition
         group_by_clause  : "group"i "by"i column_name ("," column_name)*
@@ -40,6 +44,9 @@ GRAMMAR = '''
         full_outer       : "full"i ["outer"i]
         cross            : "cross"i
 
+        //expr             : condition | column_name | func_call
+
+        // this is the de-facto root of the expression hierarchy
         condition        : or_clause
         or_clause        : and_clause
                          | or_clause "or"i and_clause
@@ -51,17 +58,28 @@ GRAMMAR = '''
                          | predicate ( EQUAL | NOT_EQUAL ) comparison
         comparison       : term
                          | comparison ( LESS_EQUAL | GREATER_EQUAL | LESS | GREATER ) term
-        term            : factor
+        term             : factor
                          | term ( "-" | "+" ) factor
-        factor          : unary
+        factor           : unary
                          | factor ( "/" | "*" ) unary
-        unary           : primary
+        unary            : primary
                          | ( "!" | "-" ) unary
-        primary          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL 
+        
+        //primary          : column_name
+        //                 | nested_select
+        //                 | func_call
+        //                 | literal
+        
+        primary          : literal 
+                         | "(" select_stmnt ")" 
                          | column_name
-                         | nested_select
-                         | func_call
+                                                                                   
+        // nuke (expr here)
+        //expr           : literal | predicate | func_call 
+                         
+        literal          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
 
+        // todo: rename value to literal -and replace value in grammar with literal
         ?value           : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
 
         // should this be expr
