@@ -505,8 +505,16 @@ def devloop():
         "insert into items (custid, country) values (100, 2)",
         "insert into items (custid, country) values (200, 2)",
         "insert into items (custid, country) values (300, 2)",
-        #"select count(custid), country from items group by country",
-        "select custid, country from items",
+        "select count(custid), country, 1, 2*4 from items group by country",
+        #"select country from items group by country",
+
+        # tests for expr parsing
+        #"select 1 + 2 from foo where x < 3",
+        #"select somefunc(1, 2, 3)",
+        #"select 1",
+        #"select foo from bar"
+
+        #"select custid, country from items",
         #"select count(*), country from items group by country", # TODO: this fails to parse
     ]
 

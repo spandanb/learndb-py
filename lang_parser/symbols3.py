@@ -535,6 +535,12 @@ class ToAst3(Transformer):
             return args[0]
         return args
 
+    def selectable(self, args):
+        if len(args) == 1:
+            return args[0]
+        else:
+            raise ValueError("Unexpected arity")
+
     def or_clause(self, args):
         if len(args) == 1:
             return OrClause([args[0]])
@@ -558,11 +564,12 @@ class ToAst3(Transformer):
         assert len(args) == 1
         return args[0]
 
-    def expr(self, args):
-        if len(args) == 1:
-            return args[0]
-        else:
-            breakpoint()
+    #def expr(self, args):
+    #    # TODO: nuke me
+    #    if len(args) == 1:
+    #        return args[0]
+    #   else:
+    #        breakpoint()
 
     def literal(self, args):
         if len(args) == 1:

@@ -8,14 +8,14 @@ import logging
 import random
 import string
 
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union, Set, Dict
 from enum import Enum, auto
 from collections import defaultdict, OrderedDict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from functions import get_function_signature
+from functions import get_function_signature, FunctionInvocation
 from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema,
                     make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
@@ -80,6 +80,7 @@ class UnGroupedColumnException(Exception):
 
 # below are 3 mapper classes, used to support input to output mapping
 # I might need to iterate on the interface
+
 class ValueFromValueMapper:
     """
     # NOTE: should this be called valuefromColumMapper?
@@ -95,9 +96,13 @@ class ValueFromValueMapper:
 
 class ValueFromScalarFuncMapper:
     def __init__(self, func_invocation):
+        # save the function object
+        # what exactly is the function object - is it a name or an executable type thing?
+
         pass
 
     def get_value(self, input_record):
+        # this should extract the values from the input record and
         pass
 
 
@@ -109,9 +114,58 @@ class ValueFromAggregateFuncMapper:
         pass
 
 
+
+# ValueGenerators are responsible for value generation.
+# The ValueGenerators replace  Value..FuncMappers
+#
+
+class ValueGeneratorFromRecord:
+    """
+    Generate value from a single record
+    """
+
+    def __init__(self, pos_args: List[Any], named_args: Dict[str, Any], func ?):
+        """
+        pos_args: List of : 1) static values, 2) column identifiers
+        named_args: Dict of ^
+        func: should this be a FunctionDefinition?
+        """
+
+    def get_arg_fields(self, record):
+        """
+        Get the fields from the `record` that
+        are needed for the apply func
+        """
+
+    def apply(self, pos_args: List, named_args: Set):
+        pass
+
+    def get_value(self, record) -> Any:
+        # extract args from record
+        pos_args, named_args = self.get_arg_fields(record)
+        # apply a function on arguments to
+        self.apply(pos_args, named_args)
+
+
+class ValueGeneratorFromRecordGroup:
+
+    def __init__(self):
+        pass
+
+
+
+
+"""
+How is this expressed as a ValueGenerator
+avg(x.b, some_arg=true)
+"""
+
+
+
+
 # names of supported builtin functions
 AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
-SCALAR_FUNCTIONS = ["CURRENT_DATETIME"]
+SCALAR_FUNCTIONS = ["CURRENT_DATETIME", "TO_STRING"]
 
 
 class SelectClauseSourceType(Enum):
@@ -127,7 +181,10 @@ class SelectClauseSourceType(Enum):
 
 class VirtualMachine(Visitor):
     """
-    New virtual machine.
+    Learndb (New) Virtual machine.
+    This essentially, runs a program (compiled AST) over a
+    database (a set of tables backed by btrees).
+
     Compared to the previous impl; this will add or improve:
         - api for creating, manipulating, and combining RecordSets
 
@@ -232,7 +289,8 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        return stmnt.accept(self)
+        ret_val = stmnt.accept(self)
+        return ret_val
 
     # section : top-level statement handlers
 
@@ -489,6 +547,7 @@ class VirtualMachine(Visitor):
                 oname = f"{func.name}_{func.args[0].name}"
                 ocolumn = Column(oname, otype)
                 out_columns[oname] = ocolumn
+
                 value_generators.append(ValueFromScalarFuncMapper())
             else:
                 assert isinstance(selectable, ColumnName)
@@ -551,6 +610,8 @@ class VirtualMachine(Visitor):
         for selectable in select_clause.selectables:
             if isinstance(selectable, FuncCall):
                 # 1.1. only aggregate functions can be used
+                # todo: convert func into Func Object?
+                # parse arguments - currently they are parser level things
                 func = selectable
                 assert self.is_agg_func(func.name)
                 # determine return type of function
@@ -560,8 +621,14 @@ class VirtualMachine(Visitor):
                 oname = f"{func.name}_{func.args[0].name}"
                 ocolumn = Column(oname, otype)
                 out_columns[oname] = ocolumn
+                # ValueFromAggregateFuncMapper accepts a function invocation
+                # a function invocation can be modelled as :
+                # 1) function name, and args, or 2) FunctionObject, with args
+                # resolve
+                call = FunctionInvocation()
                 value_generators.append(ValueFromAggregateFuncMapper())
             else:
+                # todo: this is not true
                 assert isinstance(selectable, ColumnName)
 
                 # a raw column must be a group-by column
@@ -597,17 +664,19 @@ class VirtualMachine(Visitor):
         out_column_names = list(out_columns.keys())
         for group_key, group_rsiter in self.grouped_recordset_iter(source_rsname):
 
-            # NOTE: group_key must be special-handled, since it
+            # NOTE: group_key must be special-handled, since mappers don't have any special support for it
             # actually how do the mappers work here?
             for value_gen in value_generators:
-                pass
+                value_gen.get_value()
+
+
             # each group_key is a row in output
 
 
             # how to use out_column_names mapping to construct value list?
             # how do we generalize the mapping
             for out_column in out_column_names:
-
+                pass
 
             value_list = []
             for out_column in out_column_names:
@@ -769,6 +838,7 @@ class VirtualMachine(Visitor):
         cell = resp.body
         resp = tree.insert(cell)
         assert resp == TreeInsertResult.Success, f"Insert op failed with status: {resp}"
+        return Response(True, body=TreeInsertResult.Success)
 
     def visit_delete_stmnt(self, stmnt) -> Response:
         """
