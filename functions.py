@@ -169,7 +169,7 @@ class FunctionInvocation:
 
     @staticmethod
     def apply(self):
-
+        pass
 
     def __init__(self, name: str, funcdef: FunctionDefinition, pos_args: List[Any], named_args: Dict[str, Any]):
         # func being invoked
