@@ -61,7 +61,6 @@ def test_misc_fail_stmnt():
 
 def test_create_stmnt():
     cmds = [
-        "create table foo ( colA integer, colB text)",
         "create table foo ( colA integer primary key, colB text)"
     ]
     for cmd in cmds:
@@ -138,4 +137,9 @@ def test_create_stmnt_fail_no_cols():
     handler = SqlFrontEnd()
     handler.parse(cmd)
     assert handler.is_success() is False
+
+
+
+def test_expr():
+    pass
 
