@@ -124,7 +124,7 @@ class ValueGeneratorFromRecord:
     Generate value from a single record
     """
 
-    def __init__(self, pos_args: List[Any], named_args: Dict[str, Any], func ?):
+    def __init__(self, pos_args: List[Any], named_args: Dict[str, Any], func):
         """
         pos_args: List of : 1) static values, 2) column identifiers
         named_args: Dict of ^
