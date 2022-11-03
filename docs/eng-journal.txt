@@ -475,5 +475,75 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     What is the type signature of max? max(Int)? what about max(Real). Then I am implementing polymorphism?
 
 8/6
-    Datatypes
+    Datatype
     There are 3 datatypes: 1) the storage type, 2) the in-memory type, 3) the parsed type symbols.
+
+8/14
+   When evaluating select_clause, I need more than what the output column looks like, but how will
+    output column be generated; i.e. a output column generator.
+
+8/14
+    One beautiful thing in this project is the recursive structure, occurrence of certain properties. For example,
+    even inside the VM, internal methods interact via an API over recordset; and never on the raw recordset object.
+    Even here, having this level of abstraction is helpful; because it allows for evolving independent code more easily.
+
+8/18
+    How to model functions?
+    There's 2 components: the function that operates over datatypes, and how the record value is extracted to pass to function.
+    Thinking through function evaluation, I need to rethink first how expressions are evaluated, e.g. select 1+1
+    The grammar must be updated to support expressions. An expression evaluates to a value.
+
+9/18
+    Refactor the grammar to support functions calls and more as (implicit) exprs. Implicit, because I don't define an
+    "expr" symbol- condition currently being the root of the expr hierarchy.
+    Returning now to input-to mapping. The idea is we'll iterate over selectables in select clause and construct a generator
+    objects, which can be passed a record and can generate a record in the output format.
+
+10/10
+    The next bit is to model function: 1) definitions and 2) invocations/call. Minimally these will need to have a name,
+    parameters/arguments. Currently, I will limit it names defined inside the function, or a parameter, i.e. no non-local
+    names; later this can be revisited.
+
+10/31
+    Going down the function modelling rabbit hole:
+        - do functions operate on explicit types, e.g. real, int or abstract types like numeric (cosnider the average function)
+        -- for simplicity opting for explicit mapping, i.e. avg(x: int, y: int), avg_real(x: real, y: real), rather than polymorphism
+        - types, so far the official supported have been integer, float, string, blob, i.e. storage layer types
+        - and all other types map to these types, e.g. ast_types
+        - but functions may need to operate on arrays, and other types which will never be directly stored, but are
+          useful to operate on,
+
+10/31
+    Enumerating the components of a select clause
+    e.g. select cola..., select max(cola)
+    First we determine whether the clause is operating over a recordset or groupedrecordset
+    Then we create ValueGeneratorFrom{Scalar, Vector} which holds references to symbolic names, e.g. cola.
+    Then from the valueGenerator object, we pass it a record (or grouped recordset)
+
+    output_generator = []
+    for selectable in select_expr:
+        output_generator.append(ValueGeneratorFrom(selectable))
+
+    output = []
+    for record in recorset:
+        out_rec = {colname: value_gen.get_value(record) for colname, value_gen in output_generator.pairs}
+        output.append(out_rec)
+
+
+    Now let's consider the interface, and impl of a value generator
+
+    ScalarValueGenerator()
+        init(apply_fn(record)
+        get_value(record) -> value
+    VectorValueGenerator()
+
+    NameResolver => maps col.name to function positions?
+
+    There is some overlap between FunctionInvocation and ValueGenerator
+
+
+
+
+
+    ValueGenerators take an input (value, record, record groups) and generate an output corresponding to one column/field
+    of an output record. ValueGenerators hold a reference
