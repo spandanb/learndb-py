@@ -1,0 +1,53 @@
+This document elaborates on what is a function in the scope of learndb, how they are modelled, defined, and evaluated
+by the vm.
+
+Function Arguments
+------------------
+functions can accept:
+ - 0 args, e.g. current_time
+ - scalar args, e.g. square(2)
+ - or recordset args, e.g. any aggregation functions, e.g. max
+
+
+Function Model
+--------------
+What is the interface of a function object?
+    - determine the return type, e.g. when generating output schema
+    - determine params, and validate args
+    - evaluate function for a given set of args
+
+How are functions represented?
+Depends on function. There are two types of functions:
+ 1) native, i.e. those implemented in Python
+ 2) non-native, i.e. those implemented in learndb-sql.
+
+class Function:
+    def get_return_type(): -> Type
+
+    def get_params():
+        """
+        Return tuple(list_of_pos_params, set_of_named_params)
+        """
+
+    def validate_args(pos_args: List, named_args: Dict) -> bool:
+        # auto provided by base class
+
+    def evaluate(pos_args, named_args) -> Any
+
+
+
+
+
+
+
+
+
+Handling Similar Functions
+--------------------
+How should we handle functions, e.g. max, which can take a recordset of ints, or a recordset of reals.
+Simplest approach is that all functions have distinct names, i.e. max_int and max_float
+Another approach is polymorphic resolution, i.e. we have two functions, max(RecordSet[Int]), max(RecordSet[Real]), and the vm
+chooses the correct one, based on the type at eval-time.
+
+Another approach is to have a function with a generic type, e.g. Number, and type hierarchy, which indicates Int, and Real
+are children of Number,
