@@ -1,0 +1,68 @@
+This documents the details for how a select-clause is evaluated.
+
+First we distinguish between select over grouped from select over ungrouped recordset.
+Consider a ungrouped recordset, e.g.
+
+select upper(u.first_name), u.last_name
+from users u
+
+The select would get evaluated after the recordset is built. Once it's built, we iterate over each record in the recordset
+and convert it to an output recordset.
+
+The output recordset has one column for each column/expr in the select clause.
+
+Each column of the output recordset has a corresponding generator.
+
+The generator will take zero or more columns from the input record, and map
+
+When the select expr is parsed, we construct a mapping from the function params to column reference, e.g.
+since upper takes a single positional arg, our mapping looks like:
+    - pos_args: [u.first_name]
+    - named_args: {}
+
+Let's consider how the evaluation will work with pseudo code:
+
+- scalar case:
+# generate output schema
+value_generators = []
+for selectable in selectables:
+    valgen = make_value_gen(selectable)
+    value_generators.append(valgen)
+
+# generate output records
+output_records = []
+for rec in input_records:
+    # one val_gen for each output column
+    column_vals = []
+    for val_gen in value_generators:
+        column_vals.append(val_gen.generate(rec))
+    out_record = RecordGen.from_columns(column_vals)
+    output_records.append(out_record)
+
+
+- vector case:
+what does the vector case look like?
+- in both vector and scalar cases, we want the function to operate on formal params, i.e. in the scalar case
+the func operates on arg, and not record.
+- in the vector case, we want the function to operate on array[values], or iterableOnce[values], but not on recordset.
+
+pseudo code:
+
+for group_key, group_recordset for input_records.groups:
+
+----
+
+Modelling ValueGenerators
+----------------------
+ValueGenerators are generated when parsing the select expr.
+- There is one generator per output columns
+- Each generator tracks the formal references to column names, and non-column values, e.g. select sha2(customer_id, bits=512) from customers
+here the generators would track sha2(pos_args: customer.customer_id, named_args: 512)
+
+What is the interface between recordset and valuemapper?
+
+ScalarValueMapper is constructed before iteration; tracks func, column name to func arg mapping,
+Eg select upper(col_name); mapper tracks func: upper, arg-col-map: {0: col_name}
+Where:
+Def upper(arg): arg.upper()
+
