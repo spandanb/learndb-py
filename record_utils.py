@@ -295,6 +295,7 @@ def create_record_from_raw_values(column_names: List[str], value_list: List[str]
     """
     Needed for creating final output recordset;
     Uses raw values, i.e. unboxed values
+    # TODO: refactor to remove `column_names` which can be derived from schema, like: [col.name for col schema.columns]
     """
 
     if len(column_names) != len(value_list):
@@ -315,6 +316,7 @@ def create_record_from_raw_values(column_names: List[str], value_list: List[str]
         return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
 
     return Response(True, body=record)
+
 
 
 def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):

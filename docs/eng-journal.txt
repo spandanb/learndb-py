@@ -541,9 +541,8 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
     There is some overlap between FunctionInvocation and ValueGenerator
 
+11/19
+    Two documents
+     1: select-clause-evaluation elaborates on how entire select clause eval pipeline looks.
+     2: functions.txt documents how functions are defined, eval'ed etc
 
-
-
-
-    ValueGenerators take an input (value, record, record groups) and generate an output corresponding to one column/field
-    of an output record. ValueGenerators hold a reference

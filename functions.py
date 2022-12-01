@@ -14,43 +14,20 @@ Functions declarations should apply to both, but only lang functions will have a
 Native functions will have a declaration
 """
 from collections.abc import Mapping
-from typing import List, Set, Dict, Any
+from typing import List, Set, Dict, Any, Callable
 from dataclasses import dataclass
 
 from dataexchange import Response
 from datatypes import DataType, Integer, Float, Text, Blob
 
 
-class Argument:
+class UnknownFunctionInvocation(Exception):
+    # todo: nuke, unused
     pass
 
 
-class FunctionSignature:
-    """
-    This is the scafolding for the function signature
-    Currently this stores output_type; doing this to unblock schema gen
-    but this should also
-    This contains the input and output params of the function
-    """
-    def __init__(self, ouput_type: DataType, input_params=list[Argument]):
-        self.output_type = ouput_type
-        # todo: store and handle input_params
-
-
-# NOTE: there needs to be a separate function for each
-# argument type, NOTE: either function overloading or generics
-# will solve this; but those are fairly complex to implement
-# TODO: nuke (deprecated by _FUNCTION_REGISTERY)
-_FUNCTION_SIGNATURES = {
-    "avg": FunctionSignature(Integer),
-    "avg_float": FunctionSignature(Float),
-    "min": FunctionSignature(Integer),
-    "min_float": FunctionSignature(Float),
-    "max": FunctionSignature(Integer),
-    "max_float": FunctionSignature(Float),
-    "count": FunctionSignature(Integer),
-    "to_string": FunctionSignature(Integer)
-}
+class Argument:
+    pass
 
 
 @dataclass
@@ -66,11 +43,16 @@ class NamedParam:
 
 class FunctionDefinition:
     """
-    This represents a function definition
+    Represents a function definition
     """
-    def __init__(self):
-        self.pos_params: List[PositionalParam] = []
-        self.named_params: Set[NamedParam] = set()
+    def __init__(self, pos_params: List[PositionalParam],
+                 named_params: Set[NamedParam],
+                 body: Callable,
+                 return_type: DataType):
+        self.pos_params = pos_params
+        self.named_params = named_params
+        self.body = body
+        self._return_type = return_type
 
     def validate_args(self, pos_args: List, named_args: Set) -> Response:
         """
@@ -102,39 +84,44 @@ class FunctionDefinition:
         For a function in leardb-sql, we will have to walk an AST
         """
         # todo: common base should handle verify arity and types of args, using func prototype
-        raise NotImplementedError
+        self.body(*args, **kwargs)
 
     @property
     def return_type(self) -> DataType:
-        """
-        Should return functions return type
-        TODO: how are types modelled?
-        """
-        raise NotImplementedError
+        return self._return_type
 
 
-class Avg(FunctionDefinition):
-    def apply(self, *args):
-        sum(args) / len (args)
+# function definition
 
-    def return_type(self) -> Float:
-        # do we want to distinguish int and float avg- yes
-        return Float
+def number_square_function_body(x):
+    """
+    Body for integer/float square
+    """
+    return x*x
 
 
+# square an int
+integer_square_function = FunctionDefinition(
+    [PositionalParam(Integer)], set(), number_square_function_body, Integer
+)
+float_square_function = FunctionDefinition(
+    [PositionalParam(Float)], set(), number_square_function_body, Float
+)
+
+
+# if we have same function for integers and floats, we'll name the int function
+# with not qualifiers, and name the float function with _float qualifier
 _FUNCTION_REGISTRY = {
-    "avg": Avg,
+    "square": integer_square_function,
+    "square_float": float_square_function,
 
 }
-
-
-class UnknownFunctionInvocation(Exception):
-    pass
 
 
 class FunctionInvocation:
     """
     This represents a function call over concrete value ( as opposed to over a symbolic reference like foo.x)
+    # TODO: would these be separate?
     """
     @classmethod
     def create_invocation(cls, func_name: str, func_pos_args: List, func_named_args: dict) -> Response:
@@ -208,18 +195,15 @@ class Square(FunctionDefinition):
         pass
 
 
-class SquareFloat(FunctionDefinition):
-    pass
-
-
-
-def get_function_signature(name: str) -> FunctionSignature:
+def resolve_function_name(name: str) -> FunctionDefinition:
     """
-    # TODO: nuke me-replaced by new func decl
+    Resolve function name, i.e. lookup name in registry.
+    In the future this could be extended to support,
+    dynamic dispatch, etc.
     """
     name = name.lower()
-    if name in _FUNCTION_SIGNATURES:
-        return _FUNCTION_SIGNATURES[name]
+    if name in _FUNCTION_REGISTRY:
+        return _FUNCTION_REGISTRY[name]
 
     raise ValueError(f"Unable to find function [{name}]")
 

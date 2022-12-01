@@ -15,8 +15,8 @@ from collections import defaultdict, OrderedDict
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from dataexchange import Response
-from functions import get_function_signature, FunctionInvocation
-from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, Schema, MultiSchema, ScopedSchema,
+from functions import resolve_function_name, FunctionInvocation
+from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, MultiSchema, ScopedSchema,
                     make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
 
@@ -54,6 +54,8 @@ from record_utils import (
     create_record_from_raw_values
 )
 
+from value_generators import ValueGeneratorFromRecord, ValueExtractorFromRecord
+
 
 logger = logging.getLogger(__name__)
 
@@ -77,95 +79,9 @@ class UnGroupedColumnException(Exception):
     pass
 
 
-
-# below are 3 mapper classes, used to support input to output mapping
-# I might need to iterate on the interface
-
-class ValueFromValueMapper:
-    """
-    # NOTE: should this be called valuefromColumMapper?
-    This is simplest value mapper, i.e. generates
-    a single output column value from a record
-    """
-    def __init__(self, column_name: str):
-        self.column_name = column_name
-
-    def get_value(self, input_record):
-        return input_record.get(self.column_name)
-
-
-class ValueFromScalarFuncMapper:
-    def __init__(self, func_invocation):
-        # save the function object
-        # what exactly is the function object - is it a name or an executable type thing?
-
-        pass
-
-    def get_value(self, input_record):
-        # this should extract the values from the input record and
-        pass
-
-
-class ValueFromAggregateFuncMapper:
-    def __init__(self, func_invocation):
-        pass
-
-    def get_value(self, input_records_iter):
-        pass
-
-
-
-# ValueGenerators are responsible for value generation.
-# The ValueGenerators replace  Value..FuncMappers
-#
-
-class ValueGeneratorFromRecord:
-    """
-    Generate value from a single record
-    """
-
-    def __init__(self, pos_args: List[Any], named_args: Dict[str, Any], func):
-        """
-        pos_args: List of : 1) static values, 2) column identifiers
-        named_args: Dict of ^
-        func: should this be a FunctionDefinition?
-        """
-
-    def get_arg_fields(self, record):
-        """
-        Get the fields from the `record` that
-        are needed for the apply func
-        """
-
-    def apply(self, pos_args: List, named_args: Set):
-        pass
-
-    def get_value(self, record) -> Any:
-        # extract args from record
-        pos_args, named_args = self.get_arg_fields(record)
-        # apply a function on arguments to
-        self.apply(pos_args, named_args)
-
-
-class ValueGeneratorFromRecordGroup:
-
-    def __init__(self):
-        pass
-
-
-
-
-"""
-How is this expressed as a ValueGenerator
-avg(x.b, some_arg=true)
-"""
-
-
-
-
 # names of supported builtin functions
 AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
-SCALAR_FUNCTIONS = ["CURRENT_DATETIME", "TO_STRING"]
+SCALAR_FUNCTIONS = ["CURRENT_DATETIME", "TO_STRING", "SQUARE", "SQUARE_FLOAT"]
 
 
 class SelectClauseSourceType(Enum):
@@ -513,83 +429,99 @@ class VirtualMachine(Visitor):
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
+                #return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
                 return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
             else:
+                #return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
                 return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
 
     def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
         raise NotImplementedError
 
+    def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
+        """
+        Generate output schema for an ungrouped source
+        """
+        out_columns = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                # find target type
+                # 1.1.1. only scalar functions can be used
+                func = selectable
+                assert self.is_scalar_func(func.name)
+                func_def = resolve_function_name(func.name)
+                oname = f"{func.name}_{func.args[0].name}"
+                out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            else:
+                assert isinstance(selectable, ColumnName)
+                # same type as column
+                src_column = source_schema.get_column_by_name(selectable.name)
+                if src_column is None:
+                    # source schema doesn't contain columns, i.e. column doesn't exist
+                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
+                out_column = Column(selectable.name, src_column.datatype)
+                out_columns.append(out_column)
+        # 1.2. generate schema from columns
+        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        if not resp.success:
+            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+        return Response(True, body=resp.body)
+
+    def generate_output_value_generators(self, selectables) -> Response:
+        """
+        Return Response[List[Generators]]
+        """
+        generators = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                func = resolve_function_name(selectable.name)
+                generators.append(ValueGeneratorFromRecord(selectable.args, {}, func))
+            else:
+                assert isinstance(selectable, ColumnName)
+                generators.append(ValueExtractorFromRecord(selectable.name))
+
+        return Response(True, body=generators)
+
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
         This is a select on non-grouped source
         """
-        # 1. iterate over selectables and
-        # 1.1. validate output selectables
-        # 1.2. generate output mapping; that allows constructing
-        # output record from input record
+        # 0. setup
         source_schema = self.get_recordset_schema(source_rsname)
         assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, Schema)
-        # NOTE: the output columns are used to construct output schema
-        # but also, are the "mapping" from the input to output schema
-        # this implementation of mapping will change when I introduce selectable remapping via "AS"
-        out_columns = OrderedDict()
-        value_generators = []
-        for selectable in select_clause.selectables:
-            if isinstance(selectable, FuncCall):
-                # 1.1. only scalar functions can be used
-                func = selectable
-                assert self.is_scalar_func(func.name)
-                # determine return type of function
-                funcsig = get_function_signature(func.name)
-                # generate Column object corresponding to applied func
-                otype = funcsig.output_type
-                oname = f"{func.name}_{func.args[0].name}"
-                ocolumn = Column(oname, otype)
-                out_columns[oname] = ocolumn
 
-                value_generators.append(ValueFromScalarFuncMapper())
-            else:
-                assert isinstance(selectable, ColumnName)
-                # 1.2. assert this column occurs in source schema
-                scolumn = source_schema.get_column_by_name(selectable.name)
-                if scolumn is None:
-                    # source schema doesn't contain columns, i.e. column doesn't exist
-                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
-                ocolumn = Column(selectable.name, scolumn.datatype)
-                out_columns[ocolumn.name] = ocolumn
-                value_generators.append(ValueFromValueMapper(ocolumn.name))
-
-        # 2. generate output_schema
-        resp = generate_unvalidated_schema("output_set", list(out_columns.values()))
-        assert resp.success
+        # 1. generate output schema
+        resp = self.generate_output_schema_ungrouped_source(select_clause.selectables, source_schema)
+        if not resp.success:
+            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
         out_schema = resp.body
+
+        # 2. generate output value generators
+        resp = self.generate_output_value_generators(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+        value_generators = resp.body
 
         # 3. generate output resultset
         resp = self.init_recordset(out_schema)
         assert resp.success
         out_rsname = resp.body
 
-        # 4. evaluate select clause; populate output resultset
-        out_column_names = list(out_columns.keys())
+        out_column_names = [col.name for col in out_schema.columns]
+        # populate output resultset
         for record in self.recordset_iter(source_rsname):
-            # use out_column_names mapping to construct value list
-            value_list = []
-
-            for value_gen in value_generators:
-                value_list.append(value_gen.get_value(record))
-
-            # old code; doesn't handle func invocation
-            # for out_column in out_column_names:
-            #     value_list.append(record.get(out_column))
-
-            # create an output record
+            # get value, one for each output column
+            value_list = [val_gen.get_value(record) for val_gen in value_generators]
+            # convert column values to a record
             resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
             assert resp.success
             out_record = resp.body
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
+
 
     def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -1286,7 +1218,7 @@ class VirtualMachine(Visitor):
         self.schemas[name] = schema
         return Response(True, body=name)
 
-    def get_recordset_schema(self, name: str):
+    def get_recordset_schema(self, name: str) -> BaseSchema:
         return self.schemas[name]
 
     def append_recordset(self, name: str, record):
