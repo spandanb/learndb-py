@@ -13,85 +13,116 @@ Functions declarations should apply to both, but only lang functions will have a
 
 Native functions will have a declaration
 """
-from collections.abc import Mapping
-from typing import List, Set, Dict, Any, Callable
-from dataclasses import dataclass
+
+from typing import List, Dict, Any, Callable, Type
+
 
 from dataexchange import Response
 from datatypes import DataType, Integer, Float, Text, Blob
 
 
-class UnknownFunctionInvocation(Exception):
-    # todo: nuke, unused
-    pass
-
-
-class Argument:
-    pass
-
-
-@dataclass
-class PositionalParam:
-    arg_type: DataType
-
-
-@dataclass
-class NamedParam:
-    arg_name: str
-    arg_type: DataType
+class InvalidFunctionArguments(Exception):
+    """
+    function was invoked with invalid args.
+    For position args, either the arity or type didn't match
+    For named args, either name didn't exist, or type didn't match
+    """
 
 
 class FunctionDefinition:
     """
-    Represents a function definition
+    Represents a function definition.
+
+    FUTURE_NOTE: Currently, pos_params are represented as a List[DataType].
+    A named_params are represented as Dict[str, DataType], where the key is the param name.
+    All pos_params will always be required.
+    However, in the future, we may want to support named params with default values.
+    In that case, it may be easier to represent this with a new type,
+        e.g. NamedParam(arg_type: DataType, has_default_value: bool, default_value: Any)
     """
-    def __init__(self, pos_params: List[PositionalParam],
-                 named_params: Set[NamedParam],
-                 body: Callable,
+    def __init__(self,
+                 # used to make debugging easier
+                 func_name: str,
+                 pos_params: List[Type[DataType]],
+                 named_params: Dict[str, Type[DataType]],
+                 func_body: Callable,
                  return_type: DataType):
+        self.name = func_name
         self.pos_params = pos_params
         self.named_params = named_params
-        self.body = body
+        self.body = func_body
         self._return_type = return_type
 
-    def validate_args(self, pos_args: List, named_args: Set) -> Response:
-        """
-        Validate pos args on existense and type;
-        validate named args on name, and type
-        """
-        # validate positional params
-        # positional params are all required
-        if len(pos_args) != self.pos_params:
-            return Response(False, error_message=f"Arity mismatch between expected params [{len(pos_args)}] "
-                                                 f"and received args [{self.pos_params}]")
-        # validate types
-        for idx, parg in enumerate(pos_args):
-            param = self.pos_params[idx]
-            # TODO: what is the type of parg
-            print(f"type of parg is {parg}")
-            breakpoint()
+    def __str__(self):
+        return f"FunctionDefinition[{self.name}]"
 
-        # validate named params
-        # named params must be declared params
-        for narg in named_args:
-            if narg not in self.named_params:
-               breakpoint()
-
-    def apply(self, *args, **kwargs):
-        """
-        This models native functions, where each native function
-        must override this method with function specific logic.
-        For a function in leardb-sql, we will have to walk an AST
-        """
-        # todo: common base should handle verify arity and types of args, using func prototype
-        self.body(*args, **kwargs)
+    def __repr__(self):
+        return self.__str__()
 
     @property
     def return_type(self) -> DataType:
         return self._return_type
 
+    def validate_args(self, pos_args: List[Any], named_args: Dict[str, Any]) -> Response:
+        """
+        Validate pos and named args.
+        Validate pos args on existence and type;
+        validate named args on name, and type
+        Args:
+            pos_args: list of literals
+            named_args: dict of param_name -> literal
+        """
+        # 1. validate positional params
+        # 1.1. check arity- positional params are all required
+        if len(pos_args) != len(self.pos_params):
+            return Response(False, error_message=f"Arity mismatch between expected positional params [{len(pos_args)}] "
+                                                 f"and received args [{self.pos_params}]")
+        # 1.2. validate types
+        for idx, arg in enumerate(pos_args):
+            param = self.pos_params[idx]
+            # arg is a literal
+            if not param.is_valid_term(arg):
+                return Response(False, error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
+                                                     f"Expected argument of type [{param.typename}]")
+
+        # 2. validate named params
+        # 2.1. validate arity - for now all named params are required
+        if len(named_args) != len(self.named_params):
+            return Response(False, error_message=f"Arity mismatch between expected named params [{len(named_args)}] "
+                                                 f"and received args [{self.named_params}]")
+        # validate existence and type
+        for arg_name, arg_value in named_args.items():
+            if arg_name not in self.named_params:
+                return Response(False, error_message=f"Unexpected named argument [{arg_name}]")
+            else:
+                param = self.named_params[arg_name]
+                param.is_valid_term(arg_value)
+                return Response(False, error_message=f"Invalid named argument type [{arg_name}] for param [{arg_name}]."
+                                                     f"Expected argument of type [{param.typename}]")
+
+        return Response(True)
+
+    def apply(self, pos_args: List[Any], named_args: Dict[str, Any]):
+        """
+        This models native functions, where each specific function
+        must override this method with function specific logic.
+        For a function in leardb-sql, we will have to walk an AST.
+
+        This accepts a list of `pos_args` and a dict of `named_args`
+        This method first evaluates that the args match what is expected by the function definition.
+        Then invokes the actual function body/impl
+        """
+        # 1. validate args
+        resp = self.validate_args(pos_args, named_args)
+        if not resp.success:
+            raise InvalidFunctionArguments(f"Invocation of function [{self.name}] failed with: {resp.error_message}")
+
+        # 2. apply function to args
+        self.body(*pos_args, **named_args)
+
 
 # function definition
+
 
 def number_square_function_body(x):
     """
@@ -102,10 +133,10 @@ def number_square_function_body(x):
 
 # square an int
 integer_square_function = FunctionDefinition(
-    [PositionalParam(Integer)], set(), number_square_function_body, Integer
+    "integer_square", [Integer], {}, number_square_function_body, Integer
 )
 float_square_function = FunctionDefinition(
-    [PositionalParam(Float)], set(), number_square_function_body, Float
+    "float_square", [Float], {}, number_square_function_body, Float
 )
 
 
@@ -121,7 +152,7 @@ _FUNCTION_REGISTRY = {
 class FunctionInvocation:
     """
     This represents a function call over concrete value ( as opposed to over a symbolic reference like foo.x)
-    # TODO: would these be separate?
+    # TODO: is this used? does it need to be separate from FunctionDefinition
     """
     @classmethod
     def create_invocation(cls, func_name: str, func_pos_args: List, func_named_args: dict) -> Response:
@@ -180,18 +211,6 @@ class CurrentTimeFunction(FunctionDefinition):
 
 class MaxFunction(FunctionDefinition):
     def apply(self, arg: str):
-        pass
-
-
-class Square(FunctionDefinition):
-    """
-    square int function, e.g. (2) -> 4
-    """
-    def __init__(self):
-        super().__init__()
-        self.pos_params = [PositionalParam(Integer)]
-
-    def apply(self):
         pass
 
 
