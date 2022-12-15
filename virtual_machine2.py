@@ -8,12 +8,13 @@ import logging
 import random
 import string
 
-from typing import Any, List, Optional, Union, Set, Dict
+from typing import Any, List, Optional, Union, Set, Dict, Tuple, Type
 from enum import Enum, auto
 from collections import defaultdict, OrderedDict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
+from datatypes import DataType
 from dataexchange import Response
 from functions import resolve_function_name, FunctionInvocation
 from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, MultiSchema, ScopedSchema,
@@ -39,7 +40,8 @@ from lang_parser.symbols3 import (
     HavingClause,
     SelectClause,
     FuncCall,
-    ColumnName
+    ColumnName,
+    OrClause
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -78,6 +80,10 @@ class NullRecordSet(RecordSet):
 class UnGroupedColumnException(Exception):
     pass
 
+
+# constants in scoped dict
+SCOPE_COLLECTION_ALIASED_SOURCES_KEY = "aliased_sources"
+SCOPE_COLLECTION_UNALIASED_SOURCES_KEY = "unaliased_sources"
 
 # names of supported builtin functions
 AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
@@ -130,6 +136,7 @@ class VirtualMachine(Visitor):
         self.rsets = {}
         self.grouprsets = {}
         self.init_catalog()
+        self.init_scopes()
 
     def init_catalog(self):
         """
@@ -269,6 +276,12 @@ class VirtualMachine(Visitor):
         most clauses are optional
         """
         # 1. setup
+        # 1.1. create statement level scope
+        self.init_new_scope()
+        # this is how object is added to scope?
+        #self.register_scoped_object('name', object)
+        #
+
         self.output_pipe.reset()
 
         # 2. check and handle from clause
@@ -277,6 +290,7 @@ class VirtualMachine(Visitor):
         if from_clause:
             # materialize source in from clause
             resp = self.materialize(stmnt.from_clause.source.source)
+            self.register_source
             if not resp.success:
                 return Response(False, error_message=f"[from_clause] source materialization failed due to {resp.error_message}")
             rsname = resp.body
@@ -325,8 +339,8 @@ class VirtualMachine(Visitor):
                 self.output_pipe.write(record)
 
         # output pipe for sanity
-        # for msg in self.output_pipe.store:
-        #    logger.info(msg)
+        for msg in self.output_pipe.store:
+            logger.info(msg)
 
     def is_agg_func(self, func_name: str):
         return func_name.upper() in AGGREGATE_FUNCTIONS
@@ -438,6 +452,7 @@ class VirtualMachine(Visitor):
     def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
         raise NotImplementedError
 
+
     def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
         """
         Generate output schema for an ungrouped source
@@ -454,7 +469,19 @@ class VirtualMachine(Visitor):
                 out_column = Column(oname, func_def.return_type)
                 out_columns.append(out_column)
             else:
-                assert isinstance(selectable, ColumnName)
+                # selectable is some expr, represented as an instance of `OrClause`-
+                # the de-facto root of the expr hierarchy
+                assert isinstance(selectable, OrClause)
+                # todo: evaluate selectable
+
+                # a stringified version of or_clause
+                expr_name = self.stringify_or_clause(selectable)
+                # todo: create name_map, or an object that can give a columns type
+                #
+                expr_type = self.evaluate_expr_type(selectable, None)
+
+                # TODO: update below
+
                 # same type as column
                 src_column = source_schema.get_column_by_name(selectable.name)
                 if src_column is None:
@@ -519,6 +546,7 @@ class VirtualMachine(Visitor):
             assert resp.success
             out_record = resp.body
             self.append_recordset(out_rsname, out_record)
+
 
         return Response(True, body=out_rsname)
 
@@ -823,13 +851,16 @@ class VirtualMachine(Visitor):
 
     def materialize(self, source) -> Response:
         """
-        Materialize source
+        Materialize source.
+        TODO: Register name
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
+            self.scope_register_single_source(source)
             return self.materialize_single_source(source)
 
         elif isinstance(source, Joining):
+            self.scope_register_single_joining(source)
             return self.materialize_joining(source)
 
         elif isinstance(source, TableName):
@@ -1116,7 +1147,7 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
-    def evaluate_condition(self, condition, record) -> bool:
+    def evaluate_condition(self, condition: OrClause, record) -> bool:
         """
         Evaluate condition on record Union(Record, JoinedRecord) and return bool result
         """
@@ -1158,6 +1189,28 @@ class VirtualMachine(Visitor):
             or_result = or_result or and_result
         return or_result
 
+    def evaluate_expr_type(self, expr: OrClause) -> Any:
+        """
+        Determine the type of this expr.
+
+        However, the expr may ref column name, (and perhaps other objects e.g. functions).
+        So we need a name_resolve: str -> DataType
+
+
+        Note: an OrClause can represent: 1) a condition (evaluates to a bool),
+        or act as the de-facto root of the expr hierarchy (evaluates to a literal or a symbol) (here)
+        """
+        for and_clause in expr.and_clauses:
+            self.scope_resolve_name()
+            pass
+
+    def stringify_or_clause(self, or_clause: OrClause) -> str:
+        """
+        TODO: move this to parser, or some meaningful utils
+        """
+
+
+
     def group_recordset(self, group_by_clause, source_rsname):
         """
         Apply by group-by on records in rsname
@@ -1184,6 +1237,51 @@ class VirtualMachine(Visitor):
             self.append_grouped_recordset(rsname, group_key, record)
 
         return Response(True, body=rsname)
+
+    # section: scope management
+
+    def init_scopes(self):
+        """
+        Should be invoked by __init__
+        scopes can be nested;
+        Will need to reiterate on this interface
+        """
+        self.scopes = []
+
+    def init_new_scope(self):
+        """
+        Each scope contains many different kinds of objects
+                self.scope_aliased_sources = []
+        """
+
+        self.scopes.append({
+            SCOPE_COLLECTION_ALIASED_SOURCES_KEY: {},
+            SCOPE_COLLECTION_UNALIASED_SOURCES_KEY: set(),
+        })
+
+    def end_scope(self):
+        self.scopes.pop()
+
+    def scoped_register_scoped_object(self, name, obj) -> None:
+        pass
+
+    def scope_register_single_source(self, source: SingleSource):
+        if source.table_name is None:
+            self.scopes[-1][SCOPE_COLLECTION_UNALIASED_SOURCES_KEY].add(source.table_name)
+        else:
+            self.scopes[-1][SCOPE_COLLECTION_ALIASED_SOURCES_KEY][source.table_alias] = source.table_name
+
+    def scope_register_single_joining(self, source: Joining):
+        # todo: complete me
+        breakpoint()
+
+    def scope_resolve_name(self, name: str) -> Tuple[Type[DataType], Any]:
+        """
+        For v1, do a brute force search for name,
+        later, this can be optimized by more efficient searching
+        """
+        breakpoint()
+        pass
 
     # section: record set utilities
 

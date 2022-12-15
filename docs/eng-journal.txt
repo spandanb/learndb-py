@@ -546,3 +546,33 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
      1: select-clause-evaluation elaborates on how entire select clause eval pipeline looks.
      2: functions.txt documents how functions are defined, eval'ed etc
 
+
+12/3
+    Monolithic VM
+    I started with a fairly monolithic VM, where all functionality was handled directly in VM class.
+    This approach works for the btree, because: the logic is more contained, i.e. has far less branching, 2)
+    far fewer total possible call paths, i.e. you can go down the insert -> split leaf -> split ... internal -> root,
+    or you can get all keys, or you can go down the delete -> ... recombine hierarchy.
+    Compare this to the VM, where each clause e.g. from, has alone more call path complexity than all of the btree.
+    Long story short, this is in need of refactor.
+    How?
+    One approach would be to split it along clause, e.g. select clause, from_clause, where_clause.
+
+12/14
+    How to do name resolution? e.g. to determine output schema column type, need to lookup column.
+    One approach is to implicitly keep track of context, or scope. A scope is a logical environment, where names, e.g.
+    column names, function names, sub-query etc are defined. Scopes can be nested. There will be a global scope, which
+    will contain function names, etc. Next, each query will create its own scope. And a sub-query will create a further nested scope.
+    But this also means that:
+      1) function resolution will have to be merged with general name resolution.
+      2) scoped schema name management will have to be merged with the name mechanism
+
+    For now, I'll leave the other name resolutions as it. But this should be refactored at some point
+
+    What is the API for managing scope
+    init_scope()
+    register_scoped_object('name', object, type?)
+    resolve_name('name') -> (object, type)
+
+
+
