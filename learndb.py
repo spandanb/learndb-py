@@ -430,20 +430,6 @@ def devloop():
     #return
 
     texts = [
-        "create table foo (cola integer primary key, colb text)",
-        "insert into foo ( cola, colb) values (42, 'hello melo')",
-        "insert into foo ( cola, colb) values (1, 'helo melo')",
-        #"insert into foo ( cola, colb) values (43, 'lo melossss')",
-        #"insert into foo ( cola, colb) values (4, 'hello melo')",
-        #"insert into foo ( cola, colb) values (4002, 'heloPIESDS')",
-        "insert into foo ( cola, colb) values (99, 'hello bobo')",
-        #"delete from foo where cola > 99",
-        # "delete from foo",
-        #"select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
-        "select cola from foo where cola = 1"
-    ]
-
-    texts = [
         "create table foo ( cola integer primary key, colb integer, colc integer)",
         "create table bar ( colx integer primary key, coly integer, colz integer)",
         "create table car ( colx integer primary key, coly integer, colz integer)",
@@ -518,6 +504,25 @@ def devloop():
         #"select count(*), country from items group by country", # TODO: this fails to parse
     ]
 
+    # simple 1
+    texts = [
+        "create table foo (cola integer primary key, colb text)",
+        "insert into foo ( cola, colb) values (42, 'hello melo')",
+        "insert into foo ( cola, colb) values (1, 'helo melo')",
+        #"insert into foo ( cola, colb) values (43, 'lo melossss')",
+        #"insert into foo ( cola, colb) values (4, 'hello melo')",
+        #"insert into foo ( cola, colb) values (4002, 'heloPIESDS')",
+        "insert into foo ( cola, colb) values (99, 'hello bobo')",
+        #"delete from foo where cola > 99",
+        # "delete from foo",
+        #"select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
+
+        # TODO: ensure all three statements below return correct result
+        #"select square(cola) from foo where cola = 42"  # TODO: why does this not return any results?
+        #"select square(cola) from foo"
+        "select cola from foo",
+        #"select f.cola from foo f"
+    ]
 
     for text in texts:
         logging.info(f"handling {text}")
