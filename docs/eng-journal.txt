@@ -574,5 +574,22 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     register_scoped_object('name', object, type?)
     resolve_name('name') -> (object, type)
 
+12/15
+    The VM kind of implements the visitor pattern. But instead of having one method per symbol type, I've crammed, entire
+    expr evaluation in one method. This is leading to a lot of duplication. Perhaps, I should clearly have method that can
+    walk the expr hierarchy.
 
+    Revisiting the VM.
+    I need to think about all the components that the VM will need.
+    Specifically, I'm currently missing a semantic analysis layer;
+        - this should check all expressions are as expected,
+        - maybe simplify expressions,
+        - and bind names to objects, e.g. select column_name to actual column
 
+    Also, the VM needs to be split into smaller modules.
+
+    I'm thinking, to create module for each statement type, e.g.
+    create_statement_handler.py
+        - which would mostly be stateless, so could be represented as stateless functions, or an object
+    the VM would hold all state, e.g. state_manager, scopes, recordsets, etc,
+        and would expose them to the sub-modules as needed

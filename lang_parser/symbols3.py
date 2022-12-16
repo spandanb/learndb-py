@@ -3,7 +3,7 @@ import abc
 import os
 from lark import Lark, Transformer, Tree, v_args, ast_utils
 from enum import Enum, auto
-from typing import Any, List, Union
+from typing import Any, List, Union, Optional
 from dataclasses import dataclass
 
 import datatypes
@@ -75,7 +75,6 @@ class Symbol(ast_utils.Ast):
         """
         classname = self.__class__.__name__
         return classname.startswith("_")
-
 
     def get_prettychild(self, child, child_depth) -> list:
         """
@@ -342,14 +341,32 @@ class Program(Symbol):
 
 @dataclass
 class TableName(Symbol):
-    # todo: nuke, unused
     table_name: Any
 
 
 @dataclass
 class ColumnName(Symbol):
-    # todo: nuke, unused
+    """
+    Represents a column named like: 1) tbl.cola or 2) cola
+    """
     name: Any
+
+    def get_parent_alias(self) -> Optional[str]:
+        """
+        Return parent alias, if exists,
+        e.g. for name "tbl.cola", this method would return tbl
+        for name "cola", this method would return None
+        """
+
+        parts = self.name.split('.')
+        if len(parts) > 1:
+            return ".".join(parts[:-1])
+        return None
+
+    def get_base_name(self) -> str:
+        """
+        """
+        return self.name.split('.')[-1]
 
 
 @dataclass

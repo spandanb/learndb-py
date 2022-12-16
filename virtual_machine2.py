@@ -101,6 +101,18 @@ class SelectClauseSourceType(Enum):
     GroupedSource = auto()
 
 
+class Interpreter(Visitor):
+    """
+    Interprets expressions.
+    Conceptually similar to a VM, i.e. both implement Visitor pattern.
+    However, a VM visits a statement in order to execute it, i.e. potentially change persisted database state.
+    The Interpreter is purely stateless, in that sensse. It would be provide stateless functionality like
+     evaluating expressions, determining expression type.
+    """
+    def __init__(self):
+        pass
+
+
 class VirtualMachine(Visitor):
     """
     Learndb (New) Virtual machine.
@@ -137,6 +149,7 @@ class VirtualMachine(Visitor):
         self.grouprsets = {}
         self.init_catalog()
         self.init_scopes()
+        self.interpreter = Interpreter()
 
     def init_catalog(self):
         """
@@ -183,7 +196,7 @@ class VirtualMachine(Visitor):
 
             cursor.advance()
 
-    def run(self, program, stop_on_err=False) -> List:
+    def run(self, program: Program, stop_on_err=False) -> List:
         """
         run the virtual machine with program on state
         :param program:
@@ -212,16 +225,25 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        ret_val = stmnt.accept(self)
-        return ret_val
+        # TODO: handle semantic validation, and name binding
+        return_value = stmnt.accept(self)
+        return return_value
 
     # section : top-level statement handlers
 
     def visit_program(self, program: Program) -> Response:
+        """
+        Visit a Program (list of statements)
+        For each statement,
+            - syntactic analysis of statement (implicitly done in constructing the Program)
+            - TODO: validate statement, e.g. algebraic expressions don't violate type invariants, etc.
+            - bind symbols to objects, e.g. column_name to Column object
+            -- one wrinkle here is that some objects may be yet to be created
+        """
+        statemnt_return = []
         for stmt in program.statements:
-            # note sure how to collect result
-            self.execute(stmt)
-        return Response(True)
+            statemnt_return.append(self.execute(stmt))
+        return Response(True, body=statemnt_return)
 
     def visit_create_stmnt(self, stmnt: CreateStmnt) -> Response:
         """
@@ -290,7 +312,6 @@ class VirtualMachine(Visitor):
         if from_clause:
             # materialize source in from clause
             resp = self.materialize(stmnt.from_clause.source.source)
-            self.register_source
             if not resp.success:
                 return Response(False, error_message=f"[from_clause] source materialization failed due to {resp.error_message}")
             rsname = resp.body
@@ -452,7 +473,6 @@ class VirtualMachine(Visitor):
     def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
         raise NotImplementedError
 
-
     def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
         """
         Generate output schema for an ungrouped source
@@ -472,23 +492,12 @@ class VirtualMachine(Visitor):
                 # selectable is some expr, represented as an instance of `OrClause`-
                 # the de-facto root of the expr hierarchy
                 assert isinstance(selectable, OrClause)
-                # todo: evaluate selectable
-
                 # a stringified version of or_clause
-                expr_name = self.stringify_or_clause(selectable)
-                # todo: create name_map, or an object that can give a columns type
-                #
-                expr_type = self.evaluate_expr_type(selectable, None)
-
-                # TODO: update below
-
-                # same type as column
-                src_column = source_schema.get_column_by_name(selectable.name)
-                if src_column is None:
-                    # source schema doesn't contain columns, i.e. column doesn't exist
-                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
-                out_column = Column(selectable.name, src_column.datatype)
+                expr_name = self.stringify_expr(selectable)
+                expr_type = self.evaluate_expr_type(selectable)
+                out_column = Column(expr_name, expr_type)
                 out_columns.append(out_column)
+
         # 1.2. generate schema from columns
         # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
         resp = generate_unvalidated_schema("output_set", out_columns)
@@ -837,13 +846,13 @@ class VirtualMachine(Visitor):
     # general principles:
     # 1) helpers should be able to handle null types
 
-    def get_schema(self, table_name):
+    def get_schema(self, table_name) -> Schema:
         if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_schema()
         else:
             return self.state_manager.get_schema(table_name.table_name)
 
-    def get_tree(self, table_name):
+    def get_tree(self, table_name) -> Tree:
         if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_tree()
         else:
@@ -1196,20 +1205,31 @@ class VirtualMachine(Visitor):
         However, the expr may ref column name, (and perhaps other objects e.g. functions).
         So we need a name_resolve: str -> DataType
 
-
         Note: an OrClause can represent: 1) a condition (evaluates to a bool),
         or act as the de-facto root of the expr hierarchy (evaluates to a literal or a symbol) (here)
         """
+        expr_type = None
         for and_clause in expr.and_clauses:
-            self.scope_resolve_name()
-            pass
+            assert len(and_clause.predicates) == 1, "algebraic evaluation not implemented"
+            for predicate in and_clause.predicates:
+                if isinstance(predicate, ColumnName):
+                    resp = self.scope_resolve_column_name_type(predicate)
+                    assert resp.success
+                    column_type = resp.body
+                    expr_type = column_type
+                    return expr_type
+                else:
+                    # todo: handle algebraic expression and the like
+                    raise NotImplementedError
 
-    def stringify_or_clause(self, or_clause: OrClause) -> str:
+    def stringify_expr(self, expr: OrClause) -> str:
         """
-        TODO: move this to parser, or some meaningful utils
+        TODO: move this to parser, or some other utils
         """
-
-
+        assert len(expr.and_clauses) == 1, "algebraic evaluation not implemented"
+        assert len(expr.and_clauses[0].predicates) == 1, "algebraic evaluation not implemented"
+        assert isinstance(expr.and_clauses[0].predicates[0], ColumnName)
+        return expr.and_clauses[0].predicates[0].name
 
     def group_recordset(self, group_by_clause, source_rsname):
         """
@@ -1256,7 +1276,9 @@ class VirtualMachine(Visitor):
 
         self.scopes.append({
             SCOPE_COLLECTION_ALIASED_SOURCES_KEY: {},
-            SCOPE_COLLECTION_UNALIASED_SOURCES_KEY: set(),
+            # this is logically an unordered collection;
+            # however since TableName is unhashable, it can't be stored in a set
+            SCOPE_COLLECTION_UNALIASED_SOURCES_KEY: [],
         })
 
     def end_scope(self):
@@ -1266,14 +1288,48 @@ class VirtualMachine(Visitor):
         pass
 
     def scope_register_single_source(self, source: SingleSource):
-        if source.table_name is None:
-            self.scopes[-1][SCOPE_COLLECTION_UNALIASED_SOURCES_KEY].add(source.table_name)
+        if source.table_alias is None:
+            self.scopes[-1][SCOPE_COLLECTION_UNALIASED_SOURCES_KEY].append(source.table_name)
         else:
             self.scopes[-1][SCOPE_COLLECTION_ALIASED_SOURCES_KEY][source.table_alias] = source.table_name
 
     def scope_register_single_joining(self, source: Joining):
         # todo: complete me
         breakpoint()
+
+    def scope_resolve_column_name_type(self, name: ColumnName) -> Response:
+        """
+        Return Response[Type[DataType]], i.e. Response(type of column)
+        NOTE: This search is very inefficient; current goal is completeness/correctness - optimization later
+        """
+        parent_alias = name.get_parent_alias()
+        column_base_name = name.get_base_name()
+        # iterate over scopes, starting at most recent scope, and attempt to resolve name
+        for scope in reversed(self.scopes):
+            if parent_alias is not None:
+                aliased_sources = scope[SCOPE_COLLECTION_ALIASED_SOURCES_KEY]
+                source = aliased_sources.get(parent_alias)
+                if source is not None:
+                    # get schema for source
+                    source_schema = self.get_schema(source)
+                    # lookup column in source_schema
+                    column = source_schema.get_column_by_name(column_base_name)
+                    if column is None:
+                        return Response(False, error_message="column not found on source")
+                    return Response(True, body=column.datatype)
+            else:
+                unaliased_sources = scope[SCOPE_COLLECTION_UNALIASED_SOURCES_KEY]
+                # check all unaliased sources
+                # todo: build reverse index column_name -> source_object
+                # presumably building a reverse index should help, and also help catch ambiguous column references
+                for candidate_source in unaliased_sources:
+                    # get schema
+                    source_schema = self.get_schema(candidate_source)
+                    # check if object contains name
+                    column = source_schema.get_column_by_name(column_base_name)
+                    if column is not None:
+                        return Response(True, body=column.datatype)
+                return Response(False, error_message="column not found on source")
 
     def scope_resolve_name(self, name: str) -> Tuple[Type[DataType], Any]:
         """
