@@ -100,7 +100,8 @@ class ValueGeneratorFromRecordOverFunc:
                 evaluated_named_args[arg_name] = record.get(arg_val.name)
 
         # apply a function on arguments to
-        return self.func.apply(evaluated_pos_args, evaluated_named_args)
+        ret_val = self.func.apply(evaluated_pos_args, evaluated_named_args)
+        return ret_val
 
 
 class ValueGeneratorFromRecordOverExpr:

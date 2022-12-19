@@ -2,11 +2,11 @@
 Collection of classes
 """
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Type
 from lark import Token
 
 from dataexchange import Response
-from datatypes import is_term_valid_for_datatype, Integer, Float, Text, Blob
+from datatypes import is_term_valid_for_datatype, DataType, Integer, Float, Text, Blob
 from lang_parser.visitor import Visitor
 from lang_parser.symbols3 import (Symbol,
                                   OrClause,
@@ -55,9 +55,8 @@ class NameRegistry:
             val = self.record.get(operand.name)
             return val
 
-        # NOTE: this was adapated from vm.check_resovle_name
+        # NOTE: this was adapated from vm.check_resolve_name
         raise NotImplementedError
-
 
 
 class InterpreterMode(Enum):
@@ -110,10 +109,7 @@ class ExpressionInterpreter(Visitor):
         return_value = expr.accept(self)
         return return_value
 
-    def is_truthy(self, value) -> bool:
-        """
-        Return truthy value of `value`. Will follow Python convention
-        """
+    # section: visit methods
 
     def visit_or_clause(self, or_clause: OrClause):
         or_value = None
@@ -197,7 +193,15 @@ class ExpressionInterpreter(Visitor):
         assert is_term_valid_for_datatype(data_type, literal.value)
         return literal.value
 
-    def symbol_to_actual_datatype(self, data_type: SymbolicDataType):
+    # section: helpers
+
+    def is_truthy(self, value) -> bool:
+        """
+        Return truthy value of `value`. Will follow Python convention
+        """
+        breakpoint()
+
+    def symbol_to_actual_datatype(self, data_type: SymbolicDataType) -> Type[DataType]:
         """
         Convert symbols.DataType to datatypes.DataType
         """

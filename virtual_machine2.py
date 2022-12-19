@@ -452,10 +452,8 @@ class VirtualMachine(Visitor):
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
-                #return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
                 return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
             else:
-                #return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
                 return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
 
     def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:

@@ -2,7 +2,6 @@
 
 ## Top Priority
 - complete select over grouped expressions
-- function in selectable return None
 - how does func in selectable work in valueGenerator
 - write e2e tests for passing, and failing use cases
 

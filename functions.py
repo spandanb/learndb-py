@@ -118,7 +118,7 @@ class FunctionDefinition:
             raise InvalidFunctionArguments(f"Invocation of function [{self.name}] failed with: {resp.error_message}")
 
         # 2. apply function to args
-        self.body(*pos_args, **named_args)
+        return self.body(*pos_args, **named_args)
 
 
 # function definition
