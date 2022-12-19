@@ -5,7 +5,7 @@ language datatype)
 import sys
 import struct
 from abc import ABCMeta
-from typing import Any
+from typing import Any, Type
 
 
 from constants import INTEGER_SIZE, FLOAT_SIZE
@@ -179,7 +179,7 @@ class Blob(DataType):
         return bstring
 
 
-def is_term_valid_for_datatype(data_type: DataType, term: Any) -> bool:
+def is_term_valid_for_datatype(data_type: Type[DataType], term: Any) -> bool:
     """
     Return True, if term is valid for given datatype
     """
