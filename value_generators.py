@@ -8,6 +8,8 @@ when iterating over a recordset, the valueGenerator takes a record, and returns 
 from dataclasses import dataclass
 from typing import Any, Dict, List, NewType, Union
 from functions import FunctionDefinition
+from lang_parser.symbols3 import OrClause
+from vm_utilclasses import ExpressionInterpreter, NameRegistry, InterpreterMode
 
 
 @dataclass
@@ -49,7 +51,7 @@ class ValueExtractorFromRecord:
             return record.get(self.pos_arg.value)
 
 
-class ValueGeneratorFromRecord:
+class ValueGeneratorFromRecordOverFunc:
     """
     Generate value from a single record.
 
@@ -70,6 +72,7 @@ class ValueGeneratorFromRecord:
         named_args: Dict of ^
         func: should this be a FunctionDefinition or None
             - if this None, then this means that this is a simple
+            # TODO: rename func to applyable
         """
         self.pos_args = pos_args
         self.named_args = named_args
@@ -98,6 +101,25 @@ class ValueGeneratorFromRecord:
 
         # apply a function on arguments to
         return self.func.apply(evaluated_pos_args, evaluated_named_args)
+
+
+class ValueGeneratorFromRecordOverExpr:
+    """
+    Generate value from record, where the value is an expr over column and literal.
+    This generalizes the
+    """
+    def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
+        self.or_clause = or_clause
+        self.interpreter = interpreter
+
+    def get_value(self, record) -> Any:
+        """
+        Evaluate the or_clause
+        """
+        self.interpreter.set_mode(InterpreterMode.ValueEval)
+        self.interpreter.set_record(record)
+        value = self.interpreter.evaluate(self.or_clause, record)
+        return value
 
 
 class ValueGeneratorFromRecordGroup:

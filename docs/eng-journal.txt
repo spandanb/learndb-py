@@ -593,3 +593,23 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
         - which would mostly be stateless, so could be represented as stateless functions, or an object
     the VM would hold all state, e.g. state_manager, scopes, recordsets, etc,
         and would expose them to the sub-modules as needed
+
+12/16
+    - Much needs to be done, time is finite.
+    - I need to handle that a select clause can contain an arbitrary algebraic evaluation over columns
+    - where should this be evaluated?
+    - One idea is before query execution, do an algebraic evaluation, to validate type consistency in select expr,
+      also this can
+    - another is after materializing the recordset
+    - more importantly, I need to think through, where are the following functions handled:
+        - algebraic consistency check
+        - name to column object binding
+        - evaluating expr
+
+12/17
+    For now, I will create a separate ExprInterpreter, which can handle evaluation of exprs, in the context of selectables.
+    Eventually, all evaluation of expr, i.e. some methods of VM, should be moved to this class.
+    Likewise, for name resolution functionality in NameRegistry.
+    
+
+
