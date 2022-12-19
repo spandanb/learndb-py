@@ -57,7 +57,7 @@ from record_utils import (
 )
 
 from value_generators import ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord, ValueGeneratorFromRecordOverExpr
-from vm_utilclasses import ExpressionInterpreter, NameRegistry
+from vm_utilclasses import ExpressionInterpreter, NameRegistry, InterpreterMode
 
 logger = logging.getLogger(__name__)
 
@@ -344,11 +344,12 @@ class VirtualMachine(Visitor):
                 # todo: create records with only selected columns
                 self.output_pipe.write(record)
 
-        # todo: evaluation is done; end current scope
+        # end scope, and recycle any ephemeral objects in scope
+        self.end_scope()
 
         # output pipe for sanity
-        for msg in self.output_pipe.store:
-            logger.info(msg)
+        #for msg in self.output_pipe.store:
+        #    logger.info(msg)
 
     def is_agg_func(self, func_name: str):
         return func_name.upper() in AGGREGATE_FUNCTIONS
@@ -650,7 +651,6 @@ class VirtualMachine(Visitor):
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
-
 
 
     def evaluate_select_clause_old(self, select_clause: SelectClause, source_rsname: str) -> Response:
@@ -976,6 +976,7 @@ class VirtualMachine(Visitor):
         """
         Check if the `operand` is logical name, if so
         attempt to resolve it from record
+        TODO: nuke this in favor of NameRegistry.{is_name, resolve_name}
         """
         if isinstance(operand, Token):
             if operand.type == "IDENTIFIER":
@@ -1007,7 +1008,13 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         for record in self.recordset_iter(source_rsname):
-            if self.evaluate_condition(where_clause.condition, record):
+            #if self.evaluate_condition(where_clause.condition, record):  # old method
+
+            self.interpreter.set_mode(InterpreterMode.BoolEval)
+            self.interpreter.set_record(record)
+            value = self.interpreter.evaluate(where_clause.condition)
+            assert isinstance(value, bool)
+            if value:
                 self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
@@ -1252,7 +1259,9 @@ class VirtualMachine(Visitor):
 
     def init_scopes(self):
         """
+
         Should be invoked by __init__
+        # TODO: move this under init_catalog
         scopes can be nested;
         Will need to reiterate on this interface
         """

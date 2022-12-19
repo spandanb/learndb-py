@@ -1,17 +1,10 @@
 # Tasks
 
 ## Top Priority
-- I should rethink the different types of datatypes
-  - datatypes defined in datatype.py correspond to storage and runtime types.
-  - but currently their impl contains their serialization details
-  - or perhaps I should have a separate SystemTypes and StorageTypes; 
-    - or storage is a trait with method (serialize, deserialize) that some types implement? 
-- in modelling function should I define my own internal type for list of postition args, or rely on python syntax
-- on lists, or should list args be viewed as how aggregate functions will be modelled
-- 
-- need to define Function, and FunctionCall for select mappers
-- write e2e tests for passing use cases
-- then implement rest of select_handler
+- complete select over grouped expressions
+- function in selectable return None
+- how does func in selectable work in valueGenerator
+- write e2e tests for passing, and failing use cases
 
 
 ## Lark
