@@ -56,8 +56,8 @@ from record_utils import (
     create_record_from_raw_values
 )
 
-from value_generators import ValueGeneratorFromRecord, ValueExtractorFromRecord
-
+from value_generators import ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord, ValueGeneratorFromRecordOverExpr
+from vm_utilclasses import ExpressionInterpreter, NameRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -101,18 +101,6 @@ class SelectClauseSourceType(Enum):
     GroupedSource = auto()
 
 
-class Interpreter(Visitor):
-    """
-    Interprets expressions.
-    Conceptually similar to a VM, i.e. both implement Visitor pattern.
-    However, a VM visits a statement in order to execute it, i.e. potentially change persisted database state.
-    The Interpreter is purely stateless, in that sensse. It would be provide stateless functionality like
-     evaluating expressions, determining expression type.
-    """
-    def __init__(self):
-        pass
-
-
 class VirtualMachine(Visitor):
     """
     Learndb (New) Virtual machine.
@@ -149,7 +137,8 @@ class VirtualMachine(Visitor):
         self.grouprsets = {}
         self.init_catalog()
         self.init_scopes()
-        self.interpreter = Interpreter()
+        self.name_registry = NameRegistry()
+        self.interpreter = ExpressionInterpreter(self.name_registry)
 
     def init_catalog(self):
         """
@@ -225,7 +214,7 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        # TODO: handle semantic validation, and name binding
+        # TODO: handle semantic validation, and name binding - actually not here
         return_value = stmnt.accept(self)
         return return_value
 
@@ -300,10 +289,6 @@ class VirtualMachine(Visitor):
         # 1. setup
         # 1.1. create statement level scope
         self.init_new_scope()
-        # this is how object is added to scope?
-        #self.register_scoped_object('name', object)
-        #
-
         self.output_pipe.reset()
 
         # 2. check and handle from clause
@@ -358,6 +343,8 @@ class VirtualMachine(Visitor):
             for record in self.recordset_iter(rsname):
                 # todo: create records with only selected columns
                 self.output_pipe.write(record)
+
+        # todo: evaluation is done; end current scope
 
         # output pipe for sanity
         for msg in self.output_pipe.store:
@@ -513,10 +500,17 @@ class VirtualMachine(Visitor):
         for selectable in selectables:
             if isinstance(selectable, FuncCall):
                 func = resolve_function_name(selectable.name)
-                generators.append(ValueGeneratorFromRecord(selectable.args, {}, func))
-            else:
-                assert isinstance(selectable, ColumnName)
+                generators.append(ValueGeneratorFromRecordOverFunc(selectable.args, {}, func))
+            elif isinstance(selectable, ColumnName):
                 generators.append(ValueExtractorFromRecord(selectable.name))
+            else:
+                # todo: selectable can be arbitrary algebraic expression, including columns
+                # use self.interpreter
+                # what is the value_generator here?
+                # one thought could be to apply a func-like object here, that returns takes a record and returns the value
+                # but then we need a function-like object, i.e. currently func interface has one method: apply(self, record) -> value
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+                #raise NotImplementedError
 
         return Response(True, body=generators)
 
@@ -556,9 +550,7 @@ class VirtualMachine(Visitor):
             out_record = resp.body
             self.append_recordset(out_rsname, out_record)
 
-
         return Response(True, body=out_rsname)
-
 
     def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -658,7 +650,6 @@ class VirtualMachine(Visitor):
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
-
 
 
 
@@ -861,7 +852,6 @@ class VirtualMachine(Visitor):
     def materialize(self, source) -> Response:
         """
         Materialize source.
-        TODO: Register name
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
