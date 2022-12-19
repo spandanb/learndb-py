@@ -177,3 +177,10 @@ class Blob(DataType):
     @staticmethod
     def deserialize(bstring: bytes) -> bytes:
         return bstring
+
+
+def is_term_valid_for_datatype(data_type: DataType, term: Any) -> bool:
+    """
+    Return True, if term is valid for given datatype
+    """
+    return data_type.is_valid_term(term)

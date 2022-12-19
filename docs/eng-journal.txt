@@ -610,6 +610,6 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     For now, I will create a separate ExprInterpreter, which can handle evaluation of exprs, in the context of selectables.
     Eventually, all evaluation of expr, i.e. some methods of VM, should be moved to this class.
     Likewise, for name resolution functionality in NameRegistry.
-    
+
 
 
