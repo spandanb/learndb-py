@@ -352,13 +352,16 @@ class VirtualMachine(Visitor):
         #    logger.info(msg)
 
     def is_agg_func(self, func_name: str):
+        # TODO: nuke if unused
         return func_name.upper() in AGGREGATE_FUNCTIONS
 
     def is_scalar_func(self, func_name: str):
+        # TODO: nuke if unused
         return func_name.upper() in SCALAR_FUNCTIONS
 
     def has_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
         """
+        # TODO: nuke if unused
         Returns True if func uses group by columns as arguments
         :param func_name:
         :param func_args:
@@ -367,6 +370,7 @@ class VirtualMachine(Visitor):
         """
     def has_non_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
         """
+        # TODO: nuke if unused
         Return true if func does not use any group by columsn 
         :param func_name:
         :param func_args:
@@ -376,6 +380,7 @@ class VirtualMachine(Visitor):
 
     def is_group_by_col(self, schema: GroupedSchema, column: ColumnName) -> bool:
         """
+        # TODO: nuke if unused
         Determine if column is a groupby column
         """
         for col in schema.group_by_columns:
@@ -491,27 +496,28 @@ class VirtualMachine(Visitor):
             return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
         return Response(True, body=resp.body)
 
-    def generate_output_value_generators(self, selectables) -> Response:
+    def generate_value_generators_over_recordset(self, selectables: List) -> Response:
         """
         Return Response[List[Generators]]
         """
         generators = []
         for selectable in selectables:
             if isinstance(selectable, FuncCall):
+                # NOTE: this only exists
                 func = resolve_function_name(selectable.name)
+                # TODO: check this is a scalar function
                 generators.append(ValueGeneratorFromRecordOverFunc(selectable.args, {}, func))
             elif isinstance(selectable, ColumnName):
+                # TODO: nuke if unused; seems this should be replaced by clause below
                 generators.append(ValueExtractorFromRecord(selectable.name))
             else:
-                # todo: selectable can be arbitrary algebraic expression, including columns
-                # use self.interpreter
-                # what is the value_generator here?
-                # one thought could be to apply a func-like object here, that returns takes a record and returns the value
-                # but then we need a function-like object, i.e. currently func interface has one method: apply(self, record) -> value
+                # expression, i.e. default it's default root OrClause
+                assert isinstance(selectable, OrClause)
+                # NOTE: selectable can be arbitrary algebraic expression, including columns
                 generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
-                #raise NotImplementedError
-
         return Response(True, body=generators)
+
+
 
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -528,7 +534,7 @@ class VirtualMachine(Visitor):
         out_schema = resp.body
 
         # 2. generate output value generators
-        resp = self.generate_output_value_generators(select_clause.selectables)
+        resp = self.generate_value_generators_over_recordset(select_clause.selectables)
         if not resp.success:
             return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
         value_generators = resp.body
@@ -555,10 +561,52 @@ class VirtualMachine(Visitor):
         """
         This is a select on a grouped source
         """
+        source_schema = self.get_recordset_schema(source_rsname)
+        assert isinstance(source_schema, GroupedSchema)
+        resp = self.generate_output_schema_grouped_source(select_clause.selectables, source_schema)
+        if not resp.success:
+            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+        out_schema = resp.body
+
+        # 2. generate output value generators
+        resp = self.generate_value_generators_over_grouped_recordset(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+        value_generators = resp.body
+
+        # 3. generate output resultset
+        # NOTE: a groupedrecordset materializes to a resultset, i.e. groups are squashed
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        out_column_names = [col.name for col in out_schema.columns]
+        # populate output resultset
+        for group_key, group_rset_iter in self.grouped_recordset_iter(source_rsname):
+        #for record in self.recordset_iter(source_rsname):
+            # get value, one for each output column
+            value_list = [val_gen.get_value(group_key, group_rset_iter) for val_gen in value_generators]
+            # convert column values to a record
+            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            assert resp.success
+            out_record = resp.body
+            self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
+
+    def evaluate_select_clause_grouped_source_old(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+        This is a select on a grouped source
+        TODO: Nuke me
+        """
         # 1. iterate over selectables and
         # 1.1. validate output selectables
         # 1.2. generate output mapping; that allows constructing
         # output record from input record
+
+        # TODO: update below to be similar to ungrouped_case
+
+
         source_schema = self.get_recordset_schema(source_rsname)
         assert isinstance(source_schema, GroupedSchema)
         # NOTE: the output columns are used to construct output schema

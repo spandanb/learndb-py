@@ -517,8 +517,10 @@ def devloop():
         # "delete from foo",
         #"select cola from foo where cola > 1 and cola < 100 or colb = 'hello'"
 
+        "select max(cola) + cola from foo"
+
         # TODO: ensure all statements below return correct result
-        "select square(cola) from foo where cola = 42"  # TODO: why does this not return any results?
+        #"select square(cola) from foo where cola = 42"  # TODO: why does this not return any results?
         #"select square(cola) from foo"
         #"select cola from foo;",
         #"select cola, colb from foo where cola = 42",
