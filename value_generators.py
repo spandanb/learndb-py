@@ -123,7 +123,12 @@ class ValueGeneratorFromRecordOverExpr:
         return value
 
 
-class ValueGeneratorFromRecordGroup:
+class ValueGeneratorFromRecordGroupOverExpr:
 
     def __init__(self):
         pass
+
+    def get_value(self, group_key, group_recordset_iter) -> Any:
+        """
+
+        """
