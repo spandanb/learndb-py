@@ -611,5 +611,18 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     Eventually, all evaluation of expr, i.e. some methods of VM, should be moved to this class.
     Likewise, for name resolution functionality in NameRegistry.
 
+12/18
+    grammar seems weird, functions should be primitives that can be combined in algebraic expressions. I have rule
+        selectable        :  condition | column_name | func_call
+
+    But instead, I should define an expr
+        expr           : literal | predicate | func_call
+
+    Which would be quiet deep in the expr hierarchy. And selectable would be:
+    selectable: condition
+
+    Experiment with this.
+
+-
 
 

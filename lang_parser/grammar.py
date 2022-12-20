@@ -13,11 +13,13 @@ GRAMMAR = '''
         select_stmnt     : select_clause from_clause? 
 
         //select_clause    : "select"i expr ("," expr)* //selectables        
-        select_clause    : "select"i selectable ("," selectable)*
+        select_clause     : "select"i selectable ("," selectable)*
         
-        //selectables    : column_name ("," column_name)*
-        //selectables     : primary ("," primary)*
-        selectable        :  condition | column_name | func_call
+        //selectables     : column_name ("," column_name)*
+        //selectables     : primary ("," primary)*        
+        //selectable      : expr
+        selectable        :  condition | column_name
+        
         
         from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
         where_clause     : "where"i condition
@@ -59,9 +61,9 @@ GRAMMAR = '''
         comparison       : term
                          | comparison ( LESS_EQUAL | GREATER_EQUAL | LESS | GREATER ) term
         term             : factor
-                         | term ( "-" | "+" ) factor
+                         | term ( MINUS | PLUS ) factor
         factor           : unary
-                         | factor ( "/" | "*" ) unary
+                         | factor ( SLASH | STAR ) unary
         unary            : primary
                          | ( "!" | "-" ) unary
         
@@ -71,8 +73,9 @@ GRAMMAR = '''
         //                 | literal
         
         primary          : literal 
-                         | "(" select_stmnt ")" 
+                         | "(" select_stmnt ")"
                          | column_name
+                         | func_call
                                                                                    
         // nuke (expr here)
         //expr           : literal | predicate | func_call 
@@ -139,6 +142,9 @@ GRAMMAR = '''
         LESS              : "<"
         GREATER           : ">"
         COMMA             : ","
+        MINUS             : "-"
+        PLUS              : "+"
+        SLASH             : "/"
 
         // 2-char ops
         LESS_EQUAL        : "<="
