@@ -52,6 +52,13 @@ class ComparisonOp(Enum):
     NotEqual = auto()
 
 
+class ArithmeticOp(Enum):
+    Addition = auto()
+    Subtraction = auto()
+    Multiplication = auto()
+    Division = auto()
+
+
 # symbol class
 
 class Symbol(ast_utils.Ast):
@@ -540,6 +547,7 @@ class ToAst3(Transformer):
     def term(self, args):
         if len(args) == 1:
             return args[0]
+        # todo: if len(args) == 3, likely an arithmetic op, how should this be encoded
         return args
 
     def factor(self, args):
@@ -705,3 +713,14 @@ class ToAst3(Transformer):
         unquoted = arg[1:-1]
         return Literal(unquoted, DataType.Text)
 
+    def MINUS(self, arg):
+        return ArithmeticOp.Subtraction
+
+    def PLUS(self, arg):
+        return ArithmeticOp.Addition
+
+    def SLASH(self, arg):
+        return ArithmeticOp.Division
+
+    def STAR(self, arg):
+        return ArithmeticOp.Multiplication
