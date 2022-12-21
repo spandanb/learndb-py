@@ -90,6 +90,7 @@ GRAMMAR = '''
 
         // func calls; positional invocations only for now
         func_call        : func_name "(" func_arg_list ")" 
+        // TODO: add support for named args in func_arg_list
         func_arg_list    : (primary ",")* primary
 
         create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"

@@ -57,7 +57,7 @@ from record_utils import (
 )
 
 from value_generators import ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord, ValueGeneratorFromRecordOverExpr
-from vm_utilclasses import ExpressionInterpreter, NameRegistry, InterpreterMode
+from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,12 @@ class VirtualMachine(Visitor):
         self.init_scopes()
         self.name_registry = NameRegistry()
         self.interpreter = ExpressionInterpreter(self.name_registry)
+        self.type_checker = SemanticAnalyzer(self.name_registry)
+
+    def init_scopes(self):
+        """
+        """
+        self.scopes = []
 
     def init_catalog(self):
         """
@@ -325,15 +331,12 @@ class VirtualMachine(Visitor):
                 rsname = resp.body
 
         # 6. handle select columns
-        # because order by and limit depend on a materialized/flattened,
-        # resultset; flattened, means any non-group by columns are aggregated
-        # e.g. order by count(*)
-        # NOTE: select may not refer to any columns, since from is optional
+        self.name_registry.set_schema(self.get_recordset_schema(rsname))
         resp = self.evaluate_select_clause(stmnt.select_clause, rsname)
         assert resp.success
         rsname = resp.body
 
-        # 7.
+        # 7. order, limit clause
         if from_clause:
             if from_clause.order_by_clause:
                 pass
@@ -483,9 +486,11 @@ class VirtualMachine(Visitor):
                 # selectable is some expr, represented as an instance of `OrClause`-
                 # the de-facto root of the expr hierarchy
                 assert isinstance(selectable, OrClause)
-                # a stringified version of or_clause
-                expr_name = self.stringify_expr(selectable)
-                expr_type = self.evaluate_expr_type(selectable)
+                # a stringified or_clause to use as output column name
+                expr_name = self.interpreter.stringify(selectable)
+                resp = self.type_checker.analyze(selectable)
+                assert resp.success
+                expr_type = resp.body
                 out_column = Column(expr_name, expr_type)
                 out_columns.append(out_column)
 
@@ -516,8 +521,6 @@ class VirtualMachine(Visitor):
                 # NOTE: selectable can be arbitrary algebraic expression, including columns
                 generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
         return Response(True, body=generators)
-
-
 
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
@@ -1241,39 +1244,6 @@ class VirtualMachine(Visitor):
             or_result = or_result or and_result
         return or_result
 
-    def evaluate_expr_type(self, expr: OrClause) -> Any:
-        """
-        Determine the type of this expr.
-
-        However, the expr may ref column name, (and perhaps other objects e.g. functions).
-        So we need a name_resolve: str -> DataType
-
-        Note: an OrClause can represent: 1) a condition (evaluates to a bool),
-        or act as the de-facto root of the expr hierarchy (evaluates to a literal or a symbol) (here)
-        """
-        expr_type = None
-        for and_clause in expr.and_clauses:
-            assert len(and_clause.predicates) == 1, "algebraic evaluation not implemented"
-            for predicate in and_clause.predicates:
-                if isinstance(predicate, ColumnName):
-                    resp = self.scope_resolve_column_name_type(predicate)
-                    assert resp.success
-                    column_type = resp.body
-                    expr_type = column_type
-                    return expr_type
-                else:
-                    # todo: handle algebraic expression and the like
-                    raise NotImplementedError
-
-    def stringify_expr(self, expr: OrClause) -> str:
-        """
-        TODO: move this to parser, or some other utils
-        """
-        assert len(expr.and_clauses) == 1, "algebraic evaluation not implemented"
-        assert len(expr.and_clauses[0].predicates) == 1, "algebraic evaluation not implemented"
-        assert isinstance(expr.and_clauses[0].predicates[0], ColumnName)
-        return expr.and_clauses[0].predicates[0].name
-
     def group_recordset(self, group_by_clause, source_rsname):
         """
         Apply by group-by on records in rsname
@@ -1302,16 +1272,6 @@ class VirtualMachine(Visitor):
         return Response(True, body=rsname)
 
     # section: scope management
-
-    def init_scopes(self):
-        """
-
-        Should be invoked by __init__
-        # TODO: move this under init_catalog
-        scopes can be nested;
-        Will need to reiterate on this interface
-        """
-        self.scopes = []
 
     def init_new_scope(self):
         """

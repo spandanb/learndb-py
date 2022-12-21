@@ -81,7 +81,6 @@ class Integer(DataType):
 
     @staticmethod
     def is_valid_term(term) -> bool:
-        # print(f"Checking if term [{term}] is valid")
         return isinstance(term, int)
 
 
@@ -115,6 +114,10 @@ class Float(DataType):
         tpl = struct.unpack('=f', bstring)
         return tpl[0]
 
+    @staticmethod
+    def is_valid_term(term) -> bool:
+        return isinstance(term, float)
+
 
 class Text(DataType):
     """
@@ -135,8 +138,30 @@ class Text(DataType):
 
     @staticmethod
     def is_valid_term(term) -> bool:
-        # print(f"Checking if term [{term}] is valid")
         return isinstance(term, str)
+
+
+class Boolean(DataType):
+    """
+    represents a variable length text
+    """
+    is_fixed_length = False
+    fixed_length = 0
+    is_serializable = True
+    typename = "Text"
+
+    @staticmethod
+    def serialize(value: bool):
+        return struct.pack('=?', value)
+
+    @staticmethod
+    def deserialize(bstring: bytes):
+        tpl = struct.unpack('=?', bstring)
+        return tpl[0]
+
+    @staticmethod
+    def is_valid_term(term) -> bool:
+        return isinstance(term, bool)
 
 
 class Null(DataType):

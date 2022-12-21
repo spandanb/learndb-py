@@ -41,6 +41,7 @@ class DataType(Enum):
     Text = auto()
     Real = auto()
     Blob = auto()
+    Boolean = auto()
 
 
 class ComparisonOp(Enum):
@@ -388,6 +389,13 @@ class Literal(Symbol):
     type: DataType
 
 
+@dataclass
+class BinaryArithmeticOperation(Symbol):
+    operator: ArithmeticOp
+    operand1: Any
+    operand2: Any
+
+
 # todo: rename ToAst
 class ToAst3(Transformer):
     """
@@ -547,12 +555,17 @@ class ToAst3(Transformer):
     def term(self, args):
         if len(args) == 1:
             return args[0]
-        # todo: if len(args) == 3, likely an arithmetic op, how should this be encoded
+        if len(args) == 3:
+            val = BinaryArithmeticOperation(args[1], args[0], args[2])
+            return val
         return args
 
     def factor(self, args):
         if len(args) == 1:
             return args[0]
+        if len(args) == 3:
+            val = BinaryArithmeticOperation(args[1], args[0], args[2])
+            return val
         return args
 
     def unary(self, args):

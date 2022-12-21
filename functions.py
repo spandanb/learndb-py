@@ -227,6 +227,8 @@ def resolve_function_name(name: str) -> FunctionDefinition:
     raise ValueError(f"Unable to find function [{name}]")
 
 
-
+def get_all_functions() -> List[str]:
+    """Return list of all function names"""
+    return list(_FUNCTION_REGISTRY.keys())
 
 

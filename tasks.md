@@ -18,6 +18,7 @@
 ## Parser
 - ensure rules make sense with `expression` symbol
   - this (expression) should wrap or_clause
+  - func_call from grammar/parser side only supports pos args; extend this to allow named args since function objects support named args
 
 
 
