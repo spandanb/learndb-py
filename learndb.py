@@ -446,20 +446,6 @@ def devloop():
         "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly join car c on f.colb = c.coly",
     ]
 
-    # inner join
-    texts = [
-        "create table foo ( cola integer primary key, colb integer, colc integer)",
-        "create table bar ( colx integer primary key, coly integer, colz integer)",
-        "insert into foo (cola, colb, colc) values (1, 2, 3)",
-        "insert into foo (cola, colb, colc) values (2, 4, 6)",
-        "insert into foo (cola, colb, colc) values (3, 10, 8)",
-        "insert into bar (colx, coly, colz) values (101, 10, 80)",
-        "insert into bar (colx, coly, colz) values (102, 4, 90)",
-        # select
-        "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly",
-        #"select cola from bar"
-    ]
-
     # scoped select
     texts = [
         "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
@@ -504,7 +490,7 @@ def devloop():
         #"select count(*), country from items group by country", # TODO: this fails to parse
     ]
 
-    # simple 1
+    # functions, algebra
     texts = [
         "create table foo (cola integer primary key, colb text)",
         "insert into foo ( cola, colb) values (42, 'hello melo')",
@@ -526,6 +512,20 @@ def devloop():
         #"select cola, colb from foo where cola = 42",
         #"select square(cola) from foo;",
         #"select f.cola from foo f"
+    ]
+
+    # inner join
+    texts = [
+        "create table foo ( cola integer primary key, colb integer, colc integer)",
+        "create table bar ( colx integer primary key, coly integer, colz integer)",
+        "insert into foo (cola, colb, colc) values (1, 2, 3)",
+        "insert into foo (cola, colb, colc) values (2, 4, 6)",
+        "insert into foo (cola, colb, colc) values (3, 10, 8)",
+        "insert into bar (colx, coly, colz) values (101, 10, 80)",
+        "insert into bar (colx, coly, colz) values (102, 4, 90)",
+        # select
+        "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly",
+        #"select cola from bar"
     ]
 
     for text in texts:
