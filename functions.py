@@ -1,17 +1,14 @@
 """
-This should implement functions. Specifically:
+This implements functions. Specifically:
     - the function declaration interface
-        -- adn the ability to get the return type
+        -- and the ability to get the return type
     - Here, I assume the datatype are the same as those exposed to ddl definitions, i.e.
         Integer, Float, Text, Blob.
-    - perhaps the ability to execute the functions
-
+    - the ability to execute the functions
 
 There will be 2 kinds of functions: native and defined in language
-Functions declarations should apply to both, but only lang functions will have a Function object
-
-
-Native functions will have a declaration
+Functions declarations should apply to both, but only lang functions will have a Function object.
+Native functions will have a declaration.
 """
 
 from typing import List, Dict, Any, Callable, Type
@@ -142,77 +139,17 @@ float_square_function = FunctionDefinition(
 
 # if we have same function for integers and floats, we'll name the int function
 # with not qualifiers, and name the float function with _float qualifier
-_FUNCTION_REGISTRY = {
+_SCALAR_FUNCTION_REGISTRY = {
     "square": integer_square_function,
     "square_float": float_square_function,
 
 }
 
-
-class FunctionInvocation:
-    """
-    This represents a function call over concrete value ( as opposed to over a symbolic reference like foo.x)
-    # TODO: is this used? does it need to be separate from FunctionDefinition
-    """
-    @classmethod
-    def create_invocation(cls, func_name: str, func_pos_args: List, func_named_args: dict) -> Response:
-        """
-        Validate and create a FunctionInvocation.
-        Not sure if it makes sense to create a function invocation object
-        """
-        func_name = func_name.lower()
-        func = _FUNCTION_REGISTRY.get(func_name)
-        if func is None:
-            return Response(False, error_message=f"Function [{func_name}] not found")
-        resp = func.validate_args(func_pos_args, func_named_args)
-        if not resp.success:
-            return Response(False, error_message=f"Validate args failed due to [{resp.error_message}]")
-        return cls(func_name, func, func_pos_args, func_named_args)
-
-    @staticmethod
-    def validate_invocation(func_name: str, func_pos_args: List, func_named_args: dict) -> Response:
-        """
-        Validate name and args of invocation
-        """
-        func_name = func_name.lower()
-        func = _FUNCTION_REGISTRY.get(func_name)
-        if func is None:
-            return Response(False, error_message=f"Function [{func_name}] not found")
-        # TODO: will this work with column types?
-        # perhaps I should consider a `Column` object
-        resp = func.validate_args(func_pos_args, func_named_args)
-        if not resp.success:
-            return Response(False, error_message=f"Validate args failed due to [{resp.error_message}]")
-        return Response(True)
-
-    @staticmethod
-    def apply(self):
-        pass
-
-    def __init__(self, name: str, funcdef: FunctionDefinition, pos_args: List[Any], named_args: Dict[str, Any]):
-        # func being invoked
-        self.name = name
-        self.func = funcdef
-        self.pos_args = pos_args
-        self.named_args = named_args
-
-    def apply(self):
-        """
-        This should apply the function call
-        """
-        # can apply be done generically?
-        self.func.apply(*args, )
+_AGGREGATE_FUNCTION_REGISTRY = {
+}
 
 
-class CurrentTimeFunction(FunctionDefinition):
-    def apply(self):
-        pass
-
-
-class MaxFunction(FunctionDefinition):
-    def apply(self, arg: str):
-        pass
-
+# public functions
 
 def resolve_function_name(name: str) -> FunctionDefinition:
     """
@@ -221,14 +158,28 @@ def resolve_function_name(name: str) -> FunctionDefinition:
     dynamic dispatch, etc.
     """
     name = name.lower()
-    if name in _FUNCTION_REGISTRY:
-        return _FUNCTION_REGISTRY[name]
+    if name in _SCALAR_FUNCTION_REGISTRY:
+        return _SCALAR_FUNCTION_REGISTRY[name]
 
     raise ValueError(f"Unable to find function [{name}]")
 
 
-def get_all_functions() -> List[str]:
+def get_function_names_list() -> List[str]:
     """Return list of all function names"""
-    return list(_FUNCTION_REGISTRY.keys())
+    return list(_SCALAR_FUNCTION_REGISTRY.keys())
 
 
+def is_aggregate_function(func_name: str) -> bool:
+    """
+    Return bool if function is an aggregate function
+    """
+    func_name = func_name.lower()
+    return func_name in _AGGREGATE_FUNCTION_REGISTRY
+
+
+def is_scalar_function(func_name: str) -> bool:
+    """
+    Return bool if function is an scalar function
+    """
+    func_name = func_name.lower()
+    return func_name in _SCALAR_FUNCTION_REGISTRY
