@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, NewType, Union
 from functions import FunctionDefinition
 from lang_parser.symbols3 import OrClause
-from vm_utilclasses import ExpressionInterpreter, NameRegistry, InterpreterMode
+from vm_utilclasses import ExpressionInterpreter, NameRegistry
 
 
 @dataclass
@@ -117,9 +117,7 @@ class ValueGeneratorFromRecordOverExpr:
         """
         Evaluate the or_clause
         """
-        self.interpreter.set_mode(InterpreterMode.ValueEval)
-        self.interpreter.set_record(record)
-        value = self.interpreter.evaluate(self.or_clause, record)
+        value = self.interpreter.evaluate_value(self.or_clause, record)
         return value
 
 

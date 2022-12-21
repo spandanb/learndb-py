@@ -37,4 +37,4 @@ class Visitor:
             return getattr(self, handler)(symbol)
         else:
             logging.warning(f"Visitor does not have {handler}")
-            raise HandlerNotFoundException(f"Visitor does not have {handler}")
+            raise HandlerNotFoundException(f"Visitor [{self.__class__.__name__}] does not have {handler}")
