@@ -117,16 +117,20 @@ class ValueGeneratorFromRecordOverExpr:
         """
         Evaluate the or_clause
         """
-        value = self.interpreter.evaluate_value(self.or_clause, record)
+        value = self.interpreter.evaluate_over_record(self.or_clause, record)
         return value
 
 
 class ValueGeneratorFromRecordGroupOverExpr:
 
-    def __init__(self):
-        pass
+    def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
+        self.or_clause = or_clause
+        self.interpreter = interpreter
 
     def get_value(self, group_key, group_recordset_iter) -> Any:
         """
 
         """
+        # TODO:
+        value = self.interpreter.evaluate_over_recordset(self.or_clause, group_key, group_recordset_iter)
+        return value

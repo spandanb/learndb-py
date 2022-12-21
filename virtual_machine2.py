@@ -10,13 +10,13 @@ import string
 
 from typing import Any, List, Optional, Union, Set, Dict, Tuple, Type
 from enum import Enum, auto
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
 from cursor import Cursor
 from datatypes import DataType
 from dataexchange import Response
-from functions import resolve_function_name, FunctionInvocation
+from functions import resolve_function_name, is_aggregate_function, is_scalar_function
 from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, MultiSchema, ScopedSchema,
                     make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
@@ -56,25 +56,12 @@ from record_utils import (
     create_record_from_raw_values
 )
 
-from value_generators import ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord, ValueGeneratorFromRecordOverExpr
+from value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
+                              ValueGeneratorFromRecordOverExpr,
+                              ValueGeneratorFromRecordGroupOverExpr)
 from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer
 
 logger = logging.getLogger(__name__)
-
-
-class RecordSet:
-    # todo: nuke me - unused
-    pass
-
-
-class GroupedRecordSet(RecordSet):
-    # todo: nuke me - unused
-    pass
-
-
-class NullRecordSet(RecordSet):
-    # todo: nuke me - unused
-    pass
 
 
 class UnGroupedColumnException(Exception):
@@ -84,10 +71,6 @@ class UnGroupedColumnException(Exception):
 # constants in scoped dict
 SCOPE_COLLECTION_ALIASED_SOURCES_KEY = "aliased_sources"
 SCOPE_COLLECTION_UNALIASED_SOURCES_KEY = "unaliased_sources"
-
-# names of supported builtin functions
-AGGREGATE_FUNCTIONS = ["MIN", "MAX", "COUNT", "SUM", "AVG"]
-SCALAR_FUNCTIONS = ["CURRENT_DATETIME", "TO_STRING", "SQUARE", "SQUARE_FLOAT"]
 
 
 class SelectClauseSourceType(Enum):
@@ -136,15 +119,11 @@ class VirtualMachine(Visitor):
         self.rsets = {}
         self.grouprsets = {}
         self.init_catalog()
-        self.init_scopes()
+        # scopes are tracked as a stack of scopes; one scopes for logical environment where names can be defined
+        self.scopes = []
         self.name_registry = NameRegistry()
         self.interpreter = ExpressionInterpreter(self.name_registry)
         self.type_checker = SemanticAnalyzer(self.name_registry)
-
-    def init_scopes(self):
-        """
-        """
-        self.scopes = []
 
     def init_catalog(self):
         """
@@ -354,89 +333,11 @@ class VirtualMachine(Visitor):
         #for msg in self.output_pipe.store:
         #    logger.info(msg)
 
-    def is_agg_func(self, func_name: str):
-        # TODO: nuke if unused
-        return func_name.upper() in AGGREGATE_FUNCTIONS
+    def is_agg_func(self, func_name: str) -> bool:
+        return is_aggregate_function(func_name)
 
-    def is_scalar_func(self, func_name: str):
-        # TODO: nuke if unused
-        return func_name.upper() in SCALAR_FUNCTIONS
-
-    def has_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
-        """
-        # TODO: nuke if unused
-        Returns True if func uses group by columns as arguments
-        :param func_name:
-        :param func_args:
-        :param group_by_schema:
-        :return:
-        """
-    def has_non_group_by_col_args(self, func_name, func_args, group_by_schema: GroupedSchema):
-        """
-        # TODO: nuke if unused
-        Return true if func does not use any group by columsn 
-        :param func_name:
-        :param func_args:
-        :param group_by_schema:
-        :return:
-        """
-
-    def is_group_by_col(self, schema: GroupedSchema, column: ColumnName) -> bool:
-        """
-        # TODO: nuke if unused
-        Determine if column is a groupby column
-        """
-        for col in schema.group_by_columns:
-            if col == column:
-                return True
-        return False
-
-    def evaluate_agg_function(self, func_name: str, func_args, schema, source_rsname) -> Response:
-        """
-        Evaluate function and return computed result
-        """
-        # this should a map from group_key -> value
-        # if source is a simple recordset - the group key will be None
-        computed = defaultdict(int)
-        func_name = func_name.lower()
-        # TODO: validate args; for all agg funcs, only * or a single column name is accepted
-        if func_name == "min":
-            raise NotImplementedError
-        elif func_name == "max":
-            raise NotImplementedError
-        elif func_name == "avg":
-            raise NotImplementedError
-        elif func_name == "count":
-            # 1. validate args
-            assert len(func_args) == 1
-            # todo: validate function args: column or *
-            # todo; handle * arg; currently parser fails
-            if isinstance(func_args[0], ColumnName):
-                column = func_args[0]
-                # 2. evaluate function
-                for group_key, group_rset in self.grouped_recordset_iter(source_rsname):
-                    group_value = 0
-                    for record in group_rset:
-                        group_value += 1 if record.get(column.name) is not None else 0
-                    computed[group_key] += group_value
-
-        elif func_name == "sum":
-            # 1. validate args
-            assert len(func_args) == 1
-            column = func_args[0]
-            # 2. evaluate function
-            for group_key, group_rset in self.grouped_recordset_iter(source_rsname):
-                group_value = 0
-                for record in group_rset:
-                    group_value += record.get(column.name)
-                computed[group_key] += group_value
-        else:
-            raise ValueError(f"Unrecognized aggregation function: {func_name}")
-
-        return Response(True, body=computed)
-
-    def evaluate_scalar_function(self, func_name, func_args, schema, source_rsname) -> Response:
-        raise NotImplementedError
+    def is_scalar_func(self, func_name: str) -> bool:
+        return is_scalar_function(func_name)
 
     def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str):
         """
@@ -477,7 +378,43 @@ class VirtualMachine(Visitor):
                 # find target type
                 # 1.1.1. only scalar functions can be used
                 func = selectable
+                # TODO: perhaps checking whether func is scalar should be rolled up under SemanticAnalyzer
                 assert self.is_scalar_func(func.name)
+                func_def = resolve_function_name(func.name)
+                oname = f"{func.name}_{func.args[0].name}"
+                out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            else:
+                # selectable is some expr, represented as an instance of `OrClause`-
+                # the de-facto root of the expr hierarchy
+                assert isinstance(selectable, OrClause)
+                # a stringified or_clause to use as output column name
+                expr_name = self.interpreter.stringify(selectable)
+                resp = self.type_checker.analyze(selectable)
+                assert resp.success
+                expr_type = resp.body
+                out_column = Column(expr_name, expr_type)
+                out_columns.append(out_column)
+
+        # 1.2. generate schema from columns
+        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        if not resp.success:
+            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+        return Response(True, body=resp.body)
+
+    def generate_output_schema_grouped_source(self, selectables: List[Any], source_schema) -> Response:
+        """
+        Generate output schema for a grouped source
+        """
+        out_columns = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                # find target type
+                # 1.1.1. only aggregation functions can be used
+                func = selectable
+                # TODO: perhaps checking whether func is agg should be rolled up under SemanticAnalyzer
+                assert self.is_agg_func(func.name)
                 func_def = resolve_function_name(func.name)
                 oname = f"{func.name}_{func.args[0].name}"
                 out_column = Column(oname, func_def.return_type)
@@ -520,6 +457,21 @@ class VirtualMachine(Visitor):
                 assert isinstance(selectable, OrClause)
                 # NOTE: selectable can be arbitrary algebraic expression, including columns
                 generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+        return Response(True, body=generators)
+
+    def generate_value_generators_over_grouped_recordset(self, selectables: List) -> Response:
+        """
+        Return Response[List[Generators]]
+        """
+        generators = []
+        for selectable in selectables:
+            if isinstance(selectable, OrClause):
+                generators.append(ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter))
+            else:
+                # this is unexpected
+                breakpoint()
+                return Response(False)
+
         return Response(True, body=generators)
 
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
@@ -586,7 +538,6 @@ class VirtualMachine(Visitor):
         out_column_names = [col.name for col in out_schema.columns]
         # populate output resultset
         for group_key, group_rset_iter in self.grouped_recordset_iter(source_rsname):
-        #for record in self.recordset_iter(source_rsname):
             # get value, one for each output column
             value_list = [val_gen.get_value(group_key, group_rset_iter) for val_gen in value_generators]
             # convert column values to a record
@@ -596,231 +547,6 @@ class VirtualMachine(Visitor):
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
-
-    def evaluate_select_clause_grouped_source_old(self, select_clause: SelectClause, source_rsname: str) -> Response:
-        """
-        This is a select on a grouped source
-        TODO: Nuke me
-        """
-        # 1. iterate over selectables and
-        # 1.1. validate output selectables
-        # 1.2. generate output mapping; that allows constructing
-        # output record from input record
-
-        # TODO: update below to be similar to ungrouped_case
-
-
-        source_schema = self.get_recordset_schema(source_rsname)
-        assert isinstance(source_schema, GroupedSchema)
-        # NOTE: the output columns are used to construct output schema
-        # but also, are the "mapping" from the input to output schema
-        # this implementation of mapping will change when I introduce selectable remapping via "AS"
-        out_columns = OrderedDict()
-        # one value generator for each output column
-        value_generators = []
-        for selectable in select_clause.selectables:
-            if isinstance(selectable, FuncCall):
-                # 1.1. only aggregate functions can be used
-                # todo: convert func into Func Object?
-                # parse arguments - currently they are parser level things
-                func = selectable
-                assert self.is_agg_func(func.name)
-                # determine return type of function
-                funcsig = get_function_signature(func.name)
-                # generate Column object corresponding to applied func
-                otype = funcsig.output_type
-                oname = f"{func.name}_{func.args[0].name}"
-                ocolumn = Column(oname, otype)
-                out_columns[oname] = ocolumn
-                # ValueFromAggregateFuncMapper accepts a function invocation
-                # a function invocation can be modelled as :
-                # 1) function name, and args, or 2) FunctionObject, with args
-                # resolve
-                call = FunctionInvocation()
-                value_generators.append(ValueFromAggregateFuncMapper())
-            else:
-                # todo: this is not true
-                assert isinstance(selectable, ColumnName)
-
-                # a raw column must be a group-by column
-                if not self.is_group_by_col(source_schema, selectable):
-                    raise UnGroupedColumnException(f"Column [{selectable.name}] must appears either in "
-                                                   f"group-by or in aggregation function")
-
-                # find selectable in source schema
-                otype = source_schema.schema.get_column_by_name(selectable.name).datatype
-                ocolumn = Column(selectable.name, otype)
-                out_columns[ocolumn.name] = ocolumn
-                value_generators.append(ValueFromValueMapper())
-
-                # 1.2. assert this column occurs in source schema
-                scolumn = source_schema.get_column_by_name(selectable.name)
-                if scolumn is None:
-                    # source schema doesn't contain columns, i.e. column doesn't exist
-                    return Response(False, error_message=f"Unknown column name [{selectable.name}]")
-                ocolumn = Column(selectable.name, scolumn.datatype)
-                out_columns[ocolumn.name] = ocolumn
-
-        # 2. generate output_schema
-        resp = generate_unvalidated_schema("output_set", list(out_columns.values()))
-        assert resp.success
-        out_schema = resp.body
-
-        # 3. generate output resultset
-        resp = self.init_recordset(out_schema)
-        assert resp.success
-        out_rsname = resp.body
-
-        # 4. evaluate select clause; populate output resultset
-        out_column_names = list(out_columns.keys())
-        for group_key, group_rsiter in self.grouped_recordset_iter(source_rsname):
-
-            # NOTE: group_key must be special-handled, since mappers don't have any special support for it
-            # actually how do the mappers work here?
-            for value_gen in value_generators:
-                value_gen.get_value()
-
-
-            # each group_key is a row in output
-
-
-            # how to use out_column_names mapping to construct value list?
-            # how do we generalize the mapping
-            for out_column in out_column_names:
-                pass
-
-            value_list = []
-            for out_column in out_column_names:
-                value_list.append(record.get(out_column))
-
-            # create an output record
-            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
-            assert resp.success
-            out_record = resp.body
-            self.append_recordset(out_rsname, out_record)
-
-        return Response(True, body=out_rsname)
-
-
-    def evaluate_select_clause_old(self, select_clause: SelectClause, source_rsname: str) -> Response:
-        """
-        Evaluate the select clause, i.e. flatten any operations on any groups
-
-        First generate, the schema for the result rset.
-        This schema will be Schema (or ScopedSchema)
-        Then evaluate
-        The result rset will have one record for each record in the
-        source for ungrouped recordsets; and will have one record
-        for each group for a grouped recordsets.
-
-        TODO: Nuke me
-        """
-        # 1. validate select clause and get columns of output schema
-        out_columns = []
-        source_schema = None
-        if source_rsname is None:
-            # no source
-            # selectables can be literals, or scalar functions
-            for selectable in select_clause.selectables:
-                pass
-        else:
-            source_schema = self.get_recordset_schema(source_rsname)
-            if isinstance(source_schema, GroupedSchema):
-                for selectable in select_clause.selectables:
-                    if isinstance(selectable, FuncCall):
-                        func = selectable
-                        # validate arguments
-                        # very crude way to ensuring argument size matches function arity, i.e. 1 for all existing
-                        # functions; when I have the function declaration story better scoped out, I should revisit this
-                        assert len(func.args) == 1, f"Expected 1 argument; received {len(func.args)}"
-                        if self.is_agg_func(func.name):
-                            # agg functions must be applied to non-grouped columns
-                            for arg in func.args:
-                                if isinstance(arg, ColumnName) and self.is_group_by_col(source_schema, arg):
-                                    raise ValueError(f"Column [{arg}] cannot appear in both "
-                                                     f"group-by and aggregation function")
-                        # determine return type of function
-                        funcsig = get_function_signature(func.name)
-                        # generate Column object corresponding to applied func
-                        otype = funcsig.output_type
-                        oname = f"{func.name}_{func.args[0].name}"
-                        ocolumn = Column(oname, otype)
-                        out_columns.append(ocolumn)
-
-                    elif isinstance(selectable, ColumnName):
-                        # a raw column must be a group-by column
-                        if not self.is_group_by_col(source_schema, selectable):
-                            raise UnGroupedColumnException(f"Column [{arg}] must appears either in "
-                                                           f"group-by or in aggregation function")
-
-                        # find selectable in source schema
-                        otype = source_schema.schema.get_column_by_name(selectable.name).datatype
-                        ocolumn = Column(selectable.name, otype)
-                        out_columns.append(ocolumn)
-
-            elif isinstance(source_schema, ScopedSchema):
-                raise NotImplementedError
-            else:
-                assert isinstance(source_schema, Schema)
-                raise NotImplementedError
-
-        # 2. generate output schema
-        output_schema = Schema("result_set", out_columns)
-
-        # 3. generate N single column result sets
-        # where N is the number of selectables in select clause
-        # next we'll zip each stream to create records corresponding to `output_schema`
-        # NOTE, the parallel between steps 1: get output schema columns, 2: generate output schema, and
-        # 3 generate single column result sets for output columns, 4: weave single column RSs into one result set
-
-        # NOTE: the selectables must be mapped to columns in the resutlset
-        # if the resultset is grouped, then' it'll need to be eval via evaluate_agg_function
-        # otherwise the source resultset is used
-
-        column_result_sets = []
-        if source_schema is None:
-            raise NotImplementedError
-        elif isinstance(source_schema, GroupedSchema):
-            for selectable in select_clause.selectables:
-                # function could be agg or non-agg
-                if isinstance(selectable, FuncCall):
-                    func = selectable
-                    if self.is_agg_func(func.name):
-                        resp = self.evaluate_agg_function(func.name, func.args, source_schema, source_rsname)
-                        assert resp.success
-                        computed = resp.body  # dict of group -> group_val
-                        # TODO: convert computed into RecordSet
-                        # TODO: map group by columns to select column order
-
-                    else:
-                        # non-agg function can only be applied to group-by columns
-                        for arg in selectable.args:
-                            if isinstance(arg, ColumnName):
-                                if not self.is_group_by_col(source_schema, arg):
-                                    raise UnGroupedColumnException(f"Column [{arg}] must appears either in both "
-                                                                   f"group-by or in aggregation function")
-
-                elif isinstance(selectable, ColumnName):
-                    # this must be a group-by column
-                    is_groupby_col = self.is_group_by_col(source_schema, selectable)
-                    if not is_groupby_col:
-                            raise UnGroupedColumnException(f"Column [{selectable}] must appears either in both group-by "
-                                                           f"or in aggregation function")
-                    else:
-                        # this value should be used as is
-                        raise NotImplementedError
-
-        elif isinstance(source_schema, ScopedSchema):
-            raise NotImplementedError
-        else:
-            # Schema
-            raise NotImplementedError
-
-            # iterate over resultset and flatten it
-
-        # 4. weave into one resultsets
-        # TODO: actually I'm not sure if this step is needed
-        # not needed for grouped recordset, for sure
 
     def visit_insert_stmnt(self, stmnt) -> Response:
         """
@@ -1057,11 +783,7 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         for record in self.recordset_iter(source_rsname):
-            #if self.evaluate_condition(where_clause.condition, record):  # old method
-
-            self.interpreter.set_mode(InterpreterMode.BoolEval)
-            self.interpreter.set_record(record)
-            value = self.interpreter.evaluate(where_clause.condition)
+            value = self.interpreter.evaluate_over_record(where_clause.condition, record)
             assert isinstance(value, bool)
             if value:
                 self.append_recordset(rsname, record)
@@ -1205,6 +927,7 @@ class VirtualMachine(Visitor):
     def evaluate_condition(self, condition: OrClause, record) -> bool:
         """
         Evaluate condition on record Union(Record, JoinedRecord) and return bool result
+        TODO: this should be moved to ExpressionInterpreter
         """
         or_result = False
         for and_clause in condition.and_clauses:

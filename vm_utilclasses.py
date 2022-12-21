@@ -20,7 +20,7 @@ from lang_parser.symbols3 import (Symbol,
                                   ArithmeticOp,
                                   FuncCall
                                   )
-from functions import get_all_functions, resolve_function_name
+from functions import get_function_names_list, resolve_function_name
 from record_utils import Record, MultiRecord
 
 
@@ -45,7 +45,7 @@ class NameRegistry:
         # schema to resolve names from
         self.schema = None
         # register names of all functions
-        self.functions = set(get_all_functions())
+        self.functions = set(get_function_names_list())
 
     def set_record(self, record):
         self.record = record
@@ -120,9 +120,13 @@ class ExpressionInterpreter(Visitor):
         return_value = expr.accept(self)
         return return_value
 
-    def evaluate_value(self, expr: Symbol, record) -> Any:
+    def evaluate_over_record(self, expr: Symbol, record) -> Any:
         self.set_record(record)
         return self.evaluate(expr)
+
+    def evaluate_over_recordset(self, expr: Symbol, group_key, group_recordset_iter):
+        # TODO implement me
+        raise NotImplementedError
 
     # section: other public utils
 

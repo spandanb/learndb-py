@@ -2,7 +2,8 @@
 
 ## Top Priority
 - complete select over grouped expressions
-- how does func in selectable work in valueGenerator
+- - implement interpreter.evaluate_over_recordset
+- SemanticAnalyser should also check whether group by columns and non-group by columns are used correctly
 - write e2e tests for passing, and failing use cases
 
 
