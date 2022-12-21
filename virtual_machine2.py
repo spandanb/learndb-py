@@ -17,7 +17,7 @@ from cursor import Cursor
 from datatypes import DataType
 from dataexchange import Response
 from functions import resolve_function_name, is_aggregate_function, is_scalar_function
-from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, MultiSchema, ScopedSchema,
+from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, ScopedSchema, ScopedSchema,
                     make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
 
@@ -199,7 +199,6 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        # TODO: handle semantic validation, and name binding - actually not here
         return_value = stmnt.accept(self)
         return return_value
 
@@ -613,6 +612,7 @@ class VirtualMachine(Visitor):
     # 1) helpers should be able to handle null types
 
     def get_schema(self, table_name) -> Schema:
+
         if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_schema()
         else:
@@ -803,7 +803,7 @@ class VirtualMachine(Visitor):
 
         if isinstance(schema, GroupedSchema):
             pass
-        elif isinstance(schema, MultiSchema):
+        elif isinstance(schema, ScopedSchema):
             raise NotImplementedError
         else:
             # Schema - not sure if this needs to be split
@@ -828,7 +828,7 @@ class VirtualMachine(Visitor):
         """
         left_schema = self.get_recordset_schema(left_rsname)
         right_schema = self.get_recordset_schema(right_rsname)
-        schema = MultiSchema.from_schemas(left_schema, right_schema, left_sname, right_sname)
+        schema = ScopedSchema.from_schemas(left_schema, right_schema, left_sname, right_sname)
         resp = self.init_recordset(schema)
         assert resp.success
         rsname = resp.body
@@ -1022,8 +1022,8 @@ class VirtualMachine(Visitor):
             self.scopes[-1][SCOPE_COLLECTION_ALIASED_SOURCES_KEY][source.table_alias] = source.table_name
 
     def scope_register_single_joining(self, source: Joining):
-        # todo: complete me
-        breakpoint()
+        self.scope_register_single_source(source.left_source)
+        self.scope_register_single_source(source.right_source)
 
     def scope_resolve_column_name_type(self, name: ColumnName) -> Response:
         """

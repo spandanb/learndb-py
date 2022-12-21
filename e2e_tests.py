@@ -124,12 +124,24 @@ def test_select_equality_with_alias():
     assert keys == [2, 3]
 
 
-
 def test_select_inequality():
     """
-
     :return:
     """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colB integer, colc integer, cold integer)")
+    # insert into table
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)")
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)")
+    db.handle_input("insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)")
+    db.handle_input("select cola from foo f where f.cola = a  < 3")
+    keys = []
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        keys.append(record.get("cola"))
+    assert keys == [1, 2]
 
 
 def test_select_group_by_having():
@@ -152,6 +164,22 @@ def test_select_having():
     "select "T" from items having count(cust_id) > 1",
     """
 
+
+def test_select_algebraic_expr():
+    """
+    The goal is to test some algebra in the selectable expr
+    """
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        # "select count(custid), country from items group by country",
+        "select (count(custid) + 1) * 2, from items",
+    ]
 
 
 

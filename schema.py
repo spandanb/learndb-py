@@ -93,7 +93,7 @@ class Schema(BaseSchema):
                 return column.name
         return None
 
-    def get_column_by_name(self, name) -> Column:
+    def get_column_by_name(self, name) -> Optional[Column]:
         name = name.lower()
         for column in self.columns:
             if column.name.lower() == name:
@@ -107,10 +107,9 @@ class Schema(BaseSchema):
         return self.get_column_by_name(name) is not None
 
 
-class MultiSchema(BaseSchema):
+class ScopedSchema(BaseSchema):
     """
     Represents a scoped (by table_alias) collection of schema
-    TODO: rename to ScopedSchema
     """
     def __init__(self, schemas: dict):
         self.schemas = schemas  # table_name -> Schema
@@ -123,35 +122,41 @@ class MultiSchema(BaseSchema):
         return cls({alias: schema})
 
     @classmethod
-    def from_schemas(cls, left_schema: Union[Schema, MultiSchema], right_schema: Schema, left_alias: Optional[str],
+    def from_schemas(cls, left_schema: Union[Schema, ScopedSchema], right_schema: Schema, left_alias: Optional[str],
                      right_alias: str):
         if isinstance(left_schema, Schema):
             assert left_alias is not None
             return cls({left_alias: left_schema, right_alias: right_schema})
         else:
-            assert isinstance(left_schema, MultiSchema) and left_alias is None
+            assert isinstance(left_schema, ScopedSchema)
             schemas = left_schema.schemas.copy()
             schemas[right_alias] = right_schema
             return cls(schemas)
 
     @property
     def columns(self):
-        return [f"{table_alias}.{col}" for table_alias, schema in self.schemas.items() for col in schema.columns]
+        return [col for table_alias, schema in self.schemas.items() for col in schema.columns]
 
     def has_column(self, name: str) -> bool:
-        raise NotImplementedError
+        column = self.get_column_by_name(name)
+        return column is not None
 
-
-# create name alias, to ease deprecation
-#
-ScopedSchema = MultiSchema
+    def get_column_by_name(self, name) -> Optional[Column]:
+        name_parts = name.split(".")
+        assert len(name_parts) == 2
+        table_alias, column_name = name_parts
+        table_schema = self.schemas[table_alias]
+        for column in table_schema.columns:
+            if column.name.lower() == name:
+                return column
+        return None
 
 
 class GroupedSchema(BaseSchema):
     """
     Represents a grouped multi or simple schema
     """
-    def __init__(self, schema: Union[Schema, MultiSchema], group_by_columns):
+    def __init__(self, schema: Union[Schema, ScopedSchema], group_by_columns):
         self.schema = schema
         self.group_by_columns = group_by_columns
 
