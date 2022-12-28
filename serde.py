@@ -9,8 +9,8 @@ from constants import (CELL_KEY_SIZE_SIZE,
 
 from datatypes import DataType, Null, Integer, Text, Blob, Float
 from dataexchange import Response
-from schema import Integer, Schema
-from record_utils import Record
+from schema import Integer, SimpleSchema
+from record_utils import SimpleRecord
 
 
 class InvalidCell(Exception):
@@ -68,7 +68,7 @@ def datatype_to_serialtype(datatype: DataType) -> SerialType:
         return SerialType.Blob
 
 
-def serialize_record(record: Record) -> Response:
+def serialize_record(record: SimpleRecord) -> Response:
     """
     Serialize an entire record and return the bytes corresponding
     to a cell.
@@ -166,7 +166,7 @@ def serialize_record(record: Record) -> Response:
     return Response(True, body=cell)
 
 
-def deserialize_cell(cell: bytes, schema: Schema) -> Response:
+def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
     """
     deserialize cell corresponding to schema
     :param cell:
@@ -258,7 +258,7 @@ def deserialize_cell(cell: bytes, schema: Schema) -> Response:
         if column.name not in values:
             values[column.name] = None
 
-    record = Record(values, schema)
+    record = SimpleRecord(values, schema)
     return Response(True, body=record)
 
 

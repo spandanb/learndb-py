@@ -17,8 +17,8 @@ from cursor import Cursor
 from datatypes import DataType
 from dataexchange import Response
 from functions import resolve_function_name, is_aggregate_function, is_scalar_function
-from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, BaseSchema, Schema, ScopedSchema, ScopedSchema,
-                    make_grouped_schema, GroupedSchema, Column)
+from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, AbstractSchema, SimpleSchema,
+                    ScopedSchema, make_grouped_schema, GroupedSchema, Column)
 from serde import serialize_record, deserialize_cell
 
 from lark import Token
@@ -47,10 +47,11 @@ from lang_parser.symbols3 import (
 from lang_parser.sqlhandler import SqlFrontEnd
 
 from record_utils import (
-    Record,
+    SimpleRecord,
+    GroupedRecord,
     create_catalog_record,
     join_records,
-    MultiRecord,
+    ScopedRecord,
     create_record,
     create_null_record,
     create_record_from_raw_values
@@ -480,7 +481,7 @@ class VirtualMachine(Visitor):
         """
         # 0. setup
         source_schema = self.get_recordset_schema(source_rsname)
-        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, Schema)
+        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, SimpleSchema)
 
         # 1. generate output schema
         resp = self.generate_output_schema_ungrouped_source(select_clause.selectables, source_schema)
@@ -537,11 +538,11 @@ class VirtualMachine(Visitor):
 
         out_column_names = [col.name for col in out_schema.columns]
         # populate output resultset
-        for group_key, group_rset_iter in self.grouped_recordset_iter(source_rsname):
+        for grouped_record in self.grouped_recordset_iter(source_rsname):
             # get value, one for each output column
             group_schema = self.schemas[source_rsname]
             assert isinstance(group_schema, GroupedSchema)
-            value_list = [val_gen.get_value(group_schema, group_key, group_rset_iter) for val_gen in value_generators]
+            value_list = [val_gen.get_value(grouped_record) for val_gen in value_generators]
             # convert column values to a record
             resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
             assert resp.success
@@ -614,7 +615,7 @@ class VirtualMachine(Visitor):
     # general principles:
     # 1) helpers should be able to handle null types
 
-    def get_schema(self, table_name) -> Schema:
+    def get_schema(self, table_name) -> SimpleSchema:
 
         if table_name.table_name.lower() == "catalog":
             return self.state_manager.get_catalog_schema()
@@ -681,7 +682,7 @@ class VirtualMachine(Visitor):
             assert resp.success
             record = resp.body
             # if an alias is defined
-            record = MultiRecord.from_single_simple_record(record, table_alias, rs_schema) if table_alias else record
+            record = ScopedRecord.from_single_simple_record(record, table_alias, rs_schema) if table_alias else record
 
             self.append_recordset(rsname, record)
             # advance cursor
@@ -759,12 +760,12 @@ class VirtualMachine(Visitor):
         if isinstance(operand, Token):
             if operand.type == "IDENTIFIER":
                 # check if we can resolve this
-                assert isinstance(record, Record)  # this may not needed, but this is what this logic is assuming
+                assert isinstance(record, SimpleRecord)  # this may not needed, but this is what this logic is assuming
                 if operand in record.values:
                     return Response(True, body=record.values[operand])
             elif operand.type == "SCOPED_IDENTIFIER":
                 # attempt resolve scoped identifier
-                assert isinstance(record, MultiRecord), f"Expected MultiRecord; received {type(record)}"
+                assert isinstance(record, ScopedRecord), f"Expected MultiRecord; received {type(record)}"
                 # this operand is <alias>.<column>
                 value = record.get(operand)
                 return Response(True, body=value)
@@ -843,7 +844,7 @@ class VirtualMachine(Visitor):
                 # for each left record we need to iterate over each right_record
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     if self.evaluate_condition(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
@@ -854,7 +855,7 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     if self.evaluate_condition(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
@@ -863,7 +864,7 @@ class VirtualMachine(Visitor):
                     # add a null right record
                     # create and join records
                     right_rec = create_null_record(right_schema)
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     self.append_recordset(rsname, record)
 
         elif join_clause.join_type == JoinType.RightOuter:
@@ -876,7 +877,7 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     if self.evaluate_condition(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
@@ -887,7 +888,7 @@ class VirtualMachine(Visitor):
                 if right_joined_index[index]:
                     continue
                 left_rec = create_null_record(left_schema)
-                record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                 self.append_recordset(rsname, record)
 
         elif join_clause.join_type == JoinType.FullOuter:
@@ -897,7 +898,7 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     if self.evaluate_condition(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
@@ -907,14 +908,14 @@ class VirtualMachine(Visitor):
                     # add a null right record
                     # create and join records
                     right_rec = create_null_record(right_schema)
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     self.append_recordset(rsname, record)
             # handle any un-joined right records
             for index, right_rec in self.recordset_iter(right_rsname):
                 if right_joined_index[index]:
                     continue
                 left_rec = create_null_record(left_schema)
-                record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                 self.append_recordset(rsname, record)
 
         else:
@@ -922,7 +923,7 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = MultiRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
                     self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
@@ -1103,7 +1104,7 @@ class VirtualMachine(Visitor):
         self.schemas[name] = schema
         return Response(True, body=name)
 
-    def get_recordset_schema(self, name: str) -> BaseSchema:
+    def get_recordset_schema(self, name: str) -> AbstractSchema:
         return self.schemas[name]
 
     def append_recordset(self, name: str, record):
@@ -1122,11 +1123,12 @@ class VirtualMachine(Visitor):
         """
         return iter(self.rsets[name])
 
-    def grouped_recordset_iter(self, name):
+    def grouped_recordset_iter(self, name) -> List[GroupedRecord]:
         """
         return a pair of (group_key, group_recordset_iterator)
         """
         # NOTE: cloning the group_rset, since it may need to be iterated multiple times
-        ret = [(group_key, list(group_rset)) for group_key, group_rset in self.grouprsets[name].items()]
+        ret = [GroupedRecord(self.schemas[name], group_key, list(group_rset))
+                 for group_key, group_rset in self.grouprsets[name].items()]
         return ret
 

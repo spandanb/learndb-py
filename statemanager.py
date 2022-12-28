@@ -6,7 +6,7 @@ and creating tables etc.
 
 from btree import Tree
 from pager import Pager
-from schema import Schema, CatalogSchema
+from schema import SimpleSchema, CatalogSchema
 
 
 class StateManager:
@@ -84,7 +84,7 @@ class StateManager:
     def register_tree(self, table_name: str, tree: Tree):
         self.trees[table_name] = tree
 
-    def register_schema(self, table_name: str, schema: Schema):
+    def register_schema(self, table_name: str, schema: SimpleSchema):
         self.schemas[table_name] = schema
 
     def get_catalog_schema(self):
