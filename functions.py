@@ -11,11 +11,14 @@ Functions declarations should apply to both, but only lang functions will have a
 Native functions will have a declaration.
 """
 
-from typing import List, Dict, Any, Callable, Type
+from typing import List, Dict, Any, Callable, Type, TypeVar
 
 
 from dataexchange import Response
 from datatypes import DataType, Integer, Float, Text, Blob
+
+
+T = TypeVar('T')
 
 
 class InvalidFunctionArguments(Exception):
@@ -28,7 +31,16 @@ class InvalidFunctionArguments(Exception):
 
 class FunctionDefinition:
     """
-    Represents a function definition.
+    Represents a function definition, for both scalar and aggregate functions.
+
+    :param func_name: name of function; not strictly needed; used for debugging
+    :param pos_params: list of positional arguments.
+        NOTE: a scalar function can accept multiple positional arguments,
+        while an aggregate function can accept only a single positional argument- a list of values (to operate on)
+    :param named_params:
+    :param func_body: callable function body
+    :param return_type: return type of function
+    :return:
 
     FUTURE_NOTE: Currently, pos_params are represented as a List[DataType].
     A named_params are represented as Dict[str, DataType], where the key is the param name.
@@ -38,12 +50,11 @@ class FunctionDefinition:
         e.g. NamedParam(arg_type: DataType, has_default_value: bool, default_value: Any)
     """
     def __init__(self,
-                 # used to make debugging easier
                  func_name: str,
                  pos_params: List[Type[DataType]],
                  named_params: Dict[str, Type[DataType]],
                  func_body: Callable,
-                 return_type: DataType):
+                 return_type: Type[DataType]):
         self.name = func_name
         self.pos_params = pos_params
         self.named_params = named_params
@@ -57,7 +68,7 @@ class FunctionDefinition:
         return self.__str__()
 
     @property
-    def return_type(self) -> DataType:
+    def return_type(self) -> Type[DataType]:
         return self._return_type
 
     def validate_args(self, pos_args: List[Any], named_args: Dict[str, Any]) -> Response:
@@ -102,7 +113,7 @@ class FunctionDefinition:
     def apply(self, pos_args: List[Any], named_args: Dict[str, Any]):
         """
         This models native functions, where each specific function
-        must override this method with function specific logic.
+        provides a callable `body`.
         For a function in leardb-sql, we will have to walk an AST.
 
         This accepts a list of `pos_args` and a dict of `named_args`
@@ -118,10 +129,9 @@ class FunctionDefinition:
         return self.body(*pos_args, **named_args)
 
 
-# function definition
+# scalar function definitions
 
-
-def number_square_function_body(x):
+def number_square_function_body(x: T) -> T:
     """
     Body for integer/float square
     """
@@ -137,6 +147,19 @@ float_square_function = FunctionDefinition(
 )
 
 
+# aggregate function definitions
+
+def value_count_function_body(values: List[Any]) -> int:
+    count = 0
+    for value in values:
+        count += 1
+    return count
+
+
+count_function = FunctionDefinition(
+    "integer_count", [Integer], {}, value_count_function_body, Integer
+)
+
 # if we have same function for integers and floats, we'll name the int function
 # with not qualifiers, and name the float function with _float qualifier
 _SCALAR_FUNCTION_REGISTRY = {
@@ -146,6 +169,7 @@ _SCALAR_FUNCTION_REGISTRY = {
 }
 
 _AGGREGATE_FUNCTION_REGISTRY = {
+    "count": count_function
 }
 
 
@@ -160,13 +184,20 @@ def resolve_function_name(name: str) -> FunctionDefinition:
     name = name.lower()
     if name in _SCALAR_FUNCTION_REGISTRY:
         return _SCALAR_FUNCTION_REGISTRY[name]
+    elif name in _AGGREGATE_FUNCTION_REGISTRY:
+        return _AGGREGATE_FUNCTION_REGISTRY[name]
 
     raise ValueError(f"Unable to find function [{name}]")
 
 
-def get_function_names_list() -> List[str]:
-    """Return list of all function names"""
+def get_scalar_functions_names() -> List[str]:
+    """Return list of all scalar function names"""
     return list(_SCALAR_FUNCTION_REGISTRY.keys())
+
+
+def get_aggregate_functions_names() -> List[str]:
+    """Return list of all aggregate function names"""
+    return list(_AGGREGATE_FUNCTION_REGISTRY.keys())
 
 
 def is_aggregate_function(func_name: str) -> bool:

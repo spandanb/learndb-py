@@ -31,11 +31,12 @@ class ColumnModifier(Enum):
     Nil = auto()  # no modifier - likely not needed
 
 
-class DataType(Enum):
+class SymbolicDataType(Enum):
     """
     Enums for system datatypes
-    NOTE: This represents data-types as understood by the parser. Which
-    maybe different from VM's notion of datatypes
+    NOTE: This represents data-types as understood by the parser; hence "Symbolic" suffix.
+    There is 1-1 correspondence to VM's notions of datatypes, which are datatypes we can
+    do algebra atop.
     """
     Integer = auto()
     Text = auto()
@@ -386,7 +387,7 @@ class FuncCall(Symbol):
 @dataclass
 class Literal(Symbol):
     value: Any
-    type: DataType
+    type: SymbolicDataType
 
 
 @dataclass
@@ -646,13 +647,13 @@ class ToAst3(Transformer):
         """
         datatype = args[0].lower()
         if datatype == "integer":
-            return DataType.Integer
+            return SymbolicDataType.Integer
         elif datatype == "real":
-            return DataType.Real
+            return SymbolicDataType.Real
         elif datatype == "text":
-            return DataType.Text
+            return SymbolicDataType.Text
         elif datatype == "blob":
-            return DataType.Blob
+            return SymbolicDataType.Blob
         else:
             raise ValueError(f"Unrecognized datatype [{datatype}]")
 
@@ -695,10 +696,10 @@ class ToAst3(Transformer):
         return ValueList(args)
 
     def INTEGER_NUMBER(self, arg):
-        return Literal(int(arg), DataType.Integer)
+        return Literal(int(arg), SymbolicDataType.Integer)
 
     def FLOAT_NUMBER(self, arg):
-        return Literal(float(arg), DataType.Float)
+        return Literal(float(arg), SymbolicDataType.Float)
 
     # comparison ops
 
@@ -724,7 +725,7 @@ class ToAst3(Transformer):
         # remove quotes
         assert arg[0] == "'" == arg[-1] or arg[0] == '"' == arg[-1]
         unquoted = arg[1:-1]
-        return Literal(unquoted, DataType.Text)
+        return Literal(unquoted, SymbolicDataType.Text)
 
     def MINUS(self, arg):
         return ArithmeticOp.Subtraction
