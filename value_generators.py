@@ -10,7 +10,7 @@ from typing import Any, Dict, List, NewType, Union
 from functions import FunctionDefinition
 from lang_parser.symbols3 import OrClause
 from vm_utilclasses import ExpressionInterpreter, NameRegistry
-from record_utils import Record, MultiRecord
+from record_utils import SimpleRecord, ScopedRecord, GroupedRecord
 from schema import GroupedSchema
 
 
@@ -121,7 +121,7 @@ class ValueGeneratorFromRecordOverExpr:
         self.or_clause = or_clause
         self.interpreter = interpreter
 
-    def get_value(self, record: Union[Record, MultiRecord]) -> Any:
+    def get_value(self, record: Union[SimpleRecord, ScopedRecord]) -> Any:
         """
         Evaluate the or_clause
         """
@@ -138,9 +138,9 @@ class ValueGeneratorFromRecordGroupOverExpr:
         self.or_clause = or_clause
         self.interpreter = interpreter
 
-    def get_value(self, schema: GroupedSchema, group_key, group_recordset_iter) -> Any:
+    def get_value(self, record: GroupedRecord) -> Any:
         """
 
         """
-        value = self.interpreter.evaluate_over_recordset(self.or_clause, schema, group_key, group_recordset_iter)
+        value = self.interpreter.evaluate_over_grouped_record(self.or_clause, record)
         return value

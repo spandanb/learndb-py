@@ -14,7 +14,6 @@ specified by the schema-, and related utilities are contained in record_utils.py
 from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
-# from lang_parser.tokens import TokenType, Token
 from lang_parser.symbols3 import TableName, SymbolicDataType, ColumnName
 from dataexchange import Response
 
@@ -36,9 +35,12 @@ class Column:
         return self.__str__()
 
 
-class BaseSchema:
+class AbstractSchema:
     """
-    Defines interface for all schema types to follow?
+    Defines interface for all schema types.
+
+    NOTE: this doesn't enforce that implementation classes implement all interface methods.
+    TODO: Consider formalizing the interface using abc.ABCMeta; see: https://realpython.com/python-interface/
     """
     @property
     def columns(self):
@@ -51,7 +53,7 @@ class BaseSchema:
         raise NotImplementedError
 
 
-class Schema(BaseSchema):
+class SimpleSchema(AbstractSchema):
     """
     Represents a schema. This includes
     logical aspects (name) and physical aspects
@@ -107,7 +109,7 @@ class Schema(BaseSchema):
         return self.get_column_by_name(name) is not None
 
 
-class ScopedSchema(BaseSchema):
+class ScopedSchema(AbstractSchema):
     """
     Represents a scoped (by table_alias) collection of schema
     """
@@ -118,13 +120,13 @@ class ScopedSchema(BaseSchema):
         return self.schemas.keys()
 
     @classmethod
-    def from_single_schema(cls, schema: Schema, alias: str):
+    def from_single_schema(cls, schema: SimpleSchema, alias: str):
         return cls({alias: schema})
 
     @classmethod
-    def from_schemas(cls, left_schema: Union[Schema, ScopedSchema], right_schema: Schema, left_alias: Optional[str],
+    def from_schemas(cls, left_schema: Union[SimpleSchema, ScopedSchema], right_schema: SimpleSchema, left_alias: Optional[str],
                      right_alias: str):
-        if isinstance(left_schema, Schema):
+        if isinstance(left_schema, SimpleSchema):
             assert left_alias is not None
             return cls({left_alias: left_schema, right_alias: right_schema})
         else:
@@ -152,11 +154,11 @@ class ScopedSchema(BaseSchema):
         return None
 
 
-class GroupedSchema(BaseSchema):
+class GroupedSchema(AbstractSchema):
     """
     Represents a grouped multi or simple schema
     """
-    def __init__(self, schema: Union[Schema, ScopedSchema], group_by_columns: List[ColumnName]):
+    def __init__(self, schema: Union[SimpleSchema, ScopedSchema], group_by_columns: List[ColumnName]):
         # all columns, i.e. group-by and non- group-by columns
         self.schema = schema
         # list of group-by columns, sorted by grouping order
@@ -178,8 +180,7 @@ class GroupedSchema(BaseSchema):
         return column is not None
 
 
-
-class CatalogSchema(Schema):
+class CatalogSchema(SimpleSchema):
     """
     Hardcoded schema object for the catalog table.
 
@@ -208,7 +209,7 @@ class CatalogSchema(Schema):
         ])
 
 
-def schema_to_ddl(schema: Schema) -> str:
+def schema_to_ddl(schema: SimpleSchema) -> str:
     """
     convert a schema to canonical ddl
 
@@ -241,7 +242,7 @@ def schema_to_ddl(schema: Schema) -> str:
     return f'CREATE TABLE {schema.name.table_name} ( {column_def_body} )'
 
 
-def validate_schema(schema: Schema) -> Response:
+def validate_schema(schema: SimpleSchema) -> Response:
     """
     Ensure schema is valid.
     A valid schema must have:
@@ -317,7 +318,7 @@ def generate_schema(create_stmnt) -> Response:
         column_name = coldef.column_name.name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
-    schema = Schema(name=create_stmnt.table_name, columns=columns)
+    schema = SimpleSchema(name=create_stmnt.table_name, columns=columns)
 
     # validate schema
     resp = validate_schema(schema)
@@ -330,7 +331,7 @@ def generate_unvalidated_schema(source_name: str, columns: List[Column]) -> Resp
     """Generate an unavalidate schema with argument `columns`
     This is used for output schema, which doesn't have primary key;
     TODO: apply any validations that do hold, e.g. column name uniqueness?"""
-    return Response(True, body=Schema(name=source_name, columns=columns))
+    return Response(True, body=SimpleSchema(name=source_name, columns=columns))
 
 
 def make_grouped_schema(schema, group_by_columns: List) -> Response:

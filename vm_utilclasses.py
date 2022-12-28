@@ -2,7 +2,7 @@
 Collection of classes
 """
 from enum import Enum, auto
-from typing import Any, Type, Tuple, Iterable, Union
+from typing import Any, Type, Tuple, Iterable, Optional, Union
 from lark import Token
 
 from dataexchange import Response
@@ -21,8 +21,8 @@ from lang_parser.symbols3 import (Symbol,
                                   FuncCall
                                   )
 from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
-from schema import Schema, ScopedSchema, GroupedSchema
-from record_utils import Record, MultiRecord
+from schema import SimpleSchema, ScopedSchema, GroupedSchema
+from record_utils import SimpleRecord, ScopedRecord, GroupedRecord
 
 
 class SemanticAnalysisError(Exception):
@@ -129,11 +129,7 @@ class ExpressionInterpreter(Visitor):
         self.name_registry = name_registry
         # mode determines whether this is evaluating an expr over a scalar record, or a grouped recordset
         self.mode = None
-        # NOTE: only one of `record`, or (`group_key`, `group_recordset`) will be set; this is controlled by eval_mode
-        self.schema: Union[Schema, ScopedSchema, GroupedSchema] = None
         self.record = None
-        self.group_key = None
-        self.group_recordset = None
 
     def set_record(self, record):
         self.name_registry.set_record(record)
@@ -148,25 +144,22 @@ class ExpressionInterpreter(Visitor):
         return_value = expr.accept(self)
         return return_value
 
-    def evaluate_over_record(self, expr: Symbol, schema, record: Union[Record, MultiRecord]) -> Any:
+    def evaluate_over_record(self, expr: Symbol, record: Union[SimpleRecord, ScopedRecord]) -> Any:
         """
         Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`
         """
         self.mode = EvalMode.Scalar
         self.name_registry.set_record(record)
-        self.schema = schema
         self.record = record
         return self.evaluate(expr)
 
-    def evaluate_over_recordset(self, expr: Symbol, schema: GroupedSchema, group_key: Tuple,
-                                group_recordset_iter: Iterable):
+    def evaluate_over_grouped_record(self, expr: Symbol, record: GroupedRecord):
         """
         Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`
         """
         self.mode = EvalMode.Grouped
-        self.schema = schema
-        self.group_key = group_key
-        self.group_recordset = group_recordset_iter
+        self.name_registry.set_record(record)
+        self.record = record
         return self.evaluate(expr)
 
     # section: other public utils
