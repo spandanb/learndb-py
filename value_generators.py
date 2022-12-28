@@ -10,6 +10,8 @@ from typing import Any, Dict, List, NewType, Union
 from functions import FunctionDefinition
 from lang_parser.symbols3 import OrClause
 from vm_utilclasses import ExpressionInterpreter, NameRegistry
+from record_utils import Record, MultiRecord
+from schema import GroupedSchema
 
 
 @dataclass
@@ -39,6 +41,8 @@ class ValueExtractorFromRecord:
     """
     This is a simplified form of ValueGeneratorFromRecord of, which
     extracts a single column value, i.e. without any transformation
+
+    TODO: nuke if this is covered by ValueGeneratorFromRecordOverExpr
     """
     def __init__(self, pos_arg: SelectableAtom):
         self.pos_arg = pos_arg
@@ -62,6 +66,8 @@ class ValueGeneratorFromRecordOverFunc:
     or
 
     select upper(cola) from foo
+
+    TODO: nuke if this is covered by ValueGeneratorFromRecordOverExpr
 
     """
 
@@ -106,31 +112,35 @@ class ValueGeneratorFromRecordOverFunc:
 
 class ValueGeneratorFromRecordOverExpr:
     """
-    Generate value from record, where the value is an expr over column and literal.
-    This generalizes the
+    Generate value from a single record. Where the value is the result of evaluating an expr.
+    The expr can be composed of column refs, literals, function calls, and algebraic combinations of these.
+
+    This generalizes the ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord
     """
     def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
         self.or_clause = or_clause
         self.interpreter = interpreter
 
-    def get_value(self, record) -> Any:
+    def get_value(self, record: Union[Record, MultiRecord]) -> Any:
         """
         Evaluate the or_clause
         """
-        value = self.interpreter.evaluate_over_record(self.or_clause, record)
+        value = self.interpreter.evaluate_over_record(self.or_clause, record.schema, record)
         return value
 
 
 class ValueGeneratorFromRecordGroupOverExpr:
-
+    """
+    Generate value from pair of group_key, and recordset for record group. Where the value is the result of evaluating an expr.
+    The expr can be composed of column refs, literals, function calls, and algebraic combinations of these.
+    """
     def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
         self.or_clause = or_clause
         self.interpreter = interpreter
 
-    def get_value(self, group_key, group_recordset_iter) -> Any:
+    def get_value(self, schema: GroupedSchema, group_key, group_recordset_iter) -> Any:
         """
 
         """
-        # TODO:
-        value = self.interpreter.evaluate_over_recordset(self.or_clause, group_key, group_recordset_iter)
+        value = self.interpreter.evaluate_over_recordset(self.or_clause, schema, group_key, group_recordset_iter)
         return value

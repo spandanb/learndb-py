@@ -15,7 +15,7 @@ from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
 # from lang_parser.tokens import TokenType, Token
-from lang_parser.symbols3 import TableName, DataType as SymbolDataType  # renaming to avoid ambiguity with actual datatypes
+from lang_parser.symbols3 import TableName, SymbolicDataType, ColumnName
 from dataexchange import Response
 
 
@@ -83,7 +83,7 @@ class Schema(BaseSchema):
     def __repr__(self):
         return str(self)
 
-    def get_primary_key_column(self) -> str:
+    def get_primary_key_column(self) -> Optional[str]:
         """
         return column name of primary key column
         :return:
@@ -156,20 +156,27 @@ class GroupedSchema(BaseSchema):
     """
     Represents a grouped multi or simple schema
     """
-    def __init__(self, schema: Union[Schema, ScopedSchema], group_by_columns):
+    def __init__(self, schema: Union[Schema, ScopedSchema], group_by_columns: List[ColumnName]):
+        # all columns, i.e. group-by and non- group-by columns
         self.schema = schema
+        # list of group-by columns, sorted by grouping order
         self.group_by_columns = group_by_columns
 
     @property
     def columns(self):
         return self.schema.columns
 
-    def get_column_by_name(self, name) -> Column:
+    def get_column_by_name(self, name) -> Optional[Column]:
         name = name.lower()
         for column in self.columns:
             if column.name.lower() == name:
                 return column
         return None
+
+    def has_column(self, name) -> bool:
+        column = self.get_column_by_name(name)
+        return column is not None
+
 
 
 class CatalogSchema(Schema):
@@ -280,13 +287,13 @@ def token_to_datatype(datatype: DataType) -> Response:
     :param datatype_token:
     :return:
     """
-    if datatype == SymbolDataType.Integer:
+    if datatype == SymbolicDataType.Integer:
         return Response(True, body=Integer)
-    elif datatype == SymbolDataType.Text:
+    elif datatype == SymbolicDataType.Text:
         return Response(True, body=Text)
-    elif datatype == SymbolDataType.Blob:
+    elif datatype == SymbolicDataType.Blob:
         return Response(True, body=Blob)
-    elif datatype == SymbolDataType.Real:
+    elif datatype == SymbolicDataType.Real:
         return Response(True, body=Float)
     return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
 

@@ -2,9 +2,12 @@
 Contains classes used for data exchange, i.e.
 do not have any "compute" methods.
 """
-from typing import Any
+from typing import Any, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum, auto
+
+# This is used to parameterize Response type as per: https://stackoverflow.com/a/42989302
+T = TypeVar('T')
 
 
 # section result enums
@@ -36,7 +39,7 @@ class StatementType(Enum):
 
 
 @dataclass
-class Response:
+class Response(Generic[T]):
     """
     Use as a generic class to encapsulate a response and a body
     """
@@ -47,7 +50,7 @@ class Response:
     # an enum encoding state
     status: Any = None
     # output of operation
-    body: Any = None
+    body: T = None
 
     def __str__(self):
         if self.error_message:

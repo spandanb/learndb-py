@@ -2,7 +2,7 @@
 Collection of classes
 """
 from enum import Enum, auto
-from typing import Any, Type
+from typing import Any, Type, Tuple, Iterable, Union
 from lark import Token
 
 from dataexchange import Response
@@ -15,12 +15,13 @@ from lang_parser.symbols3 import (Symbol,
                                   ComparisonOp,
                                   Comparison,
                                   Literal,
-                                  DataType as SymbolicDataType,
+                                  SymbolicDataType as SymbolicDataType,
                                   BinaryArithmeticOperation,
                                   ArithmeticOp,
                                   FuncCall
                                   )
-from functions import get_function_names_list, resolve_function_name
+from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
+from schema import Schema, ScopedSchema, GroupedSchema
 from record_utils import Record, MultiRecord
 
 
@@ -28,24 +29,45 @@ class SemanticAnalysisError(Exception):
     pass
 
 
+class EvalMode(Enum):
+    Scalar = auto()
+    Grouped = auto()
+
+
+def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataType]:
+    """
+    Convert symbols.DataType to datatypes.DataType
+    """
+    if data_type == SymbolicDataType.Integer:
+        return Integer
+    elif data_type == SymbolicDataType.Real:
+        return Float
+    elif data_type == SymbolicDataType.Blob:
+        return Blob
+    elif data_type == SymbolicDataType.Text:
+        return Text
+    else:
+        raise Exception(f"Unknown type {data_type}")
+
 
 class NameRegistry:
     """
-    This should be the interface for registering and resolving names.
+    The interface/object responsible for registering and resolving names.
     Name resolutions is done over column names from: 1) a schema, 2) a record
 
     For now, this will mirror methods, exposed by the VM, to resolve names,
     so that this object can be passed instead of the VM.
-    Perhaps, later all name registry and resolution logic can be moved here.
+    TODO: move all (from VM) name registry and resolution logic here.
     """
 
     def __init__(self):
-        #
+        # record used to resolve values
         self.record = None
         # schema to resolve names from
         self.schema = None
         # register names of all functions
-        self.functions = set(get_function_names_list())
+        self.scalar_functions = set(get_scalar_functions_names())
+        self.aggregate_functions = set(get_aggregate_functions_names())
 
     def set_record(self, record):
         self.record = record
@@ -67,7 +89,7 @@ class NameRegistry:
     def resolve_name(self, operand) -> Response:
         """
         This is only valid if called on a name, i.e. is_name(operand) == True.
-        Note: This returns Response to distiguish resolve failed, from resolved to None
+        Note: This returns Response to distinguish resolve failed, from resolved to None
         """
         if isinstance(operand, ColumnName):
             val = self.record.get(operand.name)
@@ -86,7 +108,9 @@ class NameRegistry:
         """
         Resolve the func_name.
         """
-        if func_name in self.functions:
+        if func_name in self.scalar_functions:
+            return Response(True, body=resolve_function_name(func_name))
+        if func_name in self.aggregate_functions:
             return Response(True, body=resolve_function_name(func_name))
         return Response(False, error_message=f"Function [{func_name}] not found")
 
@@ -100,12 +124,16 @@ class ExpressionInterpreter(Visitor):
     evaluating expressions to value, to booleans, determining expression type, and other utils like stringify exprs.
 
     TODO: consolidate all expr evaluation logic here
-    TODO: since semantic analyzer handles type checking, remove support for InterpreterMode.EvalType; likely mode can
-    itself be removed, since I can enforce only booleans for conditions.
     """
     def __init__(self, name_registry: NameRegistry):
         self.name_registry = name_registry
+        # mode determines whether this is evaluating an expr over a scalar record, or a grouped recordset
+        self.mode = None
+        # NOTE: only one of `record`, or (`group_key`, `group_recordset`) will be set; this is controlled by eval_mode
+        self.schema: Union[Schema, ScopedSchema, GroupedSchema] = None
         self.record = None
+        self.group_key = None
+        self.group_recordset = None
 
     def set_record(self, record):
         self.name_registry.set_record(record)
@@ -120,13 +148,26 @@ class ExpressionInterpreter(Visitor):
         return_value = expr.accept(self)
         return return_value
 
-    def evaluate_over_record(self, expr: Symbol, record) -> Any:
-        self.set_record(record)
+    def evaluate_over_record(self, expr: Symbol, schema, record: Union[Record, MultiRecord]) -> Any:
+        """
+        Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`
+        """
+        self.mode = EvalMode.Scalar
+        self.name_registry.set_record(record)
+        self.schema = schema
+        self.record = record
         return self.evaluate(expr)
 
-    def evaluate_over_recordset(self, expr: Symbol, group_key, group_recordset_iter):
-        # TODO implement me
-        raise NotImplementedError
+    def evaluate_over_recordset(self, expr: Symbol, schema: GroupedSchema, group_key: Tuple,
+                                group_recordset_iter: Iterable):
+        """
+        Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`
+        """
+        self.mode = EvalMode.Grouped
+        self.schema = schema
+        self.group_key = group_key
+        self.group_recordset = group_recordset_iter
+        return self.evaluate(expr)
 
     # section: other public utils
 
@@ -230,12 +271,19 @@ class ExpressionInterpreter(Visitor):
         return func.apply(evaluated_pos_arg, {})
 
     def visit_column_name(self, column: ColumnName) -> Any:
-        val = self.record.get(column.name)
+        if self.mode == EvalMode.Scalar:
+            val = self.record.get(column.name)
+        else:
+            # aggregate mode
+            assert self.mode == EvalMode.Grouped
+            # TODO: resolve value
+            val = None
+            breakpoint()
         return val
 
     def visit_literal(self, literal: Literal) -> Any:
         # convert symbolic type to actual type object
-        data_type = self.symbol_to_actual_datatype(literal.type)
+        data_type = datatype_from_symbolic_datatype(literal.type)
         assert is_term_valid_for_datatype(data_type, literal.value)
         return literal.value
 
@@ -247,20 +295,7 @@ class ExpressionInterpreter(Visitor):
         """
         breakpoint()
 
-    def symbol_to_actual_datatype(self, data_type: SymbolicDataType) -> Type[DataType]:
-        """
-        Convert symbols.DataType to datatypes.DataType
-        """
-        if data_type == SymbolicDataType.Integer:
-            return Integer
-        elif data_type == SymbolicDataType.Real:
-            return Float
-        elif data_type == SymbolicDataType.Blob:
-            return Blob
-        elif data_type == SymbolicDataType.Text:
-            return Text
-        else:
-            raise Exception(f"Unknown type {data_type}")
+
 
 
 class SemanticAnalyzer(Visitor):
@@ -292,7 +327,7 @@ class SemanticAnalyzer(Visitor):
         except SemanticAnalysisError:
             return Response(False, error_message=self.error_message)
 
-    def evaluate(self, expr: Symbol) -> Any:
+    def evaluate(self, expr: Symbol) -> Type[DataType]:
         return_value = expr.accept(self)
         return return_value
 
@@ -336,7 +371,7 @@ class SemanticAnalyzer(Visitor):
         # for now, we will only support strict type checking, i.e.
         if op1_type != op2_type:
             self.error_message = (f"Type mismatch; {operation.operand1} is of type {op1_type}; "
-                                 f"{operation.operand2} is of type {op2_type}")
+                                  f"{operation.operand2} is of type {op2_type}")
             raise SemanticAnalysisError()
         return op1_type
 
@@ -357,5 +392,7 @@ class SemanticAnalyzer(Visitor):
         self.error_message = f"Name registry failed to resolve column [{column_name}] due to: [{resp.error_message}]"
         raise SemanticAnalysisError()
 
+    def visit_literal(self, literal: Literal) -> Type[DataType]:
+        return datatype_from_symbolic_datatype(literal.type)
 
 

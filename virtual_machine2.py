@@ -408,6 +408,7 @@ class VirtualMachine(Visitor):
         """
         out_columns = []
         for selectable in selectables:
+            # TODO: with the refactor of grammar; doesn't look like we'll hit anything but selectable: OrClause
             if isinstance(selectable, FuncCall):
                 # find target type
                 # 1.1.1. only aggregation functions can be used
@@ -425,7 +426,7 @@ class VirtualMachine(Visitor):
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
                 resp = self.type_checker.analyze(selectable)
-                assert resp.success
+                assert resp.success, resp.error_message
                 expr_type = resp.body
                 out_column = Column(expr_name, expr_type)
                 out_columns.append(out_column)
@@ -538,7 +539,9 @@ class VirtualMachine(Visitor):
         # populate output resultset
         for group_key, group_rset_iter in self.grouped_recordset_iter(source_rsname):
             # get value, one for each output column
-            value_list = [val_gen.get_value(group_key, group_rset_iter) for val_gen in value_generators]
+            group_schema = self.schemas[source_rsname]
+            assert isinstance(group_schema, GroupedSchema)
+            value_list = [val_gen.get_value(group_schema, group_key, group_rset_iter) for val_gen in value_generators]
             # convert column values to a record
             resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
             assert resp.success
@@ -1123,5 +1126,7 @@ class VirtualMachine(Visitor):
         """
         return a pair of (group_key, group_recordset_iterator)
         """
-        return [(group_key, iter(group_rset)) for group_key, group_rset in self.grouprsets[name].items()]
+        # NOTE: cloning the group_rset, since it may need to be iterated multiple times
+        ret = [(group_key, list(group_rset)) for group_key, group_rset in self.grouprsets[name].items()]
+        return ret
 
