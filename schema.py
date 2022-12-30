@@ -176,8 +176,21 @@ class GroupedSchema(AbstractSchema):
         return None
 
     def has_column(self, name) -> bool:
+        # todo: consider caching this
         column = self.get_column_by_name(name)
         return column is not None
+
+    def is_non_grouping_column(self, name: str) -> bool:
+        """Return True if `column_name` is a non-grouping column"""
+        return self.has_column(name) and not self.is_grouping_column(name)
+
+    def is_grouping_column(self, name: str) -> bool:
+        """Return True if `column_name` is a grouping column"""
+        name = name.lower()
+        for column in self.group_by_columns:
+            if name == column.name.lower():
+                return True
+        return False
 
 
 class CatalogSchema(SimpleSchema):

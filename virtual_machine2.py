@@ -2,7 +2,7 @@
 Rewrite of virtual machine class.
 This focuses on select execution- later merge
 the rest of the logic from the old VM in here
-
+TODO: rename virtual_machine.py
 """
 import logging
 import random
@@ -310,6 +310,10 @@ class VirtualMachine(Visitor):
                 rsname = resp.body
 
         # 6. handle select columns
+        # NOTE: this explicity sets the schema to resolve column names from;
+        # another approach, would be for the name_registry to be initialized with the
+        # StateManager, and then the NameRegistry could get any schema it needed. However, this would
+        # additionally require a way to register joined recordsets, and groupedrecordsets to the StateManager
         self.name_registry.set_schema(self.get_recordset_schema(rsname))
         resp = self.evaluate_select_clause(stmnt.select_clause, rsname)
         assert resp.success
@@ -390,7 +394,7 @@ class VirtualMachine(Visitor):
                 assert isinstance(selectable, OrClause)
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
-                resp = self.type_checker.analyze(selectable)
+                resp = self.type_checker.analyze_scalar(selectable, source_schema)
                 assert resp.success
                 expr_type = resp.body
                 out_column = Column(expr_name, expr_type)
@@ -426,7 +430,7 @@ class VirtualMachine(Visitor):
                 assert isinstance(selectable, OrClause)
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
-                resp = self.type_checker.analyze(selectable)
+                resp = self.type_checker.analyze_grouped(selectable, source_schema)
                 assert resp.success, resp.error_message
                 expr_type = resp.body
                 out_column = Column(expr_name, expr_type)

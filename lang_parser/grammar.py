@@ -49,6 +49,7 @@ GRAMMAR = '''
         //expr             : condition | column_name | func_call
 
         // this is the de-facto root of the expression hierarchy
+        // todo: consider making an actual expr element to represent the hierarchy
         condition        : or_clause
         or_clause        : and_clause
                          | or_clause "or"i and_clause
@@ -76,6 +77,7 @@ GRAMMAR = '''
                          | "(" select_stmnt ")"
                          | column_name
                          | func_call
+                         | or_clause 
                                                                                    
         // nuke (expr here)
         //expr           : literal | predicate | func_call 
