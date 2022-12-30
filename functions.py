@@ -157,7 +157,7 @@ def value_count_function_body(values: List[Any]) -> int:
 
 
 count_function = FunctionDefinition(
-    "integer_count", [Integer], {}, value_count_function_body, Integer
+    "count", [Integer], {}, value_count_function_body, Integer
 )
 
 # if we have same function for integers and floats, we'll name the int function

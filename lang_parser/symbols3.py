@@ -1,10 +1,13 @@
+from __future__ import annotations
 import abc
 
 import os
 from lark import Lark, Transformer, Tree, v_args, ast_utils
 from enum import Enum, auto
-from typing import Any, List, Union, Optional
+from typing import Any, List, Union, Optional, Type
 from dataclasses import dataclass
+from collections import deque
+from collections.abc import Iterable
 
 import datatypes
 from .visitor import Visitor
@@ -142,6 +145,31 @@ class Symbol(ast_utils.Ast):
 
     def prettystr(self) -> str:
         return "".join(self.prettyprint())
+
+    def find_descendents(self, descendent_type: Type[Symbol]) -> List:
+        """
+        Search through all descendents via BFS
+        and return list of matches.
+        """
+        matches = []
+
+        queue = deque()
+        queue.append(self)
+        while queue:
+            node = queue.popleft()
+            if isinstance(node, descendent_type):
+                matches.append(node)
+            # iterate over children
+            for attr_name in dir(node):
+                attr = getattr(node, attr_name)
+                if isinstance(attr, Symbol):
+                    queue.append(attr)
+                if isinstance(attr, Iterable):
+                    for element in attr:
+                        if isinstance(element, Symbol):
+                            queue.append(element)
+
+        return matches
 
 
 # create statement
