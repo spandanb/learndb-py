@@ -4,12 +4,19 @@ Contains definitions and utilities to create and modifies Records.
 Records are data containing objects that conform to a schema.
 # TODO: should this module be called `record.py`
 """
-from typing import List, Optional, Union, Tuple
+from typing import Any, List, Optional, Union, Tuple
 from lark import Token
 
 from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList, Literal
 from dataexchange import Response
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
+
+
+class UnaggregatedGetOnUngroupedColumn(Exception):
+    """
+    Trying to access an ungrouped column without a reducing aggregate function
+    """
+    pass
 
 
 class AbstractRecord:
@@ -21,7 +28,7 @@ class AbstractRecord:
     def get(self, column: str):
         raise NotImplementedError
 
-    def contains(self, column: str) -> bool:
+    def has_columns(self, column: str) -> bool:
         raise NotImplementedError
 
 
@@ -64,7 +71,7 @@ class SimpleRecord(AbstractRecord):
         """
         return self.values[column.lower()]
 
-    def contains(self, column: str) -> bool:
+    def has_columns(self, column: str) -> bool:
         """
         check whether record has column
 
@@ -137,7 +144,7 @@ class ScopedRecord(AbstractRecord):
         record = self.names[table]
         return record.get(column)
 
-    def contains(self, *args):
+    def has_columns(self, *args):
         """
         Intended to mimick simple
         """
@@ -159,14 +166,35 @@ class GroupedRecord(AbstractRecord):
     suffix since it implements the Record interface.
     """
 
-    def __init__(self, schema: GroupedSchema, group_key: Tuple, group_recordset: List):
-        pass
+    def __init__(self, schema: GroupedSchema, group_key: Tuple, group_recordset: List[Union[SimpleRecord, ScopedRecord]]):
+        self.schema = schema
+        self.group_key = group_key
+        self.group_recordset = group_recordset
 
-    def contains(self, column: str) -> bool:
-        breakpoint()
+    def has_columns(self, column: str) -> bool:
+        return self.schema.has_column()
 
-    def get(self, column: str):
-        breakpoint()
+    def get(self, column: str) -> Any:
+        """
+        Return value of grouped `column` from record
+        """
+        # determine if `column` is a grouping column
+        column = column.lower()
+        for idx, group_column in enumerate(self.schema.group_by_columns):
+            if group_column.name == column:
+                return self.group_key[idx]
+
+        if self.schema.has_column(column):
+            raise UnaggregatedGetOnUngroupedColumn(f"Expected grouping column, received non-grouping column: [{column}]")
+
+        return None
+
+    def recordset_to_values(self, column_name: str) -> List[Any]:
+        """
+        Generate list of column values from group_recordset.
+        """
+        return [record.get(column_name) for record in self.group_recordset]
+
 
 
 def join_records(left_record: Union[SimpleRecord, ScopedRecord], right_record: Union[SimpleRecord, ScopedRecord],

@@ -37,8 +37,6 @@ class SemanticAnalysisFailure(Enum):
     FunctionMismatch = auto()
 
 
-
-
 class EvalMode(Enum):
     Scalar = auto()
     Grouped = auto()
@@ -58,6 +56,7 @@ def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataTyp
         return Text
     else:
         raise Exception(f"Unknown type {data_type}")
+
 
 
 class NameRegistry:
@@ -186,6 +185,7 @@ class ExpressionInterpreter(Visitor):
     # section: other public utils
 
     def stringify(self, expr: OrClause) -> str:
+        # TODO: if is a single column, return column name; else return stringified `expr`
         return str(expr)
 
     # section: visit methods
@@ -275,12 +275,15 @@ class ExpressionInterpreter(Visitor):
                 return op1_value / op2_value
 
     def visit_func_call(self, func_call: FuncCall):
-        # get function
-        resp = self.name_registry.resolve_func_name(func_call.name)
-        assert resp.success
-        func = resp.body
-        # evaluate any arguments
+        """
+        Evaluate
+        """
         if self.mode == EvalMode.Scalar:
+            # get function
+            resp = self.name_registry.resolve_scalar_func_name(func_call.name)
+            assert resp.success
+            func = resp.body
+
             # NOTE: for scalar case the args may be expressions, e.g. square(col_a + 1)
             # and hence should be evaluated before applying the function
             evaluated_pos_arg = [self.evaluate(arg) for arg in func_call.args]
@@ -289,16 +292,25 @@ class ExpressionInterpreter(Visitor):
         else:
             # NOTE: for grouped case, we need to handle 2 cases:
             # case 1) scalar function over grouped column; this is the same as the scalar case
+            resp = self.name_registry.resolve_scalar_func_name(func_call.name)
+            if resp.success:
+                func = resp.body
+                evaluated_pos_arg = [self.evaluate(arg) for arg in func_call.args]
+                # NOTE: we currently only support positional args
+                return func.apply(evaluated_pos_arg, {})
+
             # case 2) aggregate function over non-grouped column; here the function should accept
             # only a single argument, i.e. column name, of non-grouped column.
             # This is because, semantically, for currently supported aggregate functions, i.e.
-            # min, max, count, etc, it's unclear what multiple arguments could mean.
-
-            assert len(func_call.args) == 1
-            assert isinstance(func_call.args[0], ColumnName)
-            # TODO: ensure SemanticAnalyzer enforces the above, so I can handle the above assertion more systematically
-            breakpoint()
-            raise NotImplementedError
+            # min, max, count, etc, it's unclear what multiple arguments could mean, and is hence unsupported.
+            resp = self.name_registry.resolve_aggregate_func_name(func_call.name)
+            assert resp.success  # NOTE: this has been confirmed by SemanticAnalyzer
+            func = resp.body
+            arg_column_name = func_call.args[0].name
+            # get list of column values from recordset
+            value_list = self.record.recordset_to_values(arg_column_name)
+            # wrap value list, since agg function expects a list of pos args, where first arg is value list
+            return func.apply([value_list], {})
 
     def visit_column_name(self, column: ColumnName) -> Any:
         val = self.record.get(column.name)
@@ -474,7 +486,7 @@ class SemanticAnalyzer(Visitor):
 
                 column_arg = func_call.args[0]
                 column_name = column_arg.name
-                if self.schema.has_column(column_name):
+                if not self.schema.has_column(column_name):
                     self.failure_type = SemanticAnalysisFailure.ColumnDoesNotExist
                     self.error_message = f"column does not exist [{column_name}]"
                     raise SemanticAnalysisError()
