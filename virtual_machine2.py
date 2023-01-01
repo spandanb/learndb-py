@@ -418,7 +418,8 @@ class VirtualMachine(Visitor):
                 # find target type
                 # 1.1.1. only aggregation functions can be used
                 func = selectable
-                # TODO: perhaps checking whether func is agg should be rolled up under SemanticAnalyzer
+                # TODO: this check is already rolled up under SemanticAnalyzer; perhaps this check as well is_agg_func
+                #  should be removed
                 assert self.is_agg_func(func.name)
                 func_def = resolve_function_name(func.name)
                 oname = f"{func.name}_{func.args[0].name}"

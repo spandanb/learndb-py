@@ -623,6 +623,23 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
     Experiment with this.
 
--
+
+12/19
+    Fixed grammar issue.
+
+    How should AggregateFunctions be modelled.
+    How should interpreter.evaluate_over_recordset()
+
+12/29
+    - Adding more checks into the SemanticAnalyzer, e.g. aggregate functions should only be called on non-grouping columns
+
+    - Do I need to merge NameRegistry with StateManager?
+      Specifically, the stateManager has the schema for all tables. Otherwise, the NameRegistry needs to be explicitly
+      be passed each schema. But on the flip side, the StateManager has a drawback, in that joined recordset schema is not
+      registered withe StateManager.
+
+12/31
+    - The ExpressionInterpreter.stringify should simplify an Or_Clause expr to a column name, if that's all it contains for
+    better user consumptions. Should this be implemented in a broad way, i.e. the AST is trimmed thus.
 
 

@@ -11,7 +11,7 @@ Functions declarations should apply to both, but only lang functions will have a
 Native functions will have a declaration.
 """
 
-from typing import List, Dict, Any, Callable, Type, TypeVar
+from typing import List, Dict, Any, Callable, Type, TypeVar, Union
 
 
 from dataexchange import Response
@@ -51,7 +51,7 @@ class FunctionDefinition:
     """
     def __init__(self,
                  func_name: str,
-                 pos_params: List[Type[DataType]],
+                 pos_params: List[Union[Type[DataType], List[Type[DataType]]]],
                  named_params: Dict[str, Type[DataType]],
                  func_body: Callable,
                  return_type: Type[DataType]):
@@ -84,13 +84,26 @@ class FunctionDefinition:
         # 1.1. check arity- positional params are all required
         if len(pos_args) != len(self.pos_params):
             return Response(False, error_message=f"Arity mismatch between expected positional params [{len(pos_args)}] "
-                                                 f"and received args [{self.pos_params}]")
+                                                 f"and received args [{len(self.pos_params)}]")
         # 1.2. validate types
         for idx, arg in enumerate(pos_args):
             param = self.pos_params[idx]
-            # arg is a literal
-            if not param.is_valid_term(arg):
-                return Response(False, error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
+            # 1.2.1. collection type
+            if isinstance(param, list):
+                # not sure if this is the best check, since param may be an collection type
+                # but checking for Iterable might catch false positive, which are atom but iterable, e.g. strings
+                for item in param:
+                    # check each item in the collection
+                    for value in arg:
+                        if not item.is_valid_term(value):
+                            return Response(False,
+                                            error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
+                
+                                                          f"Expected argument of type [{item.typename}]")
+            else:
+                # 1.2.2. arg is a literal
+                if not param.is_valid_term(arg):
+                    return Response(False, error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
                                                      f"Expected argument of type [{param.typename}]")
 
         # 2. validate named params
@@ -157,7 +170,7 @@ def value_count_function_body(values: List[Any]) -> int:
 
 
 count_function = FunctionDefinition(
-    "count", [Integer], {}, value_count_function_body, Integer
+    "count", [[Integer]], {}, value_count_function_body, Integer
 )
 
 # if we have same function for integers and floats, we'll name the int function
