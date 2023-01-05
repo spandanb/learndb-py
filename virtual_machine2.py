@@ -41,7 +41,8 @@ from lang_parser.symbols3 import (
     SelectClause,
     FuncCall,
     ColumnName,
-    OrClause
+    OrClause,
+    Literal
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -60,7 +61,7 @@ from record_utils import (
 from value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
                               ValueGeneratorFromRecordOverExpr,
                               ValueGeneratorFromRecordGroupOverExpr)
-from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer
+from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer, datatype_from_symbolic_datatype
 
 logger = logging.getLogger(__name__)
 
@@ -382,11 +383,17 @@ class VirtualMachine(Visitor):
                 # find target type
                 # 1.1.1. only scalar functions can be used
                 func = selectable
-                # TODO: perhaps checking whether func is scalar should be rolled up under SemanticAnalyzer
-                assert self.is_scalar_func(func.name)
                 func_def = resolve_function_name(func.name)
                 oname = f"{func.name}_{func.args[0].name}"
                 out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, ColumnName):
+                resp = self.type_checker.analyze_scalar(selectable, source_schema)
+                assert resp.success
+                out_column = Column(selectable.name, resp.body)
+                out_columns.append(out_column)
+            elif isinstance(selectable, Literal):
+                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
                 out_columns.append(out_column)
             else:
                 # selectable is some expr, represented as an instance of `OrClause`-
@@ -395,7 +402,7 @@ class VirtualMachine(Visitor):
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
                 resp = self.type_checker.analyze_scalar(selectable, source_schema)
-                assert resp.success
+                assert resp.success, resp.error_message
                 expr_type = resp.body
                 out_column = Column(expr_name, expr_type)
                 out_columns.append(out_column)
@@ -413,17 +420,24 @@ class VirtualMachine(Visitor):
         """
         out_columns = []
         for selectable in selectables:
-            # TODO: with the refactor of grammar; doesn't look like we'll hit anything but selectable: OrClause
+            # the parser attempts to simplify exprs without arithmetic or logical operations to a single primitive
+            # i.e. either FuncCall, ColumnName, or Literal; hence we need to handle these specific cases
             if isinstance(selectable, FuncCall):
                 # find target type
                 # 1.1.1. only aggregation functions can be used
                 func = selectable
-                # TODO: this check is already rolled up under SemanticAnalyzer; perhaps this check as well is_agg_func
-                #  should be removed
-                assert self.is_agg_func(func.name)
                 func_def = resolve_function_name(func.name)
                 oname = f"{func.name}_{func.args[0].name}"
                 out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, ColumnName):
+                resp = self.type_checker.analyze_grouped(selectable, source_schema)
+                assert resp.success, resp.error_message
+                column_type = resp.body
+                out_column = Column(selectable.name, column_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, Literal):
+                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
                 out_columns.append(out_column)
             else:
                 # selectable is some expr, represented as an instance of `OrClause`-
@@ -451,13 +465,11 @@ class VirtualMachine(Visitor):
         generators = []
         for selectable in selectables:
             if isinstance(selectable, FuncCall):
-                # NOTE: this only exists
-                func = resolve_function_name(selectable.name)
-                # TODO: check this is a scalar function
-                generators.append(ValueGeneratorFromRecordOverFunc(selectable.args, {}, func))
+                generators.append(ValueGeneratorFromRecordOverFunc(selectable, self.interpreter))
             elif isinstance(selectable, ColumnName):
-                # TODO: nuke if unused; seems this should be replaced by clause below
-                generators.append(ValueExtractorFromRecord(selectable.name))
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+            elif isinstance(selectable, Literal):
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
             else:
                 # expression, i.e. default it's default root OrClause
                 assert isinstance(selectable, OrClause)

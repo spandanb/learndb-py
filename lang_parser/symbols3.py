@@ -4,7 +4,7 @@ import abc
 import os
 from lark import Lark, Transformer, Tree, v_args, ast_utils
 from enum import Enum, auto
-from typing import Any, List, Union, Optional, Type
+from typing import Any, List, Union, Optional, Type, Tuple
 from dataclasses import dataclass
 from collections import deque
 from collections.abc import Iterable
@@ -146,10 +146,12 @@ class Symbol(ast_utils.Ast):
     def prettystr(self) -> str:
         return "".join(self.prettyprint())
 
-    def find_descendents(self, descendent_type: Type[Symbol]) -> List:
+    def find_descendents(self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]] ) -> List:
         """
         Search through all descendents via BFS
         and return list of matches.
+
+        :param descendent_type: this can be single type or a tuple of types
         """
         matches = []
 
@@ -563,7 +565,23 @@ class ToAst3(Transformer):
 
     def condition(self, args):
         assert len(args) == 1 and isinstance(args[0], OrClause)
-        return args[0]
+        return self.simplify_or_clause(args[0])
+
+    @staticmethod
+    def simplify_or_clause(or_clause: OrClause):
+        """
+        Utility method to simplify `or_clause`. Simplify means that if `or_clause`
+        contains only a single primitive (literal or reference), i.e. without any logical
+        or arithmetic operations, then return the primitive; else return the entire or_clause
+        """
+        primitive_types = (Literal, ColumnName, FuncCall)
+        descendents = or_clause.find_descendents(primitive_types)
+        if len(descendents) == 1:
+            # only a single primitive- unwrap
+            return descendents[0]
+        else:
+            # some complex operation
+            return or_clause
 
     def comparison(self, args):
         if len(args) == 1:
