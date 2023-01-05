@@ -8,18 +8,18 @@ from lark import Token
 from dataexchange import Response
 from datatypes import is_term_valid_for_datatype, DataType, Integer, Float, Text, Blob
 from lang_parser.visitor import Visitor
-from lang_parser.symbols3 import (Symbol,
-                                  OrClause,
-                                  AndClause,
-                                  ColumnName,
-                                  ComparisonOp,
-                                  Comparison,
-                                  Literal,
-                                  SymbolicDataType as SymbolicDataType,
-                                  BinaryArithmeticOperation,
-                                  ArithmeticOp,
-                                  FuncCall
-                                  )
+from lang_parser.symbols import (Symbol,
+                                 OrClause,
+                                 AndClause,
+                                 ColumnName,
+                                 ComparisonOp,
+                                 Comparison,
+                                 Literal,
+                                 SymbolicDataType as SymbolicDataType,
+                                 BinaryArithmeticOperation,
+                                 ArithmeticOp,
+                                 FuncCall
+                                 )
 from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
 from record_utils import SimpleRecord, ScopedRecord, GroupedRecord

@@ -7,7 +7,7 @@ Records are data containing objects that conform to a schema.
 from typing import Any, List, Optional, Union, Tuple
 from lark import Token
 
-from lang_parser.symbols3 import ColumnName, ColumnNameList, ValueList, Literal
+from lang_parser.symbols import ColumnName, ColumnNameList, ValueList, Literal
 from dataexchange import Response
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
 
