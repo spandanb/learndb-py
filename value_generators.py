@@ -125,7 +125,7 @@ class ValueGeneratorFromRecordOverExpr:
         """
         Evaluate the or_clause
         """
-        value = self.interpreter.evaluate_over_record(self.or_clause, record.schema, record)
+        value = self.interpreter.evaluate_over_record(self.or_clause, record)
         return value
 
 
