@@ -14,7 +14,7 @@ specified by the schema-, and related utilities are contained in record_utils.py
 from typing import List, Optional, Union
 
 from datatypes import DataType, Integer, Text, Blob, Float
-from lang_parser.symbols3 import TableName, SymbolicDataType, ColumnName
+from lang_parser.symbols import TableName, SymbolicDataType, ColumnName
 from dataexchange import Response
 
 

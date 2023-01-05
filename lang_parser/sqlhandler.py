@@ -4,10 +4,7 @@ import logging
 from lark import Lark, ast_utils, Tree, Token
 from lark.exceptions import UnexpectedInput  # root of all lark exceptions
 
-from . import symbols
-from .symbols import _Symbol
-from .symbols2 import ToAst, SecondTransformer
-from .symbols3 import ToAst3
+from .symbols import ToAst
 from .grammar import GRAMMAR
 
 
@@ -53,7 +50,7 @@ class SqlFrontEnd:
         # parse tree
         try:
             tree = self.parser.parse(text)
-            transformer = ToAst3()
+            transformer = ToAst()
             tree = transformer.transform(tree)
             self.parsed = tree
             self.is_succ = True
