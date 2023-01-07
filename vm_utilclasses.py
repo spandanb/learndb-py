@@ -220,10 +220,21 @@ class ExpressionInterpreter(Visitor):
         for and_clause in or_clause.and_clauses:
             value = self.evaluate(and_clause)
             if value_unset:
-                or_value = value
+                # set value as is
+                or_clause = value
+                if isinstance(value, bool) and value is True:
+                    # boolean or evaluates to True
+                    return True
             else:
-                # todo: eval logical or
-                raise NotImplementedError
+                # how to update the value depends on whether it's a bool or non-bool value
+                if isinstance(value, bool):
+                    if value is True:
+                        return True
+                else:
+                    # return first truthy value
+                    breakpoint()
+                    raise NotImplementedError
+
         return or_value
 
     def visit_and_clause(self, and_clause: AndClause):
@@ -235,17 +246,21 @@ class ExpressionInterpreter(Visitor):
         # ensure value is set before we begin and'ing
         value_unset = True
         for predicate in and_clause.predicates:
-            pred_val = self.evaluate(predicate)
-
-            if value_unset:
-                # set first value as is
-                and_value = pred_val
-                value_unset = False
+            value = self.evaluate(predicate)
+            if isinstance(value, bool):
+                # if predicate evaluates to a bool value, we'll track the boolean value of the expression
+                if value is False:
+                    return False
             else:
-                # todo: if predicate evaluates to a bool value, we'll track the boolean value of the expression
-                # otherwise, we'll track values. If all values are truthy, I'll return the last value, else, the
-                # first falsey value - this behaves like coalesce, ifnull utils
-                raise NotImplementedError
+                # non-bool, we'll track values. If all values are truthy, I'll return the last value, else, the
+                # first falsey value - this behaves like coalesce, ifnull utils; similar to python and
+                if value_unset:
+                    # set first value as is
+                    and_value = value
+                    value_unset = False
+                else:
+                    breakpoint()
+                    raise NotImplementedError
 
         return and_value
 
