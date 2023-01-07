@@ -571,26 +571,15 @@ class ToAst(Transformer):
         assert len(args) == 2
         return UnconditionedJoin(args[0], args[1])
 
-    def expr(self, args):
-        """TODO: this should simplify the expr
-        specifically, this should call the simplify method
-        """
-        if len(args) == 1:
-            return Expr(args[0])
-        else:
-            breakpoint()
+    def expr(self, args) -> Expr:
+        assert len(args) == 1
+        return Expr(args[0])
 
     def condition(self, args):
         if len(args) == 1:
             # unwrap
             return args[0]
-        #assert len(args) == 1 and isinstance(args[0], OrClause)
-        # the grammar doesn't quiet reduce as needed,
-        # we'll need to post-hoc ensure predicates are coupled as needed
-        # perhaps one helper can both simplify the or_clause, and "fix" it is
-        #breakpoint()
         return args
-        #return self.simplify_or_clause(args[0])
 
     @staticmethod
     def simplify_or_clause(or_clause: OrClause):
@@ -664,16 +653,10 @@ class ToAst(Transformer):
             raise ValueError("Unexpected arity")
 
     def or_clause(self, args) -> OrClause:
-        #return args
-
         if len(args) == 1:
             return args[0]
-            #return OrClause([args[0]])
         else:
             assert len(args) == 2
-            #assert isinstance(args[0], OrClause)
-            #args[0].and_clauses.append(args[1])
-            #return args[0]
             ret = OrClause(args)
             return ret
 

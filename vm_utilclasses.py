@@ -1,5 +1,5 @@
 """
-Collection of classes
+Collection of classes that encapsulate key functionality needed by the virtual machine.
 """
 from enum import Enum, auto
 from typing import Any, Type, Tuple, Iterable, Optional, Union
@@ -18,7 +18,8 @@ from lang_parser.symbols import (Symbol,
                                  SymbolicDataType as SymbolicDataType,
                                  BinaryArithmeticOperation,
                                  ArithmeticOp,
-                                 FuncCall
+                                 FuncCall,
+                                 Expr
                                  )
 from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
@@ -184,11 +185,34 @@ class ExpressionInterpreter(Visitor):
 
     # section: other public utils
 
-    def stringify(self, expr: OrClause) -> str:
-        # TODO: if is a single column, return column name; else return stringified `expr`
-        return str(expr)
+    @staticmethod
+    def simplify_expr(expr: Expr):
+        """
+        Utility method to simplify `expr`. Simplify means that if `expr`
+        contains only a single primitive (literal or reference), i.e. without any logical
+        or arithmetic operations, then return the primitive; else return the entire or_clause
+        NOTE: This operation is O(size of all descendents rooted at `expr`)
+        """
+        primitive_types = (Literal, ColumnName, FuncCall)
+        descendents = expr.find_descendents(primitive_types)
+        if len(descendents) == 1:
+            # only a single primitive- unwrap
+            return descendents[0]
+        else:
+            # some complex/compound operation
+            return expr
+
+    def stringify(self, expr: Expr) -> str:
+        """
+        Simplify and stringify expr
+        """
+        return str(self.simplify_expr(expr))
 
     # section: visit methods
+
+    def visit_expr(self, expr: Expr):
+        # Expr is root of expression hierarchy
+        return self.evaluate(expr.expr)
 
     def visit_or_clause(self, or_clause: OrClause):
         or_value = None
@@ -233,14 +257,12 @@ class ExpressionInterpreter(Visitor):
         if self.name_registry.is_name(comparison.left_op):
             left_value = self.name_registry.resolve_name(comparison.left_op)
         else:
-            # else convert literal to value
-            assert isinstance(comparison.left_op, Literal)
+            # else evaluate to get value
             left_value = self.evaluate(comparison.left_op)
 
         if self.name_registry.is_name(comparison.right_op):
-            right_value = comparison.right_op
+            right_value = self.name_registry.resolve_name(comparison.right_op)
         else:
-            assert isinstance(comparison.right_op, Literal)
             right_value = self.evaluate(comparison.right_op)
 
         if comparison.operator == ComparisonOp.Greater:

@@ -50,6 +50,8 @@ class SqlFrontEnd:
         # parse tree
         try:
             tree = self.parser.parse(text)
+            logging.info("Outputing untransformed AST..........")
+            print(tree.pretty())
             transformer = ToAst()
             tree = transformer.transform(tree)
             self.parsed = tree
