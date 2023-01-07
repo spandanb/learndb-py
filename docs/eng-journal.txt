@@ -643,3 +643,14 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     better user consumptions. Should this be implemented in a broad way, i.e. the AST is trimmed thus.
 
 
+1/7/2023
+    Grammar was not quiet parsing correctly. There were some weird nestings. Some of this was due to the somewhat ad-hoc
+    development of the grammar and the parser.
+
+    Refactored the grammar to fix the incorrect nestings/reductions. Also, addressed some other todo items
+    in the language and grammar, e.g. added an actual `Expr` type as the root of the expression hierarchy,
+    rather than the previous default `OrClause`. This was primarily motivated by making the code more intuitively
+    readable, and also being able to use Expr more consistently. Since previously some places were using `OrClause`,
+    and others `ColumnName`, in different cases. But the new ExpressionInterpreter class, can evaluate any Expr,
+    rather than the older approach of having non-visitor pattern based direct handler in the VM itself.
+
