@@ -8,7 +8,7 @@ GRAMMAR = '''
         ?stmnt           : select_stmnt | drop_stmnt | delete_stmnt | update_stmnt | truncate_stmnt | insert_stmnt 
                          | create_stmnt
                          
-        // I only want logically valid stataments; and from is required for all other clauses
+        // we only want logically valid statements; and from is required for all other clauses
         // and so is nested under from clause                       
         select_stmnt     : select_clause from_clause? 
 
@@ -17,8 +17,8 @@ GRAMMAR = '''
         
         //selectables     : column_name ("," column_name)*
         //selectables     : primary ("," primary)*        
-        //selectable      : expr
-        selectable        :  condition | column_name
+        selectable      : expr
+        //selectable        :  condition | column_name
         
         
         from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
@@ -50,13 +50,14 @@ GRAMMAR = '''
 
         // this is the de-facto root of the expression hierarchy
         // todo: consider making an actual expr element to represent the hierarchy
+        expr             : condition
         condition        : or_clause
         or_clause        : and_clause
                          | or_clause "or"i and_clause
         and_clause       : predicate
                          | and_clause "and"i predicate
 
-        // predicate and comparison ares separate so =, <> have lower precedence than other comp ops
+        // predicate and comparison are separate so =, <> have lower precedence than other comp ops
         predicate        : comparison
                          | predicate ( EQUAL | NOT_EQUAL ) comparison
         comparison       : term
@@ -66,7 +67,7 @@ GRAMMAR = '''
         factor           : unary
                          | factor ( SLASH | STAR ) unary
         unary            : primary
-                         | ( "!" | "-" ) unary
+                         | ( BANG | MINUS ) unary
         
         //primary          : column_name
         //                 | nested_select
@@ -77,7 +78,7 @@ GRAMMAR = '''
                          | "(" select_stmnt ")"
                          | column_name
                          | func_call
-                         | or_clause 
+                         //| condition -- this is needed
                                                                                    
         // nuke (expr here)
         //expr           : literal | predicate | func_call 
@@ -93,7 +94,10 @@ GRAMMAR = '''
         // func calls; positional invocations only for now
         func_call        : func_name "(" func_arg_list ")" 
         // TODO: add support for named args in func_arg_list
-        func_arg_list    : (primary ",")* primary
+        //func_arg_list    : (primary ",")* primary // todo: remove me 
+        // arbitrary expr can be a function argument, since we want to support algebraic expressions on func arguments, 
+        // e.g. some_func(col_x + 1)
+        func_arg_list    : (expr ",")* expr
 
         create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"
         ?column_def_list  : (column_def ",")* column_def
@@ -121,7 +125,7 @@ GRAMMAR = '''
         TRUE             : "true"i
         FALSE            : "false"i
 
-        // func names are globally defined
+        // func names are globally defined, i.e. not a multipart scoped name
         func_name        : IDENTIFIER
         column_name      : SCOPED_IDENTIFIER
         table_name       : SCOPED_IDENTIFIER
@@ -148,6 +152,7 @@ GRAMMAR = '''
         MINUS             : "-"
         PLUS              : "+"
         SLASH             : "/"
+        BANG              : "!"
 
         // 2-char ops
         LESS_EQUAL        : "<="
