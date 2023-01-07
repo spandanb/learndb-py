@@ -214,16 +214,22 @@ class ExpressionInterpreter(Visitor):
         # Expr is root of expression hierarchy
         return self.evaluate(expr.expr)
 
-    def visit_or_clause(self, or_clause: OrClause):
+    def visit_or_clause(self, or_clause: OrClause) -> Union[bool, Any]:
+        """
+        Evaluate or clause.
+        NOTE: This handles both cases, 1) where the and_clause evaluates to a boolean, and
+        2) to a value. In case 2) it would evaluate the truthyness of the values, and return
+        the last truthy value, if all are truthy or the first falsey value.
+        """
         or_value = None
         value_unset = True
         for and_clause in or_clause.and_clauses:
             value = self.evaluate(and_clause)
             if value_unset:
                 # set value as is
-                or_clause = value
+                or_value = value
                 if isinstance(value, bool) and value is True:
-                    # boolean or evaluates to True
+                    # early exit, entire expression will evaluate to True
                     return True
             else:
                 # how to update the value depends on whether it's a bool or non-bool value
@@ -237,10 +243,12 @@ class ExpressionInterpreter(Visitor):
 
         return or_value
 
-    def visit_and_clause(self, and_clause: AndClause):
+    def visit_and_clause(self, and_clause: AndClause) -> Union[bool, Any]:
         """
-        NOTE: This handles both where the and_clause is evals to a bool, and
-        to an value
+        Evaluate and clause.
+        NOTE: This handles both cases, 1) where the and_clause evaluates to a boolean, and
+        2) to a value. In case 2) it would evaluate the truthyness of the values, and return
+        the last truthy value, if all are truthy or the first falsey value.
         """
         and_value = None
         # ensure value is set before we begin and'ing
@@ -250,7 +258,10 @@ class ExpressionInterpreter(Visitor):
             if isinstance(value, bool):
                 # if predicate evaluates to a bool value, we'll track the boolean value of the expression
                 if value is False:
+                    # early exit, entire clause will be True
                     return False
+                else:
+                    and_value = value
             else:
                 # non-bool, we'll track values. If all values are truthy, I'll return the last value, else, the
                 # first falsey value - this behaves like coalesce, ifnull utils; similar to python and
@@ -421,8 +432,7 @@ class SemanticAnalyzer(Visitor):
         return return_value
 
     def visit_expr(self, expr: Expr):
-        breakpoint()
-        raise NotImplementedError
+        return self.evaluate(expr.expr)
 
     def visit_or_clause(self, or_clause: OrClause):
         or_value = None
