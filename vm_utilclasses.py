@@ -405,6 +405,10 @@ class SemanticAnalyzer(Visitor):
         return_value = expr.accept(self)
         return return_value
 
+    def visit_expr(self, expr: Expr):
+        breakpoint()
+        raise NotImplementedError
+
     def visit_or_clause(self, or_clause: OrClause):
         or_value = None
         value_unset = True

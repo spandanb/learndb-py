@@ -40,7 +40,8 @@ from lang_parser.symbols import (
     FuncCall,
     ColumnName,
     OrClause,
-    Literal
+    Literal,
+    Expr
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -382,9 +383,9 @@ class VirtualMachine(Visitor):
                 out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
                 out_columns.append(out_column)
             else:
-                # selectable is some expr, represented as an instance of `OrClause`-
+                # selectable is some expr, represented as an instance of `Expr`-
                 # the de-facto root of the expr hierarchy
-                assert isinstance(selectable, OrClause)
+                assert isinstance(selectable, Expr)
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
                 resp = self.type_checker.analyze_scalar(selectable, source_schema)
@@ -426,9 +427,9 @@ class VirtualMachine(Visitor):
                 out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
                 out_columns.append(out_column)
             else:
-                # selectable is some expr, represented as an instance of `OrClause`-
+                # selectable is some expr, represented as an instance of `Expr`-
                 # the de-facto root of the expr hierarchy
-                assert isinstance(selectable, OrClause)
+                assert isinstance(selectable, Expr)
                 # a stringified or_clause to use as output column name
                 expr_name = self.interpreter.stringify(selectable)
                 resp = self.type_checker.analyze_grouped(selectable, source_schema)
@@ -457,8 +458,8 @@ class VirtualMachine(Visitor):
             elif isinstance(selectable, Literal):
                 generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
             else:
-                # expression, i.e. default it's default root OrClause
-                assert isinstance(selectable, OrClause)
+                # expression
+                assert isinstance(selectable, Expr)
                 # NOTE: selectable can be arbitrary algebraic expression, including columns
                 generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
         return Response(True, body=generators)
@@ -469,7 +470,7 @@ class VirtualMachine(Visitor):
         """
         generators = []
         for selectable in selectables:
-            if isinstance(selectable, OrClause):
+            if isinstance(selectable, Expr):
                 generators.append(ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter))
             else:
                 # this is unexpected
@@ -847,7 +848,7 @@ class VirtualMachine(Visitor):
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
                     record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.evaluate_condition(join_clause.condition, record):
+                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
 
@@ -858,7 +859,7 @@ class VirtualMachine(Visitor):
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
                     record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.evaluate_condition(join_clause.condition, record):
+                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         left_record_added = True
@@ -880,7 +881,7 @@ class VirtualMachine(Visitor):
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
                     record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.evaluate_condition(join_clause.condition, record):
+                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         right_joined_index[index] = True
@@ -901,7 +902,7 @@ class VirtualMachine(Visitor):
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
                     record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.evaluate_condition(join_clause.condition, record):
+                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         left_record_added = True
@@ -929,49 +930,6 @@ class VirtualMachine(Visitor):
                     self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
-
-    def evaluate_condition(self, condition: OrClause, record) -> bool:
-        """
-        Evaluate condition on record Union(Record, JoinedRecord) and return bool result
-        TODO: this should be moved to ExpressionInterpreter
-        """
-        or_result = False
-        for and_clause in condition.and_clauses:
-            and_result = True
-            for predicate in and_clause.predicates:
-                assert isinstance(predicate, Comparison), f"Expected Comparison received {predicate}"
-                # the predicate contains a condition, which contains
-                # logical column refs and literal values
-                # 1. resolve all names
-                resp = self.check_resolve_name(predicate.left_op, record)
-                assert resp.success
-                left_value = resp.body
-                resp = self.check_resolve_name(predicate.right_op, record)
-                assert resp.success
-                right_value = resp.body
-
-                # 2. evaluate predicate
-                # value of evaluated predicate
-                pred_value = False
-                if predicate.operator == ComparisonOp.Greater:
-                    pred_value = left_value > right_value
-                elif predicate.operator == ComparisonOp.Less:
-                    pred_value = left_value < right_value
-                elif predicate.operator == ComparisonOp.GreaterEqual:
-                    pred_value = left_value >= right_value
-                elif predicate.operator == ComparisonOp.LessEqual:
-                    pred_value = left_value <= right_value
-                elif predicate.operator == ComparisonOp.Equal:
-                    pred_value = left_value == right_value
-                else:
-                    assert predicate.operator == ComparisonOp.NotEqual
-                    pred_value = left_value != right_value
-
-                # optimization note: once an and_result is False, stop inner loop
-                and_result = and_result and pred_value
-
-            or_result = or_result or and_result
-        return or_result
 
     def group_recordset(self, group_by_clause, source_rsname):
         """
