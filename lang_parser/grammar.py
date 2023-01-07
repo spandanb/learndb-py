@@ -11,15 +11,8 @@ GRAMMAR = '''
         // we only want logically valid statements; and from is required for all other clauses
         // and so is nested under from clause                       
         select_stmnt     : select_clause from_clause? 
-
-        //select_clause    : "select"i expr ("," expr)* //selectables        
-        select_clause     : "select"i selectable ("," selectable)*
-        
-        //selectables     : column_name ("," column_name)*
-        //selectables     : primary ("," primary)*        
-        selectable      : expr
-        //selectable        :  condition | column_name
-        
+        select_clause    : "select"i selectable ("," selectable)*
+        selectable       : expr
         
         from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
         where_clause     : "where"i condition
@@ -46,10 +39,7 @@ GRAMMAR = '''
         full_outer       : "full"i ["outer"i]
         cross            : "cross"i
 
-        //expr             : condition | column_name | func_call
-
-        // this is the de-facto root of the expression hierarchy
-        // todo: consider making an actual expr element to represent the hierarchy
+        // `expr` is the de-facto root of the expression hierarchy
         expr             : condition
         condition        : or_clause
         or_clause        : and_clause
@@ -69,32 +59,18 @@ GRAMMAR = '''
         unary            : primary
                          | ( BANG | MINUS ) unary
         
-        //primary          : column_name
-        //                 | nested_select
-        //                 | func_call
-        //                 | literal
-        
         primary          : literal 
-                         | "(" select_stmnt ")"
+                         | nested_select
                          | column_name
                          | func_call
-                         //| condition -- this is needed
-                                                                                   
-        // nuke (expr here)
-        //expr           : literal | predicate | func_call 
-                         
+                                 
         literal          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
 
-        // todo: rename value to literal -and replace value in grammar with literal
-        ?value           : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
-
-        // should this be expr
         nested_select    : "(" select_stmnt ")"
 
         // func calls; positional invocations only for now
         func_call        : func_name "(" func_arg_list ")" 
         // TODO: add support for named args in func_arg_list
-        //func_arg_list    : (primary ",")* primary // todo: remove me 
         // arbitrary expr can be a function argument, since we want to support algebraic expressions on func arguments, 
         // e.g. some_func(col_x + 1)
         func_arg_list    : (expr ",")* expr
@@ -111,11 +87,11 @@ GRAMMAR = '''
 
         insert_stmnt     : "insert"i "into"i table_name "(" column_name_list ")" "values"i "(" value_list ")"
         column_name_list : (column_name ",")* column_name
-        value_list       : (value ",")* value
+        value_list       : (literal ",")* literal
 
         delete_stmnt     : "delete"i "from"i table_name where_clause?
 
-        update_stmnt     : "update"i table_name "set"i column_name "=" value where_clause?
+        update_stmnt     : "update"i table_name "set"i column_name "=" literal where_clause?
 
         truncate_stmnt   : "truncate"i table_name
 
