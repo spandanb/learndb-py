@@ -318,14 +318,26 @@ class WhereClause(Symbol):
     condition: Any  # OrClause
 
 
+# root of expr hierarchy
+@dataclass
+class Expr(Symbol):
+    expr: Any
+
+
 @dataclass
 class OrClause(Symbol):
     and_clauses: Any
+
+    def append_and_clause(self, and_clause):
+        self.and_clauses.append(and_clause)
 
 
 @dataclass
 class AndClause(Symbol):
     predicates: List[Any]
+
+    def append_predicate(self, predicate):
+        self.predicates.append(predicate)
 
 
 @dataclass
@@ -430,35 +442,31 @@ class BinaryArithmeticOperation(Symbol):
 class ToAst(Transformer):
     """
     Convert parse tree to AST.
-    Handles rules with optionals at tail
-    and optionals in body.
 
-    NOTE: another decision point here
-    is where I wrap every rule in a dummy symbol class.
-    - I could wrap each class, and a parent node can unwrap a child.
-    - however, for boolean like fields, e.g. column_def__is_primary_key, it might be better
-      to return an enum
-
-    NOTE: If a grammar symbol has a leading "?", the corresponding class won't be visited
+    Design Note: Most symbols in the grammar get their own specific Symbol subclass.
+    But in some cases, objects of child class (or a list thereof) is returned by
+    the parent handler. The specific decision is driven by trying the return the easiest to
+    interpret AST, from the VMs perspective. Further, some symbols in the grammar are needed
+    to ensure when the input sql is parsed, it is done according to implicit precedence rules.
+    However, when constructing the AST, we can discard these pseudo-classes.
 
     NOTE: methods are organized logically by statement types
-
     """
     # helpers
 
     # simple classes - top level statements
 
     @staticmethod
-    def program(args):
+    def program(args) -> Program:
         return Program(args)
 
     @staticmethod
-    def create_stmnt(args):
+    def create_stmnt(args) -> CreateStmnt:
         stmnt = CreateStmnt(args[0], args[1])
         return stmnt
 
     @staticmethod
-    def select_stmnt(args):
+    def select_stmnt(args) -> SelectStmnt:
         """select_clause from_clause? group_by_clause? having_clause? order_by_clause? limit_clause?"""
         # this return a logically valid structure,
         # i.e. select is always needed, but where, group by, and having require a from clause
@@ -466,17 +474,17 @@ class ToAst(Transformer):
         return SelectStmnt(*args)
 
     @staticmethod
-    def insert_stmnt(args):
+    def insert_stmnt(args) -> InsertStmnt:
         return InsertStmnt(*args)
 
     @staticmethod
-    def delete_stmnt(args):
+    def delete_stmnt(args) -> DeleteStmnt:
         return DeleteStmnt(*args)
 
     # select stmnt components
 
     @staticmethod
-    def select_clause(args):
+    def select_clause(args) -> SelectClause:
         return SelectClause(args)
 
     def from_clause(self, args) -> FromClause:
@@ -549,7 +557,8 @@ class ToAst(Transformer):
         return SingleSource(name, alias)
 
     def joining(self, args):
-        pass
+        breakpoint()
+        raise NotImplementedError
 
     def conditioned_join(self, args):
         if len(args) == 3:
@@ -562,9 +571,26 @@ class ToAst(Transformer):
         assert len(args) == 2
         return UnconditionedJoin(args[0], args[1])
 
+    def expr(self, args):
+        """TODO: this should simplify the expr
+        specifically, this should call the simplify method
+        """
+        if len(args) == 1:
+            return Expr(args[0])
+        else:
+            breakpoint()
+
     def condition(self, args):
-        assert len(args) == 1 and isinstance(args[0], OrClause)
-        return self.simplify_or_clause(args[0])
+        if len(args) == 1:
+            # unwrap
+            return args[0]
+        #assert len(args) == 1 and isinstance(args[0], OrClause)
+        # the grammar doesn't quiet reduce as needed,
+        # we'll need to post-hoc ensure predicates are coupled as needed
+        # perhaps one helper can both simplify the or_clause, and "fix" it is
+        #breakpoint()
+        return args
+        #return self.simplify_or_clause(args[0])
 
     @staticmethod
     def simplify_or_clause(or_clause: OrClause):
@@ -572,6 +598,7 @@ class ToAst(Transformer):
         Utility method to simplify `or_clause`. Simplify means that if `or_clause`
         contains only a single primitive (literal or reference), i.e. without any logical
         or arithmetic operations, then return the primitive; else return the entire or_clause
+        # TODO: move
         """
         primitive_types = (Literal, ColumnName, FuncCall)
         descendents = or_clause.find_descendents(primitive_types)
@@ -583,6 +610,17 @@ class ToAst(Transformer):
             return or_clause
 
     def comparison(self, args):
+        """
+        NOTE: Many rules follow this pattern where there are 2 cases;
+        1) if len(args) == 1, we unwrap
+        and 2) if there are more args, we wrap in the appropriate object.
+
+        This is because the rule is like:
+        condition -> term
+                    | comparison ( LESS_EQUAL | GREATER_EQUAL | LESS | GREATER ) term
+
+        Case 1) corresponds to the `term`, while the second case, we want to wrap in container object
+        """
         if len(args) == 1:
             return args[0]
         assert len(args) == 3
@@ -625,35 +663,44 @@ class ToAst(Transformer):
         else:
             raise ValueError("Unexpected arity")
 
-    def or_clause(self, args):
+    def or_clause(self, args) -> OrClause:
+        #return args
+
         if len(args) == 1:
-            return OrClause([args[0]])
+            return args[0]
+            #return OrClause([args[0]])
         else:
             assert len(args) == 2
-            assert isinstance(args[0], OrClause)
-            args[0].and_clauses.append(args[1])
-            return args[0]
+            #assert isinstance(args[0], OrClause)
+            #args[0].and_clauses.append(args[1])
+            #return args[0]
+            ret = OrClause(args)
+            return ret
 
     def and_clause(self, args):
         if len(args) == 1:
-            # requires a list
-            return AndClause([args[0]])
+            return args[0]
         else:
             assert len(args) == 2
-            assert isinstance(args[0], AndClause)
-            args[0].predicates.append(args[1])
-            return args[0]
+            if isinstance(args[0], Comparison):
+                # 1. first time we visit this, both args will be `Comparison` objects
+                assert isinstance(args[1], Comparison)
+                return AndClause(args)
+            else:
+                assert isinstance(args[0], AndClause)
+                assert isinstance(args[1], Comparison)
+                # 2. but subsequent reductions will have args[0] be an AndClause
+                # any other `Condition`s will be attached to this AndClause
+                # NOTE: the parse tree encodes this precedence information via this
+                # nesting; but this is not needed explicitly, rather predicates in the
+                # AndClause will be evaluated left to right by the virtual machine
+                and_clause = args[0]
+                and_clause.append_predicate(args[1])
+                return and_clause
 
     def primary(self, args):
         assert len(args) == 1
         return args[0]
-
-    #def expr(self, args):
-    #    # TODO: nuke me
-    #    if len(args) == 1:
-    #        return args[0]
-    #   else:
-    #        breakpoint()
 
     def literal(self, args):
         if len(args) == 1:
