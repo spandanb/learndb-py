@@ -791,7 +791,7 @@ class VirtualMachine(Visitor):
 
         for record in self.recordset_iter(source_rsname):
             value = self.interpreter.evaluate_over_record(where_clause.condition, record)
-            assert isinstance(value, bool)
+            assert isinstance(value, bool), f"Expected bool, received {type(value)}"
             if value:
                 self.append_recordset(rsname, record)
 
