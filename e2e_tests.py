@@ -57,7 +57,7 @@ def test_insert():
     assert pipe.has_msgs(), "expected messages"
     record = pipe.read()
     assert record.get("cola") == 4
-    assert record.get("colb") == "'hellew words'"
+    assert record.get("colb") == "hellew words"
 
 
 def test_select_equality():
@@ -116,11 +116,11 @@ def test_select_equality_with_alias():
     db.handle_input("insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)")
     db.handle_input("insert into foo (cola, colb, colc, cold) values (4, 6, 90, 8)")
     # NOTE: since f is an alias for foo; all columns must be scoped with f
-    db.handle_input("select cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3")
+    db.handle_input("select f.cola from foo f where f.colb = 4 AND f.colc = 6 OR f.colc = 3")
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
-        keys.append(record.get("cola"))
+        keys.append(record.get("f.cola"))
     assert keys == [2, 3]
 
 
@@ -136,12 +136,29 @@ def test_select_inequality():
     db.handle_input("insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)")
     db.handle_input("insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)")
     db.handle_input("insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)")
-    db.handle_input("select cola from foo f where f.cola = a  < 3")
+    db.handle_input("select f.cola from foo f where f.cola < 3")
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
-        keys.append(record.get("cola"))
+        keys.append(record.get("f.cola"))
     assert keys == [1, 2]
+
+
+def test_select_on_float_column():
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    statements = [
+        "create table foo(cola float primary key, colB integer)",
+        "insert into foo (cola, colb, colc, cold) values (1.1, 2)",
+        "insert into foo (cola, colb, colc, cold) values (2.2, 4)"
+    ]
+    for stmnt in statements:
+        db.handle_input(stmnt)
+    db.handle_input("select f.cola from foo f where f.cola <> 1.1")
+    keys = []
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        keys.append((record.get("f.cola"), record.get("f.colb")))
+    assert keys == [(2.2, 4)]
 
 
 def test_select_group_by_having():
@@ -180,7 +197,6 @@ def test_select_algebraic_expr():
         # "select count(custid), country from items group by country",
         "select (count(custid) + 1) * 2, from items",
     ]
-
 
 
 def test_inner_join():
@@ -240,8 +256,10 @@ def test_left_join():
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
         keys.append(record.get("b.colx"))
-    keys.sort()
-    assert keys == [101, 102]
+    # create a set, because we can't sort an array of ints and None
+    expected_keys = {None, 101, 102}
+    for expected_key in expected_keys:
+        assert expected_key in keys
 
 
 def test_cross_join():
@@ -262,7 +280,7 @@ def test_cross_join():
     db.handle_input("insert into bar (colx, coly) values (98, 10)")
     db.handle_input("insert into bar (colx, coly) values (99, 4)")
     # select
-    db.handle_input("select b.colx, b.coly, b.colz from foo f cross join bar b")
+    db.handle_input("select b.colx, f.cola from foo f cross join bar b")
 
     keys = []
 
@@ -272,7 +290,6 @@ def test_cross_join():
         keys.append((record.get("f.cola"), record.get("b.colx")))
     keys.sort()
     assert keys == [(1, 98), (1, 99), (2, 98), (2, 99), (3, 98), (3, 99)]
-
 
 
 def test_delete_equality_on_primary_column():
@@ -296,7 +313,7 @@ def test_delete_equality_on_primary_column():
     assert not pipe.has_msgs(), "expected no rows"
 
 
-def test_delete_equality_on_non_primary_column():
+def test_delete_equality_on_non_primary_column_str_column():
     """
 
     :return:
@@ -305,17 +322,17 @@ def test_delete_equality_on_non_primary_column():
     db.nuke_dbfile()
 
     # create table
-    db.handle_input("create table foo ( colA integer primary key, colB text)")
+    db.handle_input("create table foo ( cola integer primary key, colb text)")
     # insert
     db.handle_input("insert into foo (colA, colB) values (4, 'hello world')")
     db.handle_input("insert into foo (colA, colB) values (5, 'hey world')")
     db.handle_input("insert into foo (colA, colB) values (6, 'bye world')")
 
     # delete
-    db.handle_input("delete from foo where colB = 'hello world'")
+    db.handle_input("delete from foo where colb = 'hello world'")
 
     # verify data
-    cmd = "select colA, colB  from foo"
+    cmd = "select cola, colb  from foo"
     db.handle_input(cmd)
     pipe = db.get_pipe()
     assert pipe.has_msgs(), "expected rows"
@@ -323,7 +340,39 @@ def test_delete_equality_on_non_primary_column():
     keys = []
     while pipe.has_msgs():
         record = pipe.read()
-        keys.append(record.get("colA"))
+        keys.append(record.get("cola"))
+
+    assert keys == [5, 6]
+
+
+def test_delete_equality_on_non_primary_column_int_column():
+    """
+
+    :return:
+    """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+
+    # create table
+    db.handle_input("create table foo ( cola integer primary key, colb text)")
+    # insert
+    db.handle_input("insert into foo (colA, colB) values (4, 'hello world')")
+    db.handle_input("insert into foo (colA, colB) values (5, 'hey world')")
+    db.handle_input("insert into foo (colA, colB) values (6, 'bye world')")
+
+    # delete
+    db.handle_input("delete from foo where colb = 'hello world'")
+
+    # verify data
+    cmd = "select cola, colb  from foo"
+    db.handle_input(cmd)
+    pipe = db.get_pipe()
+    assert pipe.has_msgs(), "expected rows"
+
+    keys = []
+    while pipe.has_msgs():
+        record = pipe.read()
+        keys.append(record.get("cola"))
 
     assert keys == [5, 6]
 
@@ -367,4 +416,10 @@ def test_drop():
     """
     test drop table stmnt
     :return:
+    """
+
+
+def test_failure_invalid_column_access():
+    """
+    This should attempt read on a non-existent column
     """

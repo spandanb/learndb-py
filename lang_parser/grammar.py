@@ -1,19 +1,19 @@
 # lark grammar for a subset of learndb-sql using
 GRAMMAR = '''
-        program          : stmnt 
+        program          : stmnt
                          | terminated
                          | (terminated)+ stmnt?
-        
+
         ?terminated      : stmnt ";"
-        ?stmnt           : select_stmnt | drop_stmnt | delete_stmnt | update_stmnt | truncate_stmnt | insert_stmnt 
+        ?stmnt           : select_stmnt | drop_stmnt | delete_stmnt | update_stmnt | truncate_stmnt | insert_stmnt
                          | create_stmnt
-                         
+
         // we only want logically valid statements; and from is required for all other clauses
-        // and so is nested under from clause                       
-        select_stmnt     : select_clause from_clause? 
+        // and so is nested under from clause
+        select_stmnt     : select_clause from_clause?
         select_clause    : "select"i selectable ("," selectable)*
         selectable       : expr
-        
+
         from_clause      : "from"i source where_clause? group_by_clause? having_clause? order_by_clause? limit_clause?
         where_clause     : "where"i condition
         group_by_clause  : "group"i "by"i column_name ("," column_name)*
@@ -58,20 +58,20 @@ GRAMMAR = '''
                          | factor ( SLASH | STAR ) unary
         unary            : primary
                          | ( BANG | MINUS ) unary
-        
-        primary          : literal 
+
+        primary          : literal
                          | nested_select
                          | column_name
                          | func_call
-                                 
+
         literal          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
 
         nested_select    : "(" select_stmnt ")"
 
         // func calls; positional invocations only for now
-        func_call        : func_name "(" func_arg_list ")" 
+        func_call        : func_name "(" func_arg_list ")"
         // TODO: add support for named args in func_arg_list
-        // arbitrary expr can be a function argument, since we want to support algebraic expressions on func arguments, 
+        // arbitrary expr can be a function argument, since we want to support algebraic expressions on func arguments,
         // e.g. some_func(col_x + 1)
         func_arg_list    : (expr ",")* expr
 
@@ -82,7 +82,7 @@ GRAMMAR = '''
 
         primary_key      : "primary"i "key"i
         not_null         : "not"i "null"i
-    
+
         drop_stmnt       : "drop"i "table"i table_name
 
         insert_stmnt     : "insert"i "into"i table_name "(" column_name_list ")" "values"i "(" value_list ")"
@@ -96,8 +96,6 @@ GRAMMAR = '''
         truncate_stmnt   : "truncate"i table_name
 
         // datatype values
-        // NOTE: This syntax supports inf precision, but the impl will have some finite precision
-        FLOAT_NUMBER     : INTEGER_NUMBER "." ("0".."9")*
         TRUE             : "true"i
         FALSE            : "false"i
 
@@ -108,10 +106,10 @@ GRAMMAR = '''
         table_alias      : IDENTIFIER
 
         // keywords
-        INTEGER          : "integer"i  
+        INTEGER          : "integer"i
         TEXT             : "text"i
-        BOOL             : "bool"i 
-        NULL             : "null"i 
+        BOOL             : "bool"i
+        NULL             : "null"i
         FLOAT            : "float"i
 
         // operators
@@ -140,14 +138,16 @@ GRAMMAR = '''
 
         IDENTIFIER       : ("_" | ("a".."z") | ("A".."Z"))* ("_" | ("a".."z") | ("A".."Z") | ("0".."9"))+
         SCOPED_IDENTIFIER : (IDENTIFIER ".")* IDENTIFIER
-        
+
         // single quoted string
         // NOTE: this doesn't have any support for escaping
-        SINGLE_QUOTED_STRING  : /'[^']*'/ 
+        SINGLE_QUOTED_STRING  : /'[^']*'/
         STRING: SINGLE_QUOTED_STRING | DOUBLE_QUOTED_STRING
-        
+
+        // ref: https://github.com/lark-parser/lark/blob/master/lark/grammars/common.lark
         %import common.ESCAPED_STRING   -> DOUBLE_QUOTED_STRING
-        %import common.SIGNED_NUMBER    -> INTEGER_NUMBER
+        %import common.SIGNED_INT       -> INTEGER_NUMBER
+        %import common.SIGNED_NUMBER    -> FLOAT_NUMBER
         %import common.WS
         %ignore WS
 '''

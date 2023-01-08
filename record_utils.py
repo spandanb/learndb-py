@@ -12,6 +12,10 @@ from dataexchange import Response
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
 
 
+class InvalidNameException(Exception):
+    pass
+
+
 class UnaggregatedGetOnUngroupedColumn(Exception):
     """
     Trying to access an ungrouped column without a reducing aggregate function
@@ -137,12 +141,17 @@ class ScopedRecord(AbstractRecord):
         Given a fq column name, e.g. f.cola
         """
         parts = fqname.split(".")
-        assert len(parts) == 2
+        if len(parts) != 2:
+            raise InvalidNameException(f"Expected 2 part name formatted like <table-alias>.<column-name>; received {fqname}")
         table, column = parts
         if table not in self.names:
             raise ValueError(f"Uknown table alias [{table}]")
         record = self.names[table]
-        return record.get(column)
+        if isinstance(record, SimpleRecord):
+            return record.get(column)
+        else:
+            assert isinstance(record, ScopedRecord)
+            return record.get(fqname)
 
     def has_columns(self, *args):
         """

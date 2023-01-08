@@ -324,7 +324,6 @@ class VirtualMachine(Visitor):
                 pass
 
             for record in self.recordset_iter(rsname):
-                # todo: create records with only selected columns
                 self.output_pipe.write(record)
 
         # end scope, and recycle any ephemeral objects in scope
@@ -618,18 +617,25 @@ class VirtualMachine(Visitor):
     # general principles:
     # 1) helpers should be able to handle null types
 
-    def get_schema(self, table_name) -> SimpleSchema:
+    def get_schema(self, table_name: Union[str, TableName]) -> SimpleSchema:
+        if isinstance(table_name, TableName):
+            # unwrap name
+            table_name = table_name.table_name
 
-        if table_name.table_name.lower() == "catalog":
+        if table_name.lower() == "catalog":
             return self.state_manager.get_catalog_schema()
         else:
-            return self.state_manager.get_schema(table_name.table_name)
+            return self.state_manager.get_schema(table_name)
 
-    def get_tree(self, table_name) -> Tree:
-        if table_name.table_name.lower() == "catalog":
+    def get_tree(self, table_name: str) -> Tree:
+        if isinstance(table_name, TableName):
+            # unwrap name
+            table_name = table_name.table_name
+
+        if table_name.lower() == "catalog":
             return self.state_manager.get_catalog_tree()
         else:
-            return self.state_manager.get_tree(table_name.table_name)
+            return self.state_manager.get_tree(table_name)
 
     def materialize(self, source) -> Response:
         """

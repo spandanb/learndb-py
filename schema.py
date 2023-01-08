@@ -149,7 +149,7 @@ class ScopedSchema(AbstractSchema):
         table_alias, column_name = name_parts
         table_schema = self.schemas[table_alias]
         for column in table_schema.columns:
-            if column.name.lower() == name:
+            if column.name.lower() == column_name:
                 return column
         return None
 
