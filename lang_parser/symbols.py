@@ -146,7 +146,7 @@ class Symbol(ast_utils.Ast):
     def prettystr(self) -> str:
         return "".join(self.prettyprint())
 
-    def find_descendents(self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]] ) -> List:
+    def find_descendents(self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]]) -> List:
         """
         Search through all descendents via BFS
         and return list of matches.

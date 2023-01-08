@@ -1,8 +1,9 @@
 """
 Collection of classes that encapsulate key functionality needed by the virtual machine.
+TODO: split this module into a separate module for each contained class
 """
 from enum import Enum, auto
-from typing import Any, Type, Tuple, Iterable, Optional, Union
+from typing import Any, Type, Optional, Union
 from lark import Token
 
 from dataexchange import Response
@@ -64,8 +65,6 @@ class NameRegistry:
     The interface/object responsible for registering and resolving names.
     Name resolutions is done over column names from: 1) a schema, 2) a record
 
-    For now, this will mirror methods, exposed by the VM, to resolve names,
-    so that this object can be passed instead of the VM.
     TODO: move all (from VM) name registry and resolution logic here.
     """
 
@@ -582,5 +581,3 @@ class SemanticAnalyzer(Visitor):
 
     def visit_literal(self, literal: Literal) -> Type[DataType]:
         return datatype_from_symbolic_datatype(literal.type)
-
-

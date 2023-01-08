@@ -5,7 +5,7 @@ Motivation
 The file header is motivated by how free pages are managed. When a node is removed from a btree, the underlying page
 is returned to the pager to be recycled. The pager can reprovision these page numbers, but once the virtual machine is
 shutdown (and the pager recycled) - the page number information is lost, and space is lost- i.e. as unused file blocks that
-cannot be motivated.
+cannot be allocated.
 
 Solution
 ---------

@@ -7,8 +7,7 @@
 - how to best structure E2E tests? 
   - how should they be named?
 - write tutorial.md
-
-
+- update README.md
 
 ## Lark
   - document how parse tree -> AST is working
@@ -47,18 +46,9 @@
 - select statement
   - in addition to cursor iteration; select will have conditions
     and an optimizer
-  - how to read results? 
-    - simple: return materialized result set       
-    - complex: use generator object to avoid materializing entire result set 
   - what is interface for select
     - user executes select and is returned a pipe object
-- name resolution
-  - many vm methods operate directly on parsed tokens
-  - a separate name resolution phase should check whether identifier map to any objects, and if create a mapping, which is useable vm operates
-  - this checks whether names are valid and defined
-  - this could vm methods
-
-
+    
 ## User API
  - in addition to LearnDB do I want to support:
  - cursor?
@@ -90,15 +80,8 @@
   - create table def , requires space after final column and final ')'
   - select count(*) from countries group by country_name
 
-## Release Requirements
-  - support join (inner, left?, outer?), group by, having
+## Release Requirements 
   - complete docs
   - complete tutorial
-
-stmnts to support:
-  - select cola, colb from foo
-  - select cola, colb from foo where cola >= 32 and colb = 'hello world'
-  - select cola, colb 
-    from foo f
-    join bar b
-      on (f.cola = b.colb and ...)
+  - document supported features
+  
