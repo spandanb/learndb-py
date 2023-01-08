@@ -654,3 +654,6 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     and others `ColumnName`, in different cases. But the new ExpressionInterpreter class, can evaluate any Expr,
     rather than the older approach of having non-visitor pattern based direct handler in the VM itself.
 
+1/7
+    Addressed most of the failures in the existing E2E tests. But there are clearly many outstanding issues. I need to
+    add many more comprehensive tests.

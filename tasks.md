@@ -1,10 +1,13 @@
 # Tasks
 
 ## Top Priority
-- complete select over grouped expressions
-- - implement interpreter.evaluate_over_recordset
-- SemanticAnalyser should also check whether group by columns and non-group by columns are used correctly
 - write e2e tests for passing, and failing use cases
+- for lang_tests, I should assert on contents, right now only checking if parse is successful
+- cleanup learndb.py; ensure all devloops are encoded in some test cases
+- how to best structure E2E tests? 
+  - how should they be named?
+- write tutorial.md
+
 
 
 ## Lark
