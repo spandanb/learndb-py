@@ -23,7 +23,7 @@ from lang_parser.symbols import (Symbol,
                                  )
 from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
 from schema import SimpleSchema, ScopedSchema, GroupedSchema
-from record_utils import SimpleRecord, ScopedRecord, GroupedRecord
+from record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
 
 
 class SemanticAnalysisError(Exception):
@@ -57,7 +57,6 @@ def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataTyp
         return Text
     else:
         raise Exception(f"Unknown type {data_type}")
-
 
 
 class NameRegistry:
@@ -102,8 +101,11 @@ class NameRegistry:
         Note: This returns Response to distinguish resolve failed, from resolved to None
         """
         if isinstance(operand, ColumnName):
-            val = self.record.get(operand.name)
-            return val
+            try:
+                val = self.record.get(operand.name)
+                return Response(True, body=val)
+            except InvalidNameException as e:
+                return Response(False, error_message=e.args[0])
 
         # NOTE: this was adapated from vm.check_resolve_name
         raise NotImplementedError
@@ -186,7 +188,7 @@ class ExpressionInterpreter(Visitor):
     # section: other public utils
 
     @staticmethod
-    def simplify_expr(expr: Expr):
+    def simplify_expr(expr: Expr) -> Symbol:
         """
         Utility method to simplify `expr`. Simplify means that if `expr`
         contains only a single primitive (literal or reference), i.e. without any logical
@@ -206,7 +208,13 @@ class ExpressionInterpreter(Visitor):
         """
         Simplify and stringify expr
         """
-        return str(self.simplify_expr(expr))
+        simplified = self.simplify_expr(expr)
+        if isinstance(simplified, ColumnName):
+            return simplified.name
+        elif isinstance(simplified, Literal):
+            return str(simplified.value)
+        else:
+            return str(simplified)
 
     # section: visit methods
 
@@ -281,15 +289,21 @@ class ExpressionInterpreter(Visitor):
         """
         # convert operands to values that can be compared
         if self.name_registry.is_name(comparison.left_op):
-            left_value = self.name_registry.resolve_name(comparison.left_op)
+            resp = self.name_registry.resolve_name(comparison.left_op)
+            assert resp.success
+            left_value = resp.body
         else:
             # else evaluate to get value
             left_value = self.evaluate(comparison.left_op)
 
         if self.name_registry.is_name(comparison.right_op):
-            right_value = self.name_registry.resolve_name(comparison.right_op)
+            resp = self.name_registry.resolve_name(comparison.right_op)
+            assert resp.success
+            right_value = resp.body
         else:
             right_value = self.evaluate(comparison.right_op)
+
+        assert left_value is not None and right_value is not None
 
         if comparison.operator == ComparisonOp.Greater:
             pred_value = left_value > right_value
