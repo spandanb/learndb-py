@@ -11,6 +11,7 @@ from enum import Enum, auto
 from collections import defaultdict
 
 from btree import Tree, TreeInsertResult, TreeDeleteResult
+from constants import CATALOG
 from cursor import Cursor
 from datatypes import DataType
 from dataexchange import Response
@@ -622,7 +623,7 @@ class VirtualMachine(Visitor):
             # unwrap name
             table_name = table_name.table_name
 
-        if table_name.lower() == "catalog":
+        if table_name.lower() == CATALOG:
             return self.state_manager.get_catalog_schema()
         else:
             return self.state_manager.get_schema(table_name)
@@ -632,7 +633,7 @@ class VirtualMachine(Visitor):
             # unwrap name
             table_name = table_name.table_name
 
-        if table_name.lower() == "catalog":
+        if table_name.lower() == CATALOG:
             return self.state_manager.get_catalog_tree()
         else:
             return self.state_manager.get_tree(table_name)
@@ -815,7 +816,7 @@ class VirtualMachine(Visitor):
         # todo: evaluate any aggregation functions
 
         if isinstance(schema, GroupedSchema):
-            pass
+            raise NotImplementedError
         elif isinstance(schema, ScopedSchema):
             raise NotImplementedError
         else:
@@ -1028,14 +1029,6 @@ class VirtualMachine(Visitor):
                     if column is not None:
                         return Response(True, body=column.datatype)
                 return Response(False, error_message="column not found on source")
-
-    def scope_resolve_name(self, name: str) -> Tuple[Type[DataType], Any]:
-        """
-        For v1, do a brute force search for name,
-        later, this can be optimized by more efficient searching
-        """
-        breakpoint()
-        pass
 
     # section: record set utilities
 
