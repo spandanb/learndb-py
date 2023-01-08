@@ -24,7 +24,7 @@ from dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResu
 from pipe import Pipe
 from statemanager import StateManager
 #from virtual_machine import VirtualMachine
-from virtual_machine2 import VirtualMachine
+from virtual_machine import VirtualMachine
 
 
 # section: core execution/user-interface logic
@@ -469,26 +469,6 @@ def devloop():
         "select count(custid), country from items group by country having count(cust_id) > 1",
     ]
 
-    # group by
-    texts = [
-        "create table items ( custid integer primary key, country integer)",
-        "insert into items (custid, country) values (10, 1)",
-        "insert into items (custid, country) values (20, 1)",
-        "insert into items (custid, country) values (100, 2)",
-        "insert into items (custid, country) values (200, 2)",
-        "insert into items (custid, country) values (300, 2)",
-        "select count(custid), country, 1, 2*4 from items group by country",
-        #"select country from items group by country",
-
-        # tests for expr parsing
-        #"select 1 + 2 from foo where x < 3",
-        #"select somefunc(1, 2, 3)",
-        #"select 1",
-        #"select foo from bar"
-
-        #"select custid, country from items",
-        #"select count(*), country from items group by country", # TODO: this fails to parse
-    ]
 
     # functions, algebra
     texts = [
@@ -527,6 +507,45 @@ def devloop():
         "select b.colx, b.coly, b.colz from foo f join bar b on f.colb = b.coly",
         #"select cola from bar"
     ]
+
+    # group by
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        "select count(custid), square(country + 1) from items group by country",
+        #"select count(custid), square(country) from items group by country",
+        #"select square(country) from items",
+        #"select 1 from items",
+        #"select country from items group by country",
+
+
+        # tests for expr parsing
+        #"select 1 + 2 from foo where x < 3",
+        #"select somefunc(1, 2, 3)",
+        #"select 1",
+        #"select foo from bar"
+
+        #"select custid, country from items",
+        #"select count(*), country from items group by country", # TODO: this fails to parse
+    ]
+
+    # failing test case: test_select_equality
+    texts = [
+        "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
+        "insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)",
+        "insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)",
+        "insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)",
+        "insert into foo (cola, colb, colc, cold) values (4, 6, 90, 8)",
+        #"select cola from foo where cola = 1",
+        #"select cola from foo where colb = 4 AND colc = 6",
+        "select cola from foo where colb = 4 AND colc = 6 OR cold = 4",
+        #"select cola from foo where colb = 4 AND colc = 6 OR colc = 3"
+    ]
+
 
     for text in texts:
         logging.info(f"handling {text}")
