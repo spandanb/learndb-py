@@ -64,7 +64,7 @@ GRAMMAR = '''
                          | column_name
                          | func_call
 
-        literal          : INTEGER_NUMBER | FLOAT_NUMBER | STRING | TRUE | FALSE | NULL
+        literal          : INTEGER_NUMBER | REAL_NUMBER | STRING | TRUE | FALSE | NULL
 
         nested_select    : "(" select_stmnt ")"
 
@@ -78,7 +78,7 @@ GRAMMAR = '''
         create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"
         ?column_def_list  : (column_def ",")* column_def
         ?column_def       : column_name datatype primary_key? not_null?
-        datatype         : INTEGER | TEXT | BOOL | NULL | FLOAT
+        datatype         : INTEGER | TEXT | BOOL | NULL | REAL
 
         primary_key      : "primary"i "key"i
         not_null         : "not"i "null"i
@@ -110,7 +110,8 @@ GRAMMAR = '''
         TEXT             : "text"i
         BOOL             : "bool"i
         NULL             : "null"i
-        FLOAT            : "float"i
+        // floating point type
+        REAL            : "real"i
 
         // operators
         STAR              : "*"
@@ -147,7 +148,8 @@ GRAMMAR = '''
         // ref: https://github.com/lark-parser/lark/blob/master/lark/grammars/common.lark
         %import common.ESCAPED_STRING   -> DOUBLE_QUOTED_STRING
         %import common.SIGNED_INT       -> INTEGER_NUMBER
-        %import common.SIGNED_NUMBER    -> FLOAT_NUMBER
+        // floating point number
+        %import common.SIGNED_NUMBER    -> REAL_NUMBER
         %import common.WS
         %ignore WS
 '''
