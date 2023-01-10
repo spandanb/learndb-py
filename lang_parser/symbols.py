@@ -2,7 +2,7 @@ from __future__ import annotations
 import abc
 
 import os
-from lark import Lark, Transformer, Tree, v_args, ast_utils
+from lark import Lark, Transformer, Tree, v_args, ast_utils, Token
 from enum import Enum, auto
 from typing import Any, List, Union, Optional, Type, Tuple
 from dataclasses import dataclass
@@ -770,11 +770,11 @@ class ToAst(Transformer):
     def value_list(args):
         return ValueList(args)
 
-    def INTEGER_NUMBER(self, arg):
+    def INTEGER_NUMBER(self, arg: Token):
         return Literal(int(arg), SymbolicDataType.Integer)
 
-    def FLOAT_NUMBER(self, arg):
-        return Literal(float(arg), SymbolicDataType.Float)
+    def REAL_NUMBER(self, arg: Token):
+        return Literal(float(arg), SymbolicDataType.Real)
 
     # comparison ops
 
