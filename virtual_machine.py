@@ -63,11 +63,8 @@ from value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFr
                               ValueGeneratorFromRecordGroupOverExpr)
 from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer, datatype_from_symbolic_datatype
 
+
 logger = logging.getLogger(__name__)
-
-
-class UnGroupedColumnException(Exception):
-    pass
 
 
 # constants in scoped dict
@@ -108,21 +105,31 @@ class VirtualMachine(Visitor):
     RecordSet types, is because that would require logic for interpreting
     symbols into RecordSet; and I want that logic to not be replicated outside vm.
     """
-    def __init__(self, state_manager, output_pipe):
+    def __init__(self, state_manager, output_pipe, stop_program_on_statement_failure=True):
+        # 1. input params
         self.state_manager = state_manager
+        # 1.1. output pipe where results of select are writen to
         self.output_pipe = output_pipe
+        # 2. instance variables to manage VM state
         # NOTE: some state is managed by the state_manager, and rest via
-        # vm's instance variable. Ultimately, there should be a cleaner,
-        # unified management of state
+        # vm's instance variable. TODO: unify state management
+        # Some challenges to unifying state management, is that, e.g.
+        # the schemas dict maps recordset's random key to schema, e.g. for a schema
+        # of a joined relationship; but the statemanager resolves name from from the relationship name
         self.schemas = {}
         self.rsets = {}
         self.grouprsets = {}
-        self.init_catalog()
         # scopes are tracked as a stack of scopes; one scopes for logical environment where names can be defined
         self.scopes = []
+        # 3. initialize utility members
         self.name_registry = NameRegistry()
         self.interpreter = ExpressionInterpreter(self.name_registry)
         self.type_checker = SemanticAnalyzer(self.name_registry)
+        # 4. parameters to control VM behavior
+        # 4.1. whether to stop a program execution on first statement failure
+        self.stop_program_on_statement_failure = stop_program_on_statement_failure
+        # 5. initialization actions
+        self.init_catalog()
 
     def init_catalog(self):
         """
@@ -169,30 +176,17 @@ class VirtualMachine(Visitor):
 
             cursor.advance()
 
-    def run(self, program: Program, stop_on_err=False) -> List:
+    def run(self, program: Program) -> Response:
         """
         run the virtual machine with program on state
-        :param program:
-        :param stop_on_err: stop program execution on first error
-        :return:
         """
-        result = []
-        for stmt in program.statements:
-            try:
-                resp = self.execute(stmt)
-                # todo: why isn't resp always Response
-                if isinstance(resp, Response) and not resp.success:
-                    logging.warning(f"Statement [{stmt}] failed with {resp}")
-                result.append(resp)
-                if not resp and stop_on_err:
-                    return result
-            except Exception as e:
-                logging.error(f"ERROR: virtual machine errored on: [{stmt}] with [{e}|]")
-                # ultimately this should not throw
-                raise
-        return result
+        try:
+            return self.execute(program)
+        except Exception as e:
+            logging.error(f"ERROR: virtual machine program execution failed due to [{e}|]")
+            raise
 
-    def execute(self, stmnt: Symbol):
+    def execute(self, stmnt: Symbol) -> Response:
         """
         execute statement
         :param stmnt:
@@ -203,19 +197,24 @@ class VirtualMachine(Visitor):
 
     # section : top-level statement handlers
 
-    def visit_program(self, program: Program) -> Response:
+    def visit_program(self, program: Program) -> Response[List[Response]]:
         """
         Visit a Program (list of statements)
-        For each statement,
-            - syntactic analysis of statement (implicitly done in constructing the Program)
-            - TODO: validate statement, e.g. algebraic expressions don't violate type invariants, etc.
-            - bind symbols to objects, e.g. column_name to Column object
-            -- one wrinkle here is that some objects may be yet to be created
+        returns a Response containing a list of Response.
+            - the top level response corresponds to whether the whole program ran successfully
+                - success of the whole program is determined by stop_program_on_statement_failure, which
+                  determine whether a program should stop at first failure, or run all statements; and if set,
+                  the response of each statement
+            - nested Response is the response of each child statement
         """
-        statemnt_return = []
+        stmnt_responses = []
         for stmt in program.statements:
-            statemnt_return.append(self.execute(stmt))
-        return Response(True, body=statemnt_return)
+            stmnt_resp = self.execute(stmt)
+            if self.stop_program_on_statement_failure and stmnt_resp.success is False:
+                # early exit
+                return Response(False, error_message=f"{stmt} failed due to [{stmnt_resp.error_message}]")
+            stmnt_responses.append(stmnt_resp)
+        return Response(True, body=stmnt_responses)
 
     def visit_create_stmnt(self, stmnt: CreateStmnt) -> Response:
         """
@@ -263,6 +262,7 @@ class VirtualMachine(Visitor):
         # 8. register tree
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
+        return Response(True)
 
     def visit_select_stmnt(self, stmnt) -> Response:
         """
@@ -333,6 +333,7 @@ class VirtualMachine(Visitor):
         # output pipe for sanity
         #for msg in self.output_pipe.store:
         #    logger.info(msg)
+        return Response(True)
 
     def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str):
         """

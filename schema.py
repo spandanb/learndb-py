@@ -269,7 +269,7 @@ def validate_schema(schema: SimpleSchema) -> Response:
     """
     # validate - single column primary key
     if len([col for col in schema.columns if col.is_primary_key]) != 1:
-        return Response(False, body='missing primary key')
+        return Response(False, error_message='missing primary key')
 
     # validate - primary key is integer
     pkey = None
@@ -278,19 +278,19 @@ def validate_schema(schema: SimpleSchema) -> Response:
             pkey = col
             break
     if pkey.datatype != Integer:
-        return Response(False, body='primary key must be of integer type')
+        return Response(False, error_message='primary key must be of integer type')
 
     # validate column names are unique
     names = set()
     for col in schema.columns:
         if col.name in names:
-            return Response(False, body=f'duplicate column name [{col.name}]')
+            return Response(False, error_message=f'duplicate column name [{col.name}]')
         names.add(col.name)
 
     # validate column types are valid
     for col in schema.columns:
         if not issubclass(col.datatype, DataType):
-            return Response(False, body=f'invalid datatype for [{col.name}]')
+            return Response(False, error_message=f'invalid datatype for [{col.name}]')
 
     return Response(True)
 
