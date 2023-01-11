@@ -8,7 +8,7 @@ from abc import ABCMeta
 from typing import Any, Type
 
 
-from constants import INTEGER_SIZE, FLOAT_SIZE
+from constants import INTEGER_SIZE, REAL_SIZE
 
 
 class DataType:
@@ -84,7 +84,7 @@ class Integer(DataType):
         return isinstance(term, int)
 
 
-class Float(DataType):
+class Real(DataType):
     """
     Represents a fixed-size floating point number.
     Note: The usual concerns around finite-precision and
@@ -92,9 +92,9 @@ class Float(DataType):
     """
 
     is_fixed_length = True
-    fixed_length = FLOAT_SIZE
+    fixed_length = REAL_SIZE
     is_serializable = True
-    typename = "Float"
+    typename = "Real"
 
     @staticmethod
     def serialize(value: float) -> bytes:

@@ -13,7 +13,7 @@ specified by the schema-, and related utilities are contained in record_utils.py
 
 from typing import List, Optional, Union
 
-from datatypes import DataType, Integer, Text, Blob, Float
+from datatypes import DataType, Integer, Text, Blob, Real
 from lang_parser.symbols import TableName, SymbolicDataType, ColumnName
 from dataexchange import Response
 
@@ -308,7 +308,7 @@ def token_to_datatype(datatype: DataType) -> Response:
     elif datatype == SymbolicDataType.Blob:
         return Response(True, body=Blob)
     elif datatype == SymbolicDataType.Real:
-        return Response(True, body=Float)
+        return Response(True, body=Real)
     return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
 
 

@@ -144,21 +144,22 @@ def test_select_inequality():
     assert keys == [1, 2]
 
 
-def test_select_on_float_column():
+def test_select_on_real_column():
     db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     statements = [
-        "create table foo(cola float primary key, colB integer)",
-        "insert into foo (cola, colb, colc, cold) values (1.1, 2)",
-        "insert into foo (cola, colb, colc, cold) values (2.2, 4)"
+        "create table foo (cola integer primary key, colb real)",
+        "insert into foo (cola, colb) values (1, 1.1)",
+        "insert into foo (cola, colb) values (2, 2.2)",
+        "select f.cola from foo f where f.colb <> 1.1"
     ]
     for stmnt in statements:
         db.handle_input(stmnt)
-    db.handle_input("select f.cola from foo f where f.cola <> 1.1")
+
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
         keys.append((record.get("f.cola"), record.get("f.colb")))
-    assert keys == [(2.2, 4)]
+    assert keys == [(2, 2.2)]
 
 
 def test_select_group_by_having():
@@ -423,3 +424,10 @@ def test_failure_invalid_column_access():
     """
     This should attempt read on a non-existent column
     """
+
+
+def test_failure_create_table_with_non_int_primary_key():
+    """
+    Primary keys must be integers; hence below statement should fail
+    """
+    "create table foo (cola real primary key, colB integer)"

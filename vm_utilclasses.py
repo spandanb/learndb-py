@@ -2,12 +2,14 @@
 Collection of classes that encapsulate key functionality needed by the virtual machine.
 TODO: split this module into a separate module for each contained class
 """
+import numbers
 from enum import Enum, auto
 from typing import Any, Type, Optional, Union
 from lark import Token
 
+from constants import REAL_EPSILON
 from dataexchange import Response
-from datatypes import is_term_valid_for_datatype, DataType, Integer, Float, Text, Blob
+from datatypes import is_term_valid_for_datatype, DataType, Integer, Real, Text, Blob
 from lang_parser.visitor import Visitor
 from lang_parser.symbols import (Symbol,
                                  OrClause,
@@ -51,7 +53,7 @@ def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataTyp
     if data_type == SymbolicDataType.Integer:
         return Integer
     elif data_type == SymbolicDataType.Real:
-        return Float
+        return Real
     elif data_type == SymbolicDataType.Blob:
         return Blob
     elif data_type == SymbolicDataType.Text:
@@ -302,8 +304,14 @@ class ExpressionInterpreter(Visitor):
         else:
             right_value = self.evaluate(comparison.right_op)
 
-        assert left_value is not None and right_value is not None
+        assert isinstance(left_value, numbers.Number) and isinstance(right_value, numbers.Number)
 
+        if isinstance(left_value, int):
+            return self.perform_integer_comparison(comparison, left_value, right_value)
+        else:
+            return self.perform_real_comparison(comparison, left_value, right_value)
+
+    def perform_integer_comparison(self, comparison, left_value: int, right_value: int):
         if comparison.operator == ComparisonOp.Greater:
             pred_value = left_value > right_value
         elif comparison.operator == ComparisonOp.Less:
@@ -318,6 +326,15 @@ class ExpressionInterpreter(Visitor):
             assert comparison.operator == ComparisonOp.NotEqual
             pred_value = left_value != right_value
         return pred_value
+
+    def perform_real_comparison(self):
+        """
+        real numbers can't be exactly compared; two reals are equal if
+        they are within epsilon of each other
+        """
+        # TODO: implement me
+        breakpoint()
+        raise NotImplementedError
 
     def visit_binary_arithmetic_operation(self, operation: BinaryArithmeticOperation):
         op1_value = self.evaluate(operation.operand1)

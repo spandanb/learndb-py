@@ -2,7 +2,8 @@
 Tests serde of individual datatypes and of schemas/records
 composed of columns of many different datatype
 """
-from datatypes import Integer, Float, Text, Null, Blob
+from constants import REAL_EPSILON
+from datatypes import Integer, Real, Text, Null, Blob
 from schema import SimpleSchema, Column
 from record_utils import SimpleRecord
 from serde import deserialize_cell, serialize_record
@@ -21,11 +22,11 @@ def test_integer_serde():
         assert deser_val == value
 
 
-def test_float_serde():
+def test_real_serde():
     values = [4.0, 11.7, 19.297]
     for value in values:
         # create int
-        datatype = Float
+        datatype = Real
         # serialize int
         ser_val = datatype.serialize(value)
         # deserialize bytes
@@ -35,7 +36,7 @@ def test_float_serde():
         # compare value given float representation limitations.
         # not sure if it's valid to compare the diff of values
         # be less than threshold- since the threshold may vary depending on magnitude?
-        assert abs(deser_val - value) < 0.001
+        assert abs(deser_val - value) < REAL_EPSILON
 
 
 def test_key_only_schema_serde():
