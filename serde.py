@@ -1,13 +1,14 @@
 import sys
 from enum import Enum
+from typing import Type
 
 from constants import (CELL_KEY_SIZE_SIZE,
                        CELL_DATA_SIZE_SIZE,
                        INTEGER_SIZE,
-                       FLOAT_SIZE
+                       REAL_SIZE
                        )
 
-from datatypes import DataType, Null, Integer, Text, Blob, Float
+from datatypes import DataType, Null, Integer, Text, Blob, Real
 from dataexchange import Response
 from schema import Integer, SimpleSchema
 from record_utils import SimpleRecord
@@ -25,12 +26,12 @@ class SerialType(Enum):
     """
     Null = 0
     Integer = 1
-    Float = 2
+    Real = 2
     Text = 3
     Blob = 4
 
 
-def serialtype_to_datatype(serial_type: SerialType) -> DataType:
+def serialtype_to_datatype(serial_type: SerialType) -> Type[DataType]:
     """
     Convert serial type enum to datatype
     :param serial_type:
@@ -40,8 +41,8 @@ def serialtype_to_datatype(serial_type: SerialType) -> DataType:
         return Null
     elif serial_type == SerialType.Integer:
         return Integer
-    elif serial_type == SerialType.Float:
-        return Float
+    elif serial_type == SerialType.Real:
+        return Real
     elif serial_type == SerialType.Text:
         return Text
     else:
@@ -59,8 +60,8 @@ def datatype_to_serialtype(datatype: DataType) -> SerialType:
         return SerialType.Null
     elif datatype == Integer:
         return SerialType.Integer
-    elif datatype == Float:
-        return SerialType.Float
+    elif datatype == Real:
+        return SerialType.Real
     elif datatype == Text:
         return SerialType.Text
     else:

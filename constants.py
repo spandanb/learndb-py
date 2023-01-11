@@ -129,7 +129,12 @@ LEAF_NODE_MAX_CELLS = 3
 # serde constants
 # length of encoded bytes
 INTEGER_SIZE = WORD
-FLOAT_SIZE = WORD
+REAL_SIZE = WORD
+# when real numbers are stored there is some rounding error
+# hence two real numbers where the abs difference is less than `REAL_EPSILON`, are considered equal
+# NOTE: I just ballparked this epsilon; in actuality the diff will likely depend on the absolute
+# value of the real number
+REAL_EPSILON = 0.00001
 
 # Higher-level constanst
 # name of catalog

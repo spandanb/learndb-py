@@ -53,7 +53,7 @@ Serial Types
         serial-type  byte-length  datatype
         0            0            Null
         1            4            Integer
-        2            4            Float
+        2            4            Real
         3            var          Text
         4            var          Blob
 

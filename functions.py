@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Callable, Type, TypeVar, Union
 
 
 from dataexchange import Response
-from datatypes import DataType, Integer, Float, Text, Blob
+from datatypes import DataType, Integer, Real, Text, Blob
 
 
 T = TypeVar('T')
@@ -156,7 +156,7 @@ integer_square_function = FunctionDefinition(
     "integer_square", [Integer], {}, number_square_function_body, Integer
 )
 float_square_function = FunctionDefinition(
-    "float_square", [Float], {}, number_square_function_body, Float
+    "float_square", [Real], {}, number_square_function_body, Real
 )
 
 
