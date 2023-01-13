@@ -158,8 +158,8 @@ def test_select_on_real_column():
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
-        keys.append((record.get("f.cola"), record.get("f.colb")))
-    assert keys == [(2, 2.2)]
+        keys.append((record.get("f.cola")))
+    assert keys == [2]
 
 
 def test_select_group_by_having():

@@ -306,35 +306,59 @@ class ExpressionInterpreter(Visitor):
 
         assert isinstance(left_value, numbers.Number) and isinstance(right_value, numbers.Number)
 
-        if isinstance(left_value, int):
-            return self.perform_integer_comparison(comparison, left_value, right_value)
+        # NOTE: we handle both integer and real (floating point) numbers
+        # if the two numbers are integers or are more than REAL_EPSILON apart, we can do a strict comparison
+        # however, if they are not so; we must evaluate fuzzy comparison
+        if isinstance(left_value, int) or abs(left_value - right_value) > REAL_EPSILON:
+            return self.evaluate_strict_comparison(comparison, left_value, right_value)
         else:
-            return self.perform_real_comparison(comparison, left_value, right_value)
+            return self.evaluate_fuzzy_comparison(comparison, left_value, right_value, REAL_EPSILON)
 
-    def perform_integer_comparison(self, comparison, left_value: int, right_value: int):
-        if comparison.operator == ComparisonOp.Greater:
+    @staticmethod
+    def evaluate_strict_comparison(comparison, left_value: Union[int, float], right_value: Union[int, float]) -> bool:
+        """
+        Evaluate strict comparison between `left_value` and `right_value`
+        """
+        if comparison.operator == ComparisonOp.Equal:
+            pred_value = left_value == right_value
+        elif comparison.operator == ComparisonOp.NotEqual:
+            pred_value = left_value != right_value
+        elif comparison.operator == ComparisonOp.Greater:
             pred_value = left_value > right_value
         elif comparison.operator == ComparisonOp.Less:
             pred_value = left_value < right_value
         elif comparison.operator == ComparisonOp.GreaterEqual:
             pred_value = left_value >= right_value
-        elif comparison.operator == ComparisonOp.LessEqual:
-            pred_value = left_value <= right_value
-        elif comparison.operator == ComparisonOp.Equal:
-            pred_value = left_value == right_value
         else:
-            assert comparison.operator == ComparisonOp.NotEqual
-            pred_value = left_value != right_value
+            assert comparison.operator == ComparisonOp.LessEqual
+            pred_value = left_value <= right_value
         return pred_value
 
-    def perform_real_comparison(self):
+    @staticmethod
+    def evaluate_fuzzy_comparison(comparison, left_value: float, right_value: float, epsilon: float):
         """
-        real numbers can't be exactly compared; two reals are equal if
-        they are within epsilon of each other
+        Evaluate fuzzy comparison between `left_value` and `right_value`.
+        NOTE: real numbers can't be exactly compared; two reals are equal if
+        they are within epsilon of each other. A number with an epsilon can be
+        viewed as a range.
+
+        NOTE: This behavior may need to be revisited. For now it provides something
+        sensible enough.
         """
-        # TODO: implement me
-        breakpoint()
-        raise NotImplementedError
+        if comparison.operator == ComparisonOp.Equal:
+            pred_value = abs(left_value - right_value) <= epsilon
+        elif comparison.operator == ComparisonOp.NotEqual:
+            pred_value = abs(left_value - right_value) > epsilon
+        elif comparison.operator == ComparisonOp.Greater:
+            pred_value = left_value + epsilon > right_value
+        elif comparison.operator == ComparisonOp.Less:
+            pred_value = left_value - epsilon < right_value
+        elif comparison.operator == ComparisonOp.GreaterEqual:
+            pred_value = left_value + epsilon >= right_value
+        else:
+            assert comparison.operator == ComparisonOp.LessEqual
+            pred_value = left_value - epsilon <= right_value
+        return pred_value
 
     def visit_binary_arithmetic_operation(self, operation: BinaryArithmeticOperation):
         op1_value = self.evaluate(operation.operand1)

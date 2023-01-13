@@ -657,3 +657,10 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 1/7
     Addressed most of the failures in the existing E2E tests. But there are clearly many outstanding issues. I need to
     add many more comprehensive tests.
+
+1/12
+    Float (REAL datatype) values are correct up to a certain precision.  IEEE 754 is a one standardized way of work with floating
+    point numbers. But this is a beast of a standard. For now I will handle floats in a somewhat simpler but cruder way. I will define a much
+    narrower range withing which floats are sensible. Additionally, there will be real_epsilon value. This means any floats actual
+    value is between bit_value +- real_epsilon. In actuality, this value should change with the precision and magnitude of the number.
+    But again this is a lot of work to handle. So instead I'll define floats to a narrower range, where I can take it as a fixed value.

@@ -59,6 +59,9 @@
 
 ## documentation/refactoring
 - complete architecture.md
+- document datatypes (type and valid ranges)
+  - int is 4 byte int
+  - real is a floating point number, but I'm handling it with much simpler rules than IEEE754
 - complete future-work.md  
     - should contain high-level roadmap and interesting areas of future work
 - add tutorial
