@@ -331,7 +331,7 @@ class VirtualMachine(Visitor):
         self.end_scope()
 
         # output pipe for sanity
-        #for msg in self.output_pipe.store:
+        # for msg in self.output_pipe.store:
         #    logger.info(msg)
         return Response(True)
 
@@ -983,9 +983,6 @@ class VirtualMachine(Visitor):
 
     def end_scope(self):
         self.scopes.pop()
-
-    def scoped_register_scoped_object(self, name, obj) -> None:
-        pass
 
     def scope_register_single_source(self, source: SingleSource):
         if source.table_alias is None:
