@@ -75,6 +75,15 @@ class SimpleRecord(AbstractRecord):
         """
         return self.values[column.lower()]
 
+    def at_index(self, pos: int):
+        """
+        return
+        """
+        columns = self.schema.cols
+        if pos >= len(columns):
+            raise ValueError(f"Invalid index {pos}; expected [0, {len(columns)-1}]")
+        return self.values[columns[pos].name.lower()]
+
     def has_columns(self, column: str) -> bool:
         """
         check whether record has column

@@ -671,3 +671,4 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     was that from the user's perspective, they would prefer case in-sensitive lookup. But there are cases, where we want to preserve
     casing. Ultimately, this should be configurable; but I don't want to spend that much time, refactoring this - since a lot
     of callpoints explicitly do <x>.lower(), hence will continue this.
+
