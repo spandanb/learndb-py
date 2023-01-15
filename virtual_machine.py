@@ -42,7 +42,8 @@ from lang_parser.symbols import (
     ColumnName,
     OrClause,
     Literal,
-    Expr
+    Expr,
+    InsertStmnt
 )
 
 from lang_parser.sqlhandler import SqlFrontEnd
@@ -378,7 +379,8 @@ class VirtualMachine(Visitor):
             elif isinstance(selectable, ColumnName):
                 resp = self.type_checker.analyze_scalar(selectable, source_schema)
                 assert resp.success
-                out_column = Column(selectable.name, resp.body)
+                # all names are stored as lower case version of name
+                out_column = Column(selectable.name.lower(), resp.body)
                 out_columns.append(out_column)
             elif isinstance(selectable, Literal):
                 out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
@@ -556,7 +558,7 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=out_rsname)
 
-    def visit_insert_stmnt(self, stmnt) -> Response:
+    def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
         handle insert stmnt
         """

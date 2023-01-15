@@ -304,15 +304,18 @@ class ExpressionInterpreter(Visitor):
         else:
             right_value = self.evaluate(comparison.right_op)
 
-        assert isinstance(left_value, numbers.Number) and isinstance(right_value, numbers.Number)
+        if comparison.operator != ComparisonOp.Equal and comparison.operator != ComparisonOp.NotEqual:
+            # equality and inequality can be for any datatypes
+            # less than etc. comparisons are only defined for numeric types
+            assert isinstance(left_value, numbers.Number) and isinstance(right_value, numbers.Number)
 
         # NOTE: we handle both integer and real (floating point) numbers
         # if the two numbers are integers or are more than REAL_EPSILON apart, we can do a strict comparison
         # however, if they are not so; we must evaluate fuzzy comparison
-        if isinstance(left_value, int) or abs(left_value - right_value) > REAL_EPSILON:
-            return self.evaluate_strict_comparison(comparison, left_value, right_value)
-        else:
+        if isinstance(left_value, float) and abs(left_value - right_value) <= REAL_EPSILON:
             return self.evaluate_fuzzy_comparison(comparison, left_value, right_value, REAL_EPSILON)
+        else:
+            return self.evaluate_strict_comparison(comparison, left_value, right_value)
 
     @staticmethod
     def evaluate_strict_comparison(comparison, left_value: Union[int, float], right_value: Union[int, float]) -> bool:

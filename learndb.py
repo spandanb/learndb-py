@@ -546,6 +546,14 @@ def devloop():
         #"select cola from foo where colb = 4 AND colc = 6 OR colc = 3"
     ]
 
+    # failing test case - test_select_no_condition_mixed_type_schema
+    # 2 issues; insert not working, no error being shown for column and value list being mismatched
+    texts = [
+        "create table foo ( cola integer primary key, colb text)",
+        "insert into foo (cola, colb) values (1, 'car')",
+        "insert into foo (cola, colb) values (2, 'monkey')",
+        "select cola, colb from foo"
+    ]
 
     for text in texts:
         logging.info(f"handling {text}")

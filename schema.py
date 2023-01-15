@@ -23,7 +23,7 @@ class Column:
     Represents a column in a schema
     """
     def __init__(self, name: str, datatype, is_primary_key: bool = False, is_nullable: bool = True):
-        self.name = name
+        self.name = name.lower()
         self.datatype = datatype
         self.is_primary_key = is_primary_key
         self.is_nullable = is_nullable
@@ -328,6 +328,7 @@ def generate_schema(create_stmnt) -> Response:
         if not resp.success:
             return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
         datatype = resp.body
+        #  NOTE: all column names are stored as lower case
         column_name = coldef.column_name.name.lower()
         column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
         columns.append(column)
