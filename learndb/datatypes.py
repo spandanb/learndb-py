@@ -7,8 +7,7 @@ import struct
 from abc import ABCMeta
 from typing import Any, Type
 
-
-from constants import INTEGER_SIZE, REAL_SIZE
+from .constants import INTEGER_SIZE, REAL_SIZE
 
 
 class DataType:

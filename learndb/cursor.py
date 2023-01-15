@@ -1,5 +1,5 @@
-from constants import INTERNAL_NODE_MAX_CELLS
-from btree import Tree, NodeType
+from .constants import INTERNAL_NODE_MAX_CELLS
+from .btree import Tree, NodeType
 
 
 class Cursor:

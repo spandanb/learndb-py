@@ -7,11 +7,11 @@ from enum import Enum, auto
 from typing import Any, Type, Optional, Union
 from lark import Token
 
-from constants import REAL_EPSILON
-from dataexchange import Response
-from datatypes import is_term_valid_for_datatype, DataType, Integer, Real, Text, Blob
-from lang_parser.visitor import Visitor
-from lang_parser.symbols import (Symbol,
+from .constants import REAL_EPSILON
+from .dataexchange import Response
+from .datatypes import is_term_valid_for_datatype, DataType, Integer, Real, Text, Blob
+from .lang_parser.visitor import Visitor
+from .lang_parser.symbols import (Symbol,
                                  OrClause,
                                  AndClause,
                                  ColumnName,
@@ -24,9 +24,8 @@ from lang_parser.symbols import (Symbol,
                                  FuncCall,
                                  Expr
                                  )
-from functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
-from schema import SimpleSchema, ScopedSchema, GroupedSchema
-from record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
+from .functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
+from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
 
 
 class SemanticAnalysisError(Exception):

@@ -10,19 +10,15 @@ from typing import Any, List, Optional, Union, Set, Dict, Tuple, Type
 from enum import Enum, auto
 from collections import defaultdict
 
-from btree import Tree, TreeInsertResult, TreeDeleteResult
-from constants import CATALOG
-from cursor import Cursor
-from datatypes import DataType
-from dataexchange import Response
-from functions import resolve_function_name, is_aggregate_function, is_scalar_function
-from schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, AbstractSchema, SimpleSchema,
-                    ScopedSchema, make_grouped_schema, GroupedSchema, Column)
-from serde import serialize_record, deserialize_cell
-
 from lark import Token
-from lang_parser.visitor import Visitor
-from lang_parser.symbols import (
+
+from .btree import Tree, TreeInsertResult, TreeDeleteResult
+from .constants import CATALOG
+from .cursor import Cursor
+from .dataexchange import Response
+from .functions import resolve_function_name, is_aggregate_function, is_scalar_function
+from .lang_parser.visitor import Visitor
+from .lang_parser.symbols import (
     Symbol,
     Program,
     CreateStmnt,
@@ -45,10 +41,8 @@ from lang_parser.symbols import (
     Expr,
     InsertStmnt
 )
-
-from lang_parser.sqlhandler import SqlFrontEnd
-
-from record_utils import (
+from .lang_parser.sqlhandler import SqlFrontEnd
+from .record_utils import (
     SimpleRecord,
     GroupedRecord,
     create_catalog_record,
@@ -59,10 +53,14 @@ from record_utils import (
     create_record_from_raw_values
 )
 
-from value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
+from .schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, AbstractSchema, SimpleSchema,
+                    ScopedSchema, make_grouped_schema, GroupedSchema, Column)
+from .serde import serialize_record, deserialize_cell
+
+from .value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
                               ValueGeneratorFromRecordOverExpr,
                               ValueGeneratorFromRecordGroupOverExpr)
-from vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer, datatype_from_symbolic_datatype
+from .vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer, datatype_from_symbolic_datatype
 
 
 logger = logging.getLogger(__name__)
@@ -108,6 +106,7 @@ class VirtualMachine(Visitor):
     """
     def __init__(self, state_manager, output_pipe, stop_program_on_statement_failure=True):
         # 1. input params
+        # TODO: should this be merged with section [3.]
         self.state_manager = state_manager
         # 1.1. output pipe where results of select are writen to
         self.output_pipe = output_pipe
