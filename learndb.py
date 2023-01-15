@@ -23,7 +23,6 @@ from lang_parser.symbols import Program
 from dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
 from pipe import Pipe
 from statemanager import StateManager
-#from virtual_machine import VirtualMachine
 from virtual_machine import VirtualMachine
 
 

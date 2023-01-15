@@ -2,10 +2,12 @@
 
 ## Top Priority
 - write e2e tests for passing, and failing use cases
+- - ungrouped source impl
 - for lang_tests, I should assert on contents, right now only checking if parse is successful
 - cleanup learndb.py; ensure all devloops are encoded in some test cases
 - how to best structure E2E tests? 
   - how should they be named?
+
 - write tutorial.md
 - update README.md
 

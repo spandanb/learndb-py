@@ -9,6 +9,46 @@ from constants import TEST_DB_FILE
 from learndb import LearnDB
 
 
+# utils
+
+
+def read_columns_from_pipe(pipe, column_indices):
+    """
+    Utility to read from pipe and return list of tuples
+    """
+    results = []
+    while pipe.has_msgs():
+        record = pipe.read()
+        tpl = tuple(record.at_index(idx) for idx in column_indices)
+        #tpl = tuple(record.get(column_name) for column_name in column_names)
+        results.append(tpl)
+    return results
+
+
+
+@pytest.fixture
+def db0():
+    """
+    Return db with schema 0 loaded
+    Doesn't seem to work
+    """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+    commands = [
+        "create table foo ( cola integer primary key, colb integer)",
+        "insert into foo (cola, colb) values (1, 2)",
+        "insert into foo (cola, colb) values (2, 4)",
+        "insert into foo (cola, colb) values (3, 6)",
+    ]
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    return db
+
+# tests
+
+
 def test_create_table():
     """
     create table and check existence in catalog
@@ -100,7 +140,23 @@ def test_select_no_condition_mixed_type_schema():
     assert actual_keys == [1, 2]
 
 
-def test_select_equality():
+def test_select_equality0(db0):
+    """
+    test select with an equality condition
+
+    :return:
+    """
+
+    # case 1
+    db0.handle_input("select cola from foo where cola = 1")
+    keys = []
+    while db0.get_pipe().has_msgs():
+        record = db0.get_pipe().read()
+        keys.append(record.get("cola"))
+    assert keys == [1]
+
+
+def test_select_equality1():
     """
     test select with an equality condition
 
@@ -119,14 +175,6 @@ def test_select_equality():
 
     for cmd in commands:
         db.handle_input(cmd)
-
-    # case 1
-    db.handle_input("select cola from foo where cola = 1")
-    keys = []
-    while db.get_pipe().has_msgs():
-        record = db.get_pipe().read()
-        keys.append(record.get("cola"))
-    assert keys == [1]
 
     db.handle_input("select cola from foo where colB = 4 AND colc = 6")
     keys = []
@@ -205,8 +253,15 @@ def test_select_on_real_column():
     assert keys == [2]
 
 
-def test_select_group_by_having():
-    texts = [
+def test_select_group_by():
+    """
+    Group by
+    """
+
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+
+    commands = [
         "create table items ( custid integer primary key, country integer)",
         "insert into items (custid, country) values (10, 1)",
         "insert into items (custid, country) values (20, 1)",
@@ -214,9 +269,42 @@ def test_select_group_by_having():
         "insert into items (custid, country) values (200, 2)",
         "insert into items (custid, country) values (300, 2)",
         # "select f.cola from foo f group by f.colb, f.cola",
-        #"select count(custid), country from items group by country",
+        "select count(custid), country from items group by country",
+    ]
+
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    pipe = db.get_pipe()
+    assert pipe.has_msgs()
+    values = read_columns_from_pipe(pipe, [0, 1])
+    assert values == [(2, 1), (3, 2)]
+
+
+def test_select_group_by_having():
+
+    commands = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
         "select count(custid), country from items group by country having count(cust_id) > 1",
     ]
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    pipe = db.get_pipe()
+    assert pipe.has_msgs()
+    values = read_columns_from_pipe(pipe, [0, 1])
+    assert values == [(3, 2)]
 
 
 def test_select_having():

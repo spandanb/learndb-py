@@ -411,7 +411,7 @@ class ExpressionInterpreter(Visitor):
             resp = self.name_registry.resolve_aggregate_func_name(func_call.name)
             assert resp.success  # NOTE: this has been confirmed by SemanticAnalyzer
             func = resp.body
-            arg_column_name = func_call.args[0].name
+            arg_column_name = func_call.args[0].expr.name
             # get list of column values from recordset
             value_list = self.record.recordset_to_values(arg_column_name)
             # wrap value list, since agg function expects a list of pos args, where first arg is value list
@@ -587,23 +587,24 @@ class SemanticAnalyzer(Visitor):
                                          f"received {len(func_call.args)}"
                     raise SemanticAnalysisError()
 
-                if not isinstance(func_call.args[0], ColumnName):
+                arg_expr = func_call.args[0]
+                column_name = arg_expr.expr
+
+                if not isinstance(column_name, ColumnName):
                     self.failure_type = SemanticAnalysisFailure.FunctionMismatch
                     self.error_message = "Aggregate function expects a single column reference"
                     raise SemanticAnalysisError()
 
-                column_arg = func_call.args[0]
-                column_name = column_arg.name
-                if not self.schema.has_column(column_name):
+                if not self.schema.has_column(column_name.name):
                     self.failure_type = SemanticAnalysisFailure.ColumnDoesNotExist
-                    self.error_message = f"column does not exist [{column_name}]"
+                    self.error_message = f"column does not exist [{column_name.name}]"
                     raise SemanticAnalysisError()
 
-                if not self.schema.is_non_grouping_column(column_name):
+                if not self.schema.is_non_grouping_column(column_name.name):
                     # ensure column_arg is a non-grouping column
                     self.failure_type = SemanticAnalysisFailure.FunctionMismatch
                     self.error_message = f"Expected non-grouping column as arg to aggregate function; " \
-                                         f"received column [{column_name}] for function [{func_name}] "
+                                         f"received column [{column_name.name}] for function [{func_name}] "
                     raise SemanticAnalysisError()
 
                 func = resp.body
