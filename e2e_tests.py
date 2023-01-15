@@ -44,8 +44,6 @@ def test_insert():
     pipe = db.get_pipe()
 
     # create table
-    # TODO: FIXME cannot handle non-lowercase column names, e.g.
-    # db.handle_input("create table foo ( colA integer primary key, colB text)")
     db.handle_input("create table foo ( cola integer primary key, colb text)")
 
     # insert into table
@@ -60,6 +58,48 @@ def test_insert():
     assert record.get("colb") == "hellew words"
 
 
+def test_select_no_condition():
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+    commands = [
+        "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
+        "insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)",
+        "insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)"
+    ]
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    db.handle_input("select cola from foo")
+    actual_keys = []
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        actual_keys.append(record.get("cola"))
+
+    assert actual_keys == [1, 2]
+
+
+def test_select_no_condition_mixed_type_schema():
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+    commands = [
+        "create table foo ( cola integer primary key, colb text)",
+        "insert into foo (cola, colb) values (1, 'car')",
+        "insert into foo (cola, colb) values (2, 'monkey')"
+    ]
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    db.handle_input("select cola from foo")
+    actual_keys = []
+    while db.get_pipe().has_msgs():
+        record = db.get_pipe().read()
+        actual_keys.append(record.get("cola"))
+
+    assert actual_keys == [1, 2]
+
+
 def test_select_equality():
     """
     test select with an equality condition
@@ -69,13 +109,16 @@ def test_select_equality():
     db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
 
-    # create table
-    db.handle_input("create table foo ( cola integer primary key, colB integer, colc integer, cold integer)")
-    # insert into table
-    db.handle_input("insert into foo (cola, colb, colc, cold) values (1, 2, 31, 4)")
-    db.handle_input("insert into foo (cola, colb, colc, cold) values (2, 4, 6, 8)")
-    db.handle_input("insert into foo (cola, colb, colc, cold) values (3, 10, 3, 8)")
-    db.handle_input("insert into foo (cola, colb, colc, cold) values (4, 6, 90, 8)")
+    commands = [
+        "create table foo ( cola integer primary key, colB integer, colc integer, cold integer)",
+        "insert into foo (cola, colB, colc, cold) values (1, 2, 31, 4)",
+        "insert into foo (cola, colB, colc, cold) values (2, 4, 6, 8)",
+        "insert into foo (cola, colB, colc, cold) values (3, 10, 3, 8)",
+        "insert into foo (cola, colB, colc, cold) values (4, 6, 90, 8)",
+    ]
+
+    for cmd in commands:
+        db.handle_input(cmd)
 
     # case 1
     db.handle_input("select cola from foo where cola = 1")
@@ -85,14 +128,14 @@ def test_select_equality():
         keys.append(record.get("cola"))
     assert keys == [1]
 
-    db.handle_input("select cola from foo where colb = 4 AND colc = 6")
+    db.handle_input("select cola from foo where colB = 4 AND colc = 6")
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
         keys.append(record.get("cola"))
     assert keys == [2]
 
-    db.handle_input("select cola from foo where colb = 4 AND colc = 6 OR colc = 3")
+    db.handle_input("select cola from foo where colB = 4 AND colc = 6 OR colc = 3")
     keys = []
     while db.get_pipe().has_msgs():
         record = db.get_pipe().read()
@@ -302,16 +345,24 @@ def test_delete_equality_on_primary_column():
     db.nuke_dbfile()
 
     # create table
-    db.handle_input("create table foo ( colA integer primary key, colB text)")
+    db.handle_input("create table foo ( cola integer primary key, colb text)")
     # insert
-    db.handle_input("insert into foo (colA, colB) values (4, 'hellew words')")
+    db.handle_input("insert into foo (cola, colb) values (4, 'hello world')")
+    db.handle_input("insert into foo (cola, colb) values (5, 'bye world')")
     # delete
-    db.handle_input("delete from foo where colA = 4")
+    db.handle_input("delete from foo where cola = 4")
     # verify data
-    cmd = "select colA, colB  from foo"
+    cmd = "select cola, colb  from foo"
     db.handle_input(cmd)
     pipe = db.get_pipe()
-    assert not pipe.has_msgs(), "expected no rows"
+    assert pipe.has_msgs(), "expected rows"
+
+    actual_keys = []
+    while pipe.has_msgs():
+        record = pipe.read()
+        actual_keys.append(record.get("cola"))
+
+    assert actual_keys == [5]
 
 
 def test_delete_equality_on_non_primary_column_str_column():
@@ -325,9 +376,9 @@ def test_delete_equality_on_non_primary_column_str_column():
     # create table
     db.handle_input("create table foo ( cola integer primary key, colb text)")
     # insert
-    db.handle_input("insert into foo (colA, colB) values (4, 'hello world')")
-    db.handle_input("insert into foo (colA, colB) values (5, 'hey world')")
-    db.handle_input("insert into foo (colA, colB) values (6, 'bye world')")
+    db.handle_input("insert into foo (cola, colb) values (4, 'hello world')")
+    db.handle_input("insert into foo (cola, colb) values (5, 'hey world')")
+    db.handle_input("insert into foo (cola, colb) values (6, 'bye world')")
 
     # delete
     db.handle_input("delete from foo where colb = 'hello world'")
@@ -431,3 +482,36 @@ def test_failure_create_table_with_non_int_primary_key():
     Primary keys must be integers; hence below statement should fail
     """
     "create table foo (cola real primary key, colB integer)"
+
+
+def test_failure_invalid_insert():
+    # NOTE: the  inserts should fail, since they ref more columns than what's in the schema, and in the value lists
+    # TODO: create separate fail cases for failures: 1) value list has more columns than schema; the opposite is okay- which
+    # just means there are null values
+    #  2)  value list is of a different length than column name list
+    commands = [
+        "create table foo ( cola integer primary key, colb text)",
+        "insert into foo (cola, colb, colc, cold) values (1, 'car')",
+        "insert into foo (cola, colb, colc, cold) values (2, 'monkey')"
+    ]
+
+
+def test_bugfix_mixed_case_identifiers():
+    # this is only for select
+    # ensure fix- i.e. to lowercase all identifiers at parse time
+    # or do all comparison/checks in a case insensitive-
+    # works for all statements
+
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    commands = [
+        "create table foo ( colA integer primary key, colB text)",
+        "insert into foo (colA, colB) values (4, 'hello world')",
+    ]
+    for cmd in commands:
+        db.handle_input(cmd)
+
+    # verify data
+    cmd = "select colA, colB  from foo"
+    db.handle_input(cmd)
+    pipe = db.get_pipe()
+    assert pipe.has_msgs(), "expected rows"

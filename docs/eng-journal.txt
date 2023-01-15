@@ -664,3 +664,10 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
     narrower range withing which floats are sensible. Additionally, there will be real_epsilon value. This means any floats actual
     value is between bit_value +- real_epsilon. In actuality, this value should change with the precision and magnitude of the number.
     But again this is a lot of work to handle. So instead I'll define floats to a narrower range, where I can take it as a fixed value.
+
+
+1/14
+    Identifier casing. So far I've been storing column names as lowercased version of themselves. I believe the initial intuition
+    was that from the user's perspective, they would prefer case in-sensitive lookup. But there are cases, where we want to preserve
+    casing. Ultimately, this should be configurable; but I don't want to spend that much time, refactoring this - since a lot
+    of callpoints explicitly do <x>.lower(), hence will continue this.

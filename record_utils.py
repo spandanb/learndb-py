@@ -284,7 +284,7 @@ def create_record(column_name_list: ColumnNameList, value_list: ValueList, schem
     values = {}
     for idx, col_name in enumerate(column_name_list.names):
         value = value_list.values[idx]
-        values[col_name.name] = value.value if isinstance(value, Literal) else value
+        values[col_name.name.lower()] = value.value if isinstance(value, Literal) else value
 
     record = SimpleRecord(values, schema)
 

@@ -364,19 +364,19 @@ class LimitClause(Symbol):
 @dataclass
 class InsertStmnt(Symbol):
     table_name: Any
-    column_name_list: List[Any]
-    value_list: List[Any]
+    column_name_list: ColumnNameList
+    value_list: ValueList
 
 
 
 @dataclass
 class ColumnNameList(Symbol):
-    names: List
+    names: List[ColumnName]
 
 
 @dataclass
 class ValueList(Symbol):
-    values: List
+    values: List[Any]
 
 
 @dataclass

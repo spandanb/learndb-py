@@ -15,6 +15,9 @@ class Pipe:
         return len(self.store) > 0
 
     def read(self):
+        """
+        Read message and remove from the pipe
+        """
         return self.store.popleft()
 
     def reset(self):
