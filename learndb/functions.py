@@ -14,8 +14,8 @@ Native functions will have a declaration.
 from typing import List, Dict, Any, Callable, Type, TypeVar, Union
 
 
-from dataexchange import Response
-from datatypes import DataType, Integer, Real, Text, Blob
+from .dataexchange import Response
+from .datatypes import DataType, Integer, Real, Text, Blob
 
 
 T = TypeVar('T')

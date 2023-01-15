@@ -2,7 +2,7 @@ import logging
 import os.path
 import sys
 
-from constants import (
+from .constants import (
     TABLE_MAX_PAGES,
     PAGE_SIZE,
     EXIT_FAILURE,

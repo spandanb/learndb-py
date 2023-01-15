@@ -7,11 +7,11 @@ when iterating over a recordset, the valueGenerator takes a record, and returns 
 """
 from dataclasses import dataclass
 from typing import Any, Dict, List, NewType, Union
-from functions import FunctionDefinition
-from lang_parser.symbols import OrClause
-from vm_utilclasses import ExpressionInterpreter, NameRegistry
-from record_utils import SimpleRecord, ScopedRecord, GroupedRecord
-from schema import GroupedSchema
+
+from .functions import FunctionDefinition
+from .lang_parser.symbols import OrClause
+from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord
+from .vm_utilclasses import ExpressionInterpreter
 
 
 @dataclass

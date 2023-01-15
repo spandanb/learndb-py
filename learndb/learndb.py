@@ -17,21 +17,30 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from random import randint, shuffle  # for testing
 
-from constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
-from lang_parser.sqlhandler import SqlFrontEnd
-from lang_parser.symbols import Program
-from dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
-from pipe import Pipe
-from statemanager import StateManager
-from virtual_machine import VirtualMachine
+from .constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
+from .lang_parser.sqlhandler import SqlFrontEnd
+from .lang_parser.symbols import Program
+from .dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
+from .pipe import Pipe
+from .statemanager import StateManager
+from .virtual_machine import VirtualMachine
 
 
 # section: core execution/user-interface logic
 
+def config_logging():
+    # config logger
+    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
+    # log to file
+    # logging.basicConfig(format=FORMAT, level=logging.DEBUG, filename=os.path.join(os.getcwd(), "log.log"))
+    # log to stdout
+    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
+
+
 class LearnDB:
     """
     This encapsulates functionality over core db functions-
-    exposed via a thin wrapper.
+    exposed via a thin wrapper. This will be the primary user interface.
     """
 
     def __init__(self, db_filepath: str, nuke_db_file: bool = False):
@@ -47,12 +56,19 @@ class LearnDB:
         self.state_manager = None
         self.pipe = None
         self.virtual_machine = None
+        self.configure()
         self.reset()
 
     def reset(self):
         self.state_manager = StateManager(self.db_filepath)
         self.pipe = Pipe()
         self.virtual_machine = VirtualMachine(self.state_manager, self.pipe)
+
+    def configure(self):
+        """
+        Handle any configuration tasks
+        """
+        config_logging()
 
     def nuke_dbfile(self):
         """
@@ -190,13 +206,13 @@ class LearnDB:
             return Response(False, error_message=e_resp.error_message)
 
 
-def repl():
+def repl(db_filepath: str = DB_FILE):
     """
     repl
     """
 
     # create db client
-    db = LearnDB(DB_FILE)
+    db = LearnDB(db_filepath)
 
     print("Welcome to learndb")
     print("For help use .help")
@@ -555,7 +571,7 @@ def devloop():
     ]
 
     for text in texts:
-        logging.info(f"handling {text}")
+        logging.info(f"handling. {text}")
         resp = db.handle_input(text)
         logging.info(f"received resp: {resp}")
         while db.pipe.has_msgs():
@@ -564,7 +580,7 @@ def devloop():
     db.close()
 
 
-def parse_args_and_start(args: list):
+def parse_args_and_start(args: List):
     """
     parse args and starts
     :return:
@@ -600,12 +616,3 @@ python learndb.py file <filepath>
         print(args_description)
         return
 
-
-if __name__ == '__main__':
-    # config logger
-    FORMAT = "[%(filename)s:%(lineno)s - %(funcName)s ] %(message)s"
-    # log to file
-    # logging.basicConfig(format=FORMAT, level=logging.DEBUG, filename=os.path.join(os.getcwd(), "log.log"))
-    # log to stdout
-    logging.basicConfig(format=FORMAT, level=logging.DEBUG)
-    parse_args_and_start(sys.argv[1:])

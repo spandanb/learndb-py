@@ -5,11 +5,10 @@ Records are data containing objects that conform to a schema.
 # TODO: should this module be called `record.py`
 """
 from typing import Any, List, Optional, Union, Tuple
-from lark import Token
 
-from lang_parser.symbols import ColumnName, ColumnNameList, ValueList, Literal
-from dataexchange import Response
-from schema import SimpleSchema, ScopedSchema, GroupedSchema
+from .dataexchange import Response
+from .lang_parser.symbols import ColumnName, ColumnNameList, ValueList, Literal
+from .schema import SimpleSchema, ScopedSchema, GroupedSchema
 
 
 class InvalidNameException(Exception):

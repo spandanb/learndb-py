@@ -2,16 +2,16 @@ import sys
 from enum import Enum
 from typing import Type
 
-from constants import (CELL_KEY_SIZE_SIZE,
+from .constants import (CELL_KEY_SIZE_SIZE,
                        CELL_DATA_SIZE_SIZE,
                        INTEGER_SIZE,
                        REAL_SIZE
                        )
 
-from datatypes import DataType, Null, Integer, Text, Blob, Real
-from dataexchange import Response
-from schema import Integer, SimpleSchema
-from record_utils import SimpleRecord
+from .datatypes import DataType, Null, Integer, Text, Blob, Real
+from .dataexchange import Response
+from .schema import Integer, SimpleSchema
+from .record_utils import SimpleRecord
 
 
 class InvalidCell(Exception):

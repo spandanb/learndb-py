@@ -4,9 +4,9 @@ support API to read/write data via Table
 and creating tables etc.
 """
 
-from btree import Tree
-from pager import Pager
-from schema import SimpleSchema, CatalogSchema
+from .btree import Tree
+from .pager import Pager
+from .schema import SimpleSchema, CatalogSchema
 
 
 class StateManager:

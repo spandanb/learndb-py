@@ -3,7 +3,8 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 
 DB_FILE = 'db.file'
-TEST_DB_FILE = 'testdb.file'
+# TODO: nuke here
+#TEST_DB_FILE = 'testdb.file'
 
 # storage constants
 # NOTE: storage and btree constants that affect how the

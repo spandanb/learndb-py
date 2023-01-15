@@ -13,9 +13,9 @@ specified by the schema-, and related utilities are contained in record_utils.py
 
 from typing import List, Optional, Union
 
-from datatypes import DataType, Integer, Text, Blob, Real
-from lang_parser.symbols import TableName, SymbolicDataType, ColumnName
-from dataexchange import Response
+from .datatypes import DataType, Integer, Text, Blob, Real
+from .dataexchange import Response
+from .lang_parser.symbols import TableName, SymbolicDataType, ColumnName
 
 
 class Column:
