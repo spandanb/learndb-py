@@ -1,6 +1,7 @@
 import pytest
 
-from lang_parser.sqlhandler import SqlFrontEnd
+from .context import SqlFrontEnd
+#from lang_parser.sqlhandler import SqlFrontEnd
 
 
 def test_select_stmnt():

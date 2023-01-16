@@ -2,18 +2,15 @@
 Tests serde of individual datatypes and of schemas/records
 composed of columns of many different datatype
 """
-from constants import REAL_EPSILON
-from datatypes import Integer, Real, Text, Null, Blob
-from schema import SimpleSchema, Column
-from record_utils import SimpleRecord
-from serde import deserialize_cell, serialize_record
+from .context import (REAL_EPSILON, datatypes, SimpleSchema, Column, SimpleRecord, deserialize_cell,
+                      serialize_record)
 
 
 def test_integer_serde():
     values = [4, 100, 109297]
     for value in values:
         # create int
-        datatype = Integer
+        datatype = datatypes.Integer
         # serialize int
         ser_val = datatype.serialize(value)
         # deserialize bytes
@@ -26,7 +23,7 @@ def test_real_serde():
     values = [4.0, 11.7, 19.297]
     for value in values:
         # create int
-        datatype = Real
+        datatype = datatypes.Real
         # serialize int
         ser_val = datatype.serialize(value)
         # deserialize bytes
@@ -45,7 +42,7 @@ def test_key_only_schema_serde():
     :return:
     """
     schema = SimpleSchema('dummy', [
-            Column('pkey', Integer, is_primary_key=True)
+            Column('pkey', datatypes.Integer, is_primary_key=True)
         ])
     # create a record that matches above schema
     record = SimpleRecord({"pkey": 1}, schema)
@@ -70,9 +67,9 @@ def test_multi_column_fixed_len_type_serde():
     :return:
     """
     schema = SimpleSchema('dummy', [
-            Column('pkey', Integer, is_primary_key=True),
-            Column('name', Text),
-            Column('root_pagenum', Integer)
+            Column('pkey', datatypes.Integer, is_primary_key=True),
+            Column('name', datatypes.Text),
+            Column('root_pagenum', datatypes.Integer)
         ])
     # create a record that matches above schema
     record = SimpleRecord({"pkey": 1, "name": "some_table_nane", "root_pagenum": 2}, schema)
@@ -97,10 +94,10 @@ def test_nullable_serde():
     :return:
     """
     schema = SimpleSchema('dummy', [
-            Column('pkey', Integer, is_primary_key=True),
-            Column('name', Text),
-            Column('root_pagenum', Integer),
-            Column('sql', Text)
+            Column('pkey', datatypes.Integer, is_primary_key=True),
+            Column('name', datatypes.Text),
+            Column('root_pagenum', datatypes.Integer),
+            Column('sql', datatypes.Text)
         ])
     # create a record that matches above schema
     record = SimpleRecord({"pkey": 1, "name": "some_table_nane", "root_pagenum": 2, "sql": None}, schema)

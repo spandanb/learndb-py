@@ -145,6 +145,7 @@ class Symbol(ast_utils.Ast):
         return lines
 
     def prettystr(self) -> str:
+        # TODO: nuke; unused
         return "".join(self.prettyprint())
 
     def find_descendents(self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]]) -> List:
@@ -213,7 +214,7 @@ class ColumnDef(Symbol):
         return str(self)
 
     def __str__(self):
-        return self.prettystr()
+        return f"Column(name: {self.column_name}, datatype: {self.datatype}, pkey: {self.is_primary_key}, nullable: {self.is_nullable})"
 
 
 @dataclass
