@@ -586,11 +586,11 @@ def parse_args_and_start(args: List):
     :return:
     """
     args_description = """Usage:
-python learndb.py repl
+python run.py repl
     // start repl
-python learndb.py devloop
+python run.py devloop
     // start a dev-loop function
-python learndb.py file <filepath>
+python run.py file <filepath>
     // read file at <filepath>
     """
     if len(args) < 1:

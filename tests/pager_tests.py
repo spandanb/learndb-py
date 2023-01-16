@@ -3,7 +3,7 @@ Get a page, return a page. close pager.
 """
 
 from pager import Pager
-from constants import TEST_DB_FILE
+from test_constants import TEST_DB_FILE
 
 
 def test_free_pages_persisted():

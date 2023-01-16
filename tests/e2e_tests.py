@@ -5,8 +5,8 @@ can initiate.
 """
 import pytest
 
-from constants import TEST_DB_FILE
-from learndb import LearnDB
+from .context import LearnDB
+from .test_constants import TEST_DB_FILE
 
 
 # utils
@@ -20,10 +20,8 @@ def read_columns_from_pipe(pipe, column_indices):
     while pipe.has_msgs():
         record = pipe.read()
         tpl = tuple(record.at_index(idx) for idx in column_indices)
-        #tpl = tuple(record.get(column_name) for column_name in column_names)
         results.append(tpl)
     return results
-
 
 
 @pytest.fixture

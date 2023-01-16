@@ -6,8 +6,8 @@ the testing; otherwise, I'll have to import serde logic to generate formatted ce
 import pytest
 import random
 
-from learndb import LearnDB
-from constants import TEST_DB_FILE
+from .context import LearnDB
+from .test_constants import TEST_DB_FILE
 
 
 @pytest.fixture

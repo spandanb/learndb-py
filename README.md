@@ -53,12 +53,21 @@ The following are some parts of a DBMS (In no particular order):
     - Sqllite file format: [docs](https://www.sqlite.org/fileformat2.html) 
     - MIT's 6-830 Notes: [6-830 Course Notes](https://ocw.mit.edu/courses/electrical-engineering-and-computer-science/6-830-database-systems-fall-2010)
 
+## Development
+
+- To install for development, i.e. src can be edited from without having to reinstall:
+    - `cd <repo_root>`
+    - `python3 -m pip install -e .`
+
+- NOTE: run.py provides a script to run learndb; this requires learndb be installed first.
+
 ## Run
 
 - Requires > python 3.10 and pytest
 
 - Run btree tests:
-`python -m pytest -s btree_tests.py`
+-`python -m pytest -s tests/btree_tests.py`  # stdout
+- `python -m pytest tests/btree_tests.py`  # suppressed out
 
 - Run end-to-end tests:
 `... e2e_tests.py`
@@ -116,53 +125,10 @@ Deleting the `db.file` will effectively drop the entire database.
 
 ### Supported Grammar
 
-Reproduced from `lang_parser/sqlparser.py`
+The supported grammar can be found at: `<repo_root>/learndb/lang_parser/grammar.py`
 
-```
-    grammar :
-        program -> (stmnt ";") * EOF
-
-        stmnt   -> select_expr
-                | create_stmnt
-                | drop_stmnt
-                | insert_stmnt
-                | update_stmnt
-                | delete_stmnt
-                | truncate_stmnt
-
-        select_expr  -> "select" selectable "from" from_item "where" where_clause
-        selectable    -> (column_name ",")* (column_name)
-        column_name   -> IDENTIFIER
-        from_location -> IDENTIFIER
-        where_clause  -> (and_clause "or")* (and_clause)
-        and_clause    -> (predicate "and")* (predicate)
-        predicate     -> term ( ( ">" | ">=" | "<" | "<=" | "<>" | "=" ) term ) ;
-
-        create_stmnt -> "create" "table" table_name "(" column_def_list ")"
-        column_def_list -> (column_def ",")* column_def
-        column_def -> column_name datatype ("primary key")? ("not null")?
-        table_name -> IDENTIFIER
-
-        drop_stmnt -> "drop" "table" table_name
-
-        insert_stmnt -> "insert" "into" table_name "(" column_name_list ")" "values" "(" value_list ")"
-        column_name_list -> (column_name ",")* column_name
-        value_list -> (value ",")* value
-
-        delete_stmnt -> "delete" "from" table_name ("where" where_clause)?
-
-        update_stmnt -> "update" table_name "set" column_name = value ("where" where_clause)?
-
-        truncate_stmnt -> "truncate" table_name
-
-        NUMBER        -> {0-9}+(.{0-9}+)?
-        STRING        -> '.*'
-        IDENTIFIER    -> {_a-zA-z0-9}+
-
-```
 
 ## Misc Notes
 - LEAF_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CELLS control how many max children each node type can support
 
 ## Gotchas
-- Current parser + vm, has some issues with column name, e.g. create and select stmnt not being in lowercase
