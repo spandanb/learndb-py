@@ -57,7 +57,10 @@ The following are some parts of a DBMS (In no particular order):
 
 - To install for development, i.e. src can be edited from without having to reinstall:
     - `cd <repo_root>`
-    - `python3 -m pip install -e .`
+    - create virtualenv: `python3 -m venv venv `
+    - activate: `source venv\bin\activate`
+    - `python -m pip install requirements.txt`
+    - install in edit mode: `python3 -m pip install -e .`
 
 - NOTE: run.py provides a script to run learndb; this requires learndb be installed first.
 
@@ -91,6 +94,8 @@ The following are some parts of a DBMS (In no particular order):
 e.g. ` python -m pydoc -w .\btree.py`
 
 ## Getting Started- Tutorial
+
+# TODO: update and move to docs/tutorial.md
 
 Let's consider how we can use the repl
 

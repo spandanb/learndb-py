@@ -1,6 +1,17 @@
 # Tasks
 
 ## Top Priority
+- release
+    - failing e2e tests should use fixtures
+    - restructure repo; add learndb/, tests/
+        - what is the user interface? can I create my own driver file
+    - add config file (controls output filepath, etc)
+
+    - write tutorial.md
+        - have hacking section, i.e. how to start updating the code directly
+    - update README.md
+    - track bugs/gotchas
+- btree tests are failing
 - write e2e tests for passing, and failing use cases
 - - ungrouped source impl
 - for lang_tests, I should assert on contents, right now only checking if parse is successful
@@ -8,56 +19,18 @@
 - how to best structure E2E tests? 
   - how should they be named?
 
-- write tutorial.md
-- update README.md
 
-## Lark
-  - document how parse tree -> AST is working
-  - pretty print transformed tree
-  - to_ast 
-      - sql_handler should return cleaned up ast
-  - _Ast root may need to implement visitor interface
-  - write tests for lark
-  - validations: when parse tree is being turned into ast, assert things like, e.g. no-on clause on cross-join
-
-## Parser
-- ensure rules make sense with `expression` symbol
-  - this (expression) should wrap or_clause
-  - func_call from grammar/parser side only supports pos args; extend this to allow named args since function objects support named args
-
-
-
-## Storage (btree)
-- support deletion/free-list  
-  - support defragmentation of unallocated space
-  - when allocating from free list, allocate whole block, 
-    the diff between block size and data size can be accounted for in diff between
-    i.e. don't bother chunking blocks- since we'll have to account for padding anyways since free-list blocks have a min size
-    
-- allocating on fragmented node (with enough space) should trigger 
-  single-node-in-place compaction
-
-
-## Testing
-- test all permutations of small test cases
-- add stress tests (stress-tests.txt)
-
-## VM
-- flow
-  - if a statement fails, should exec stop? how is this behavior controlled?
-- select statement
-  - in addition to cursor iteration; select will have conditions
-    and an optimizer
-  - what is interface for select
-    - user executes select and is returned a pipe object
-    
 ## User API
+ - add config to control
+    - stop_execution_on_error
+    - output data file
  - in addition to LearnDB do I want to support:
  - cursor?
  - records should be immutable-since they're shallow copied; or final records returned to user should be separate
  - python db api, i.e. natively supported ?
  - repl should have help message at beginning
    - have an additional/secondary command to output sql example/primer
+
 
 ## documentation/refactoring
 - complete architecture.md
@@ -70,15 +43,55 @@
 - complete btree-structural-ops.txt
 - add btree types (pages/nodes) are bytearray (mutable) not bytes (immutable)
 
+
+## Lark
+  - document how parse tree -> AST is working
+  - pretty print transformed tree
+  - to_ast 
+      - sql_handler should return cleaned up ast
+  - write tests for lark
+  - validations: when parse tree is being turned into ast, assert things like, e.g. no-on clause on cross-join
+
+
+## Parser
+- ensure rules make sense with `expression` symbol
+  - this (expression) should wrap or_clause
+  - func_call from grammar/parser side only supports pos args; extend this to allow named args since function objects support named args
+
+
+## Storage (btree)
+- support deletion/free-list  
+  - support defragmentation of unallocated space
+  - when allocating from free list, allocate whole block, 
+    the diff between block size and data size can be accounted for in diff between
+    i.e. don't bother chunking blocks- since we'll have to account for padding anyways since free-list blocks have a min size
+- allocating on fragmented node (with enough space) should trigger 
+  single-node-in-place compaction
+
+
+## Testing
+- btree: test all permutations of small test cases
+- add stress tests (stress-tests.txt)
+- use pytest fixtures
+
+
+## VM
+- flow
+  - if a statement fails, should exec stop? how is this behavior controlled?
+- select statement
+  - in addition to cursor iteration; select will have conditions
+    and an optimizer
+  - what is interface for select
+    - user executes select and is returned a pipe object
+
+
+
 ## Cleanliness
 - move all code into /learndb ?
-- update commits ref email
 - run black
 - run mypy
 
 ## Bugs
-  - if I do create table colA, i.e. mixed case columnName, internally I seem to convert and store this as a lowercase identifier
-    - and this causes errors, e.g. when I query on colA
   - e2e_test.py::join_test should fail
   - duplicate key not erroring (this might be working now)
   - create table bar (col1 integer primary key, col2 text), i.e. num in colname
