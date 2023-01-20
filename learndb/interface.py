@@ -168,9 +168,7 @@ class LearnDB:
         execute statement;
         returns return value of child-invocation
         """
-        # logging.info(f"In execute_statement; ")
-        results = self.virtual_machine.run(program)
-        return Response(True, body=results)
+        return self.virtual_machine.run(program)
 
     def input_handler(self, input_buffer: str) -> Response:
         """
@@ -218,7 +216,10 @@ def repl(db_filepath: str = DB_FILE):
     print("For help use .help")
     while True:
         input_buffer = input("db > ")
-        db.handle_input(input_buffer)
+        resp = db.handle_input(input_buffer)
+        if not resp.success:
+            print(f"Command execution failed due to [{resp.error_message}] ")
+            continue
 
         # get output pipe
         pipe = db.get_pipe()
@@ -567,7 +568,7 @@ def devloop():
         "create table foo ( cola integer primary key, colb text)",
         "insert into foo (cola, colb) values (1, 'car')",
         "insert into foo (cola, colb) values (2, 'monkey')",
-        "select cola, colb from foo"
+        "select colx, colb from foo"
     ]
 
     for text in texts:
