@@ -258,7 +258,7 @@ class FromClause(Symbol):
 
 @dataclass
 class SingleSource(Symbol):
-    table_name: Any
+    table_name: TableName
     table_alias: Any = None
 
 
@@ -394,7 +394,13 @@ class Program(Symbol):
 
 @dataclass
 class TableName(Symbol):
-    table_name: Any
+    table_name: str
+
+    def __hash__(self):
+        return hash(self.table_name)
+
+    def __eq__(self, other):
+        return hasattr(other, 'table_name') and self.table_name == other.table_name
 
 
 @dataclass
