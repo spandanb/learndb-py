@@ -116,7 +116,6 @@ def test_deletes(test_cases):
 
         # test interfaces via db frontend
         # create table before inserting
-        # TODO: system can't handle non-lowercase column names
         # db.handle_input("create table foo ( cola integer primary key, colb text)")
         db.handle_input("create table foo ( cola integer primary key, colb text)")
 
