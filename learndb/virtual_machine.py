@@ -16,7 +16,7 @@ from .btree import Tree, TreeInsertResult, TreeDeleteResult
 from .constants import CATALOG
 from .cursor import Cursor
 from .dataexchange import Response
-from .functions import resolve_function_name, is_aggregate_function, is_scalar_function
+from .functions import resolve_function_name
 from .lang_parser.visitor import Visitor
 from .lang_parser.symbols import (
     Symbol,

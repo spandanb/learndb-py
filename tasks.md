@@ -2,6 +2,7 @@
 
 ## Top Priority
 - release
+    - btree_tests are freezing
     - failing e2e tests should use fixtures
     - restructure repo; add learndb/, tests/
         - what is the user interface? can I create my own driver file
