@@ -24,8 +24,9 @@ from .lang_parser.symbols import (Symbol,
                                  FuncCall,
                                  Expr
                                  )
-from .functions import get_scalar_functions_names, get_aggregate_functions_names, resolve_function_name
+
 from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
+from .name_registry import NameRegistry
 
 
 class SemanticAnalysisError(Exception):
@@ -45,6 +46,9 @@ class EvalMode(Enum):
     Grouped = auto()
 
 
+
+
+
 def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataType]:
     """
     Convert symbols.DataType to datatypes.DataType
@@ -60,82 +64,6 @@ def datatype_from_symbolic_datatype(data_type: SymbolicDataType) -> Type[DataTyp
     else:
         raise Exception(f"Unknown type {data_type}")
 
-
-class NameRegistry:
-    """
-    The interface/object responsible for registering and resolving names.
-    Name resolutions is done over column names from: 1) a schema, 2) a record
-
-    TODO: move all (from VM) name registry and resolution logic here.
-    """
-
-    def __init__(self):
-        # record used to resolve values
-        self.record = None
-        # schema to resolve names from
-        self.schema = None
-        # register names of all functions
-        self.scalar_functions = set(get_scalar_functions_names())
-        self.aggregate_functions = set(get_aggregate_functions_names())
-
-    def set_record(self, record):
-        self.record = record
-
-    def set_schema(self, schema):
-        self.schema = schema
-
-    def is_name(self, operand) -> bool:
-        """
-        Return true if operand is a name, i.e. IDENTIFIER or SCOPED_IDENTIFIER
-        """
-        if isinstance(operand, Token) and (operand.type == "IDENTIFIER" or operand.type == "SCOPED_IDENTIFIER"):
-            return True
-        elif isinstance(operand, ColumnName):
-            return True
-        else:
-            return False
-
-    def resolve_name(self, operand) -> Response:
-        """
-        This is only valid if called on a name, i.e. is_name(operand) == True.
-        Note: This returns Response to distinguish resolve failed, from resolved to None
-        """
-        if isinstance(operand, ColumnName):
-            try:
-                val = self.record.get(operand.name)
-                return Response(True, body=val)
-            except InvalidNameException as e:
-                return Response(False, error_message=e.args[0])
-
-        # NOTE: this was adapated from vm.check_resolve_name
-        raise NotImplementedError
-
-    def resolve_name_type(self, operand: str) -> Response:
-        if self.schema.has_column(operand):
-            column = self.schema.get_column_by_name(operand)
-            return Response(True, body=column.datatype)
-        return Response(False, error_message=f"Unable to resolve column [{operand}]")
-
-    def resolve_func_name(self, func_name: str) -> Response:
-        """
-        Resolve the func_name.
-        TODO: deprecate in favor of `resolve_scalar_func_name` and `resolve_aggregate_func_name`
-        """
-        if func_name in self.scalar_functions:
-            return Response(True, body=resolve_function_name(func_name))
-        if func_name in self.aggregate_functions:
-            return Response(True, body=resolve_function_name(func_name))
-        return Response(False, error_message=f"Function [{func_name}] not found")
-
-    def resolve_scalar_func_name(self, func_name: str) -> Response:
-        if func_name in self.scalar_functions:
-            return Response(True, body=resolve_function_name(func_name))
-        return Response(False, error_message=f"Scalar function [{func_name}] not found")
-
-    def resolve_aggregate_func_name(self, func_name: str) -> Response:
-        if func_name in self.aggregate_functions:
-            return Response(True, body=resolve_function_name(func_name))
-        return Response(False, error_message=f"Aggregate function [{func_name}] not found")
 
 
 class ExpressionInterpreter(Visitor):

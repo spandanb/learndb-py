@@ -23,7 +23,7 @@ from .lang_parser.symbols import Program
 from .dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
 from .pipe import Pipe
 from .statemanager import StateManager
-from .virtual_machine import VirtualMachine
+from .virtual_machine import VirtualMachine, VMConfig
 
 
 # section: core execution/user-interface logic
@@ -60,9 +60,10 @@ class LearnDB:
         self.reset()
 
     def reset(self):
-        self.state_manager = StateManager(self.db_filepath)
+        config = VMConfig(self.db_filepath)
+        #self.state_manager = StateManager(self.db_filepath)
         self.pipe = Pipe()
-        self.virtual_machine = VirtualMachine(self.state_manager, self.pipe)
+        self.virtual_machine = VirtualMachine(config, self.pipe)
 
     def configure(self):
         """

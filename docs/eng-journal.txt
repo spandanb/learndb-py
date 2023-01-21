@@ -674,3 +674,34 @@ consider what the ideal interface between Table, Engine, Cursor, Pager should be
 
 1/15
     Restructing code as per: https://docs.python-guide.org/writing/structure/
+
+1/20
+    Need to figure out what is the complete story behind scopes. Specifically, a scope defines a logical within which objects
+    are defined. Currently, a scope is created when we enter the select statement handler, and destroyed on exit. But it
+    seems that this scoping will be needed for other top level statement, like delete.
+
+    Also, from the virtual_machine; it doesn't look like registered scopes are actually used. The initial introduction of
+    scopes was to do name resolution, and to isolate the lookup to the current or ancestor scopes. e.g. for a sub-query.
+    But some of this was rolled under the name registry.
+
+    Scoping would be useful, even for cleaning materialized recordsets.
+
+    Scoping should be coupled to name resolution.
+    There should be a global scope, that contains functions, and tables persisted on the database. This means the name_registry
+    would need to be aware of functions, and how to resolve them.
+
+    Beyond the global scopes, child scopes, would contain any intermediate sources, e.g. `Joining` that are generated for the
+    sake of evaluating a statement, e.g. create statement.
+
+    Also, the state_manager, handles some of the name resolution. I'm wondering if this should also get refactored, since it seems
+    name resolution should be handled by name registry; and perhaps the statemanager handles getting refs to table specific
+    trees.
+
+    Albeit this sounds like a massive refactor, and I'm not sure if this is worth it. For now, the simplest approach seems to
+    be add create scope logic, in each statement handler.
+
+1/20
+    Monolithic VM made sense to get it quickly going. But now, it seems to be more sensible to break out logical components of the VM
+    into their own objects. I've done this for expression evaluation and semantic/type checking. But now, I'm getting into the guts of
+    the VM, name registry, and storage.
+
