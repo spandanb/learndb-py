@@ -11,7 +11,7 @@ from typing import Any, Dict, List, NewType, Union
 from .functions import FunctionDefinition
 from .lang_parser.symbols import OrClause
 from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord
-from .vm_utilclasses import ExpressionInterpreter
+from .expression_interpreter import ExpressionInterpreter
 
 
 @dataclass

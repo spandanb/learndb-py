@@ -1,0 +1,55 @@
+This document is intended to scoping and name resolution works from user interaction perspective,
+and architecturally.
+
+# Scoping Logic
+
+## Scope
+-----
+A `scope` is a logical namespace/environment which contains different names. A name could be a function name,
+a table_name, and intermediate materialized dataset (e.g. a joining of two tables) or a column_name.
+Note, these are the current types of names in learndb, but there could be other types in the future.
+
+## Global Scope
+------------
+There will be a global scope, that always exists.
+Functions will live in a global scope. As well tables.
+
+## Non-global Scope
+-----------------
+All statements will define a local scopes, which will contain
+
+## Table Definition
+-----------------
+When a table is defined, it will be added to a global scope.
+
+
+# Architecture
+
+NOTE: below is a first thought
+
+Name Registry - responsible for registering name, and resolving names
+
+StateManager holds all scoped objects; would be invoked by name registry
+
+StateManager would be managed by Name Registry,
+
+VM would manage StateManager
+
+Name Registry should also handle intermediate sources.
+
+-----
+
+Take 2:
+StateManager, and NameRegistry are both doing name lookups.
+StateManager already has more of that code. So move all scoping and related ops under StateManager.
+This includes recordsets, group_recordsets, etc.
+
+NameRegistry can be kept as is for now; but later it may make sense to combine
+with StateManager
+
+Scope management:
+- There will be a scope created for each statement.
+- And the end of a statement, the scope should be popped, and all objects within it should be recycled.
+- If statements are nested, this will lead to nested scopes.
+- Name resolution of names proceeds from inner most scope to outermost scope.
+- All long living objects/names, will belong to a logical global scope

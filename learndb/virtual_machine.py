@@ -61,8 +61,10 @@ from .serde import serialize_record, deserialize_cell
 from .value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
                               ValueGeneratorFromRecordOverExpr,
                               ValueGeneratorFromRecordGroupOverExpr)
-from .vm_utilclasses import ExpressionInterpreter, NameRegistry, SemanticAnalyzer, datatype_from_symbolic_datatype
-
+from .vm_utils import datatype_from_symbolic_datatype
+from .expression_interpreter import ExpressionInterpreter
+from .name_registry import NameRegistry
+from .semantic_analysis import SemanticAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -114,18 +116,8 @@ class VirtualMachine(Visitor):
         # 1. input params
         # 1.1. output pipe where results of select are writen to
         self.output_pipe = output_pipe
+        self.config = config
 
-        # 2. instance variables to manage VM state
-        # NOTE: some state is managed by the state_manager, and rest via
-        # vm's instance variable. TODO: unify state management
-        # Some challenges to unifying state management, is that, e.g.
-        # the schemas dict maps recordset's random key to schema, e.g. for a schema
-        # of a joined relationship; but the statemanager resolves name from from the relationship name
-        self.schemas = {}
-        self.rsets = {}
-        self.grouprsets = {}
-        # scopes are tracked as a stack of scopes; one scopes for logical environment where names can be defined
-        self.scopes = []
         # 3. initialize utility members
         self.state_manager = StateManager(config.db_filepath)
         self.name_registry = NameRegistry()
@@ -181,6 +173,12 @@ class VirtualMachine(Visitor):
             self.state_manager.register_tree(table_record.get("name"), tree)
 
             cursor.advance()
+
+    def terminate(self):
+        """
+        Terminate the virtual machine.
+        """
+        self.state_manager.close()
 
     def run(self, program: Program) -> Response:
         """
@@ -277,7 +275,7 @@ class VirtualMachine(Visitor):
         """
         # 1. setup
         # 1.1. create statement level scope
-        self.init_new_scope()
+        self.begin_scope()
         self.output_pipe.reset()
 
         # 2. check and handle from clause
@@ -319,6 +317,7 @@ class VirtualMachine(Visitor):
         # StateManager, and then the NameRegistry could get any schema it needed. However, this would
         # additionally require a way to register joined recordsets, and groupedrecordsets to the StateManager
         self.name_registry.set_schema(self.get_recordset_schema(rsname))
+
         resp = self.evaluate_select_clause(stmnt.select_clause, rsname)
         assert resp.success
         rsname = resp.body
@@ -335,240 +334,13 @@ class VirtualMachine(Visitor):
 
         # end scope, and recycle any ephemeral objects in scope
         self.end_scope()
-
-        # output pipe for sanity
-        # for msg in self.output_pipe.store:
-        #    logger.info(msg)
         return Response(True)
-
-    def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str):
-        """
-        Evaluate the select clause.
-        The select clause can be evaluated on 3 kinds of data sources:
-            - ungrouped data_source (i.e. no group by)
-            - grouped data_source (i.e. with a group by)
-            - no data_source
-
-        The grouping can be implicit from the function, e.g.
-        select max(id)
-        from foo
-        having
-        """
-        # 1. no source
-        if source_rsname is None:
-            return self.evaluate_select_clause_no_source(select_clause)
-        else:
-            source_schema = self.get_recordset_schema(source_rsname)
-            if isinstance(source_schema, GroupedSchema):
-                return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
-            else:
-                return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
-
-    def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
-        raise NotImplementedError
-
-    def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
-        """
-        Generate output schema for an ungrouped source
-        """
-        out_columns = []
-        for selectable in selectables:
-            if isinstance(selectable, FuncCall):
-                # find target type
-                # 1.1.1. only scalar functions can be used
-                func = selectable
-                func_def = resolve_function_name(func.name)
-                oname = f"{func.name}_{func.args[0].name}"
-                out_column = Column(oname, func_def.return_type)
-                out_columns.append(out_column)
-            elif isinstance(selectable, ColumnName):
-                resp = self.type_checker.analyze_scalar(selectable, source_schema)
-                assert resp.success
-                # all names are stored as lower case version of name
-                out_column = Column(selectable.name.lower(), resp.body)
-                out_columns.append(out_column)
-            elif isinstance(selectable, Literal):
-                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
-                out_columns.append(out_column)
-            else:
-                # selectable is some expr, represented as an instance of `Expr`-
-                # the de-facto root of the expr hierarchy
-                assert isinstance(selectable, Expr)
-                # a stringified or_clause to use as output column name
-                expr_name = self.interpreter.stringify(selectable)
-                resp = self.type_checker.analyze_scalar(selectable, source_schema)
-                if not resp.success:
-                    return Response(False, error_message=resp.error_message)
-                expr_type = resp.body
-                out_column = Column(expr_name, expr_type)
-                out_columns.append(out_column)
-
-        # 1.2. generate schema from columns
-        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
-        resp = generate_unvalidated_schema("output_set", out_columns)
-        if not resp.success:
-            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
-        return Response(True, body=resp.body)
-
-    def generate_output_schema_grouped_source(self, selectables: List[Any], source_schema) -> Response:
-        """
-        Generate output schema for a grouped source
-        """
-        out_columns = []
-        for selectable in selectables:
-            # the parser attempts to simplify exprs without arithmetic or logical operations to a single primitive
-            # i.e. either FuncCall, ColumnName, or Literal; hence we need to handle these specific cases
-            if isinstance(selectable, FuncCall):
-                # find target type
-                # 1.1.1. only aggregation functions can be used
-                func = selectable
-                func_def = resolve_function_name(func.name)
-                oname = f"{func.name}_{func.args[0].name}"
-                out_column = Column(oname, func_def.return_type)
-                out_columns.append(out_column)
-            elif isinstance(selectable, ColumnName):
-                resp = self.type_checker.analyze_grouped(selectable, source_schema)
-                assert resp.success, resp.error_message
-                column_type = resp.body
-                out_column = Column(selectable.name, column_type)
-                out_columns.append(out_column)
-            elif isinstance(selectable, Literal):
-                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
-                out_columns.append(out_column)
-            else:
-                # selectable is some expr, represented as an instance of `Expr`-
-                # the de-facto root of the expr hierarchy
-                assert isinstance(selectable, Expr)
-                # a stringified or_clause to use as output column name
-                expr_name = self.interpreter.stringify(selectable)
-                resp = self.type_checker.analyze_grouped(selectable, source_schema)
-                assert resp.success, resp.error_message
-                expr_type = resp.body
-                out_column = Column(expr_name, expr_type)
-                out_columns.append(out_column)
-
-        # 1.2. generate schema from columns
-        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
-        resp = generate_unvalidated_schema("output_set", out_columns)
-        if not resp.success:
-            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
-        return Response(True, body=resp.body)
-
-    def generate_value_generators_over_recordset(self, selectables: List) -> Response:
-        """
-        Return Response[List[Generators]]
-        """
-        generators = []
-        for selectable in selectables:
-            if isinstance(selectable, FuncCall):
-                generators.append(ValueGeneratorFromRecordOverFunc(selectable, self.interpreter))
-            elif isinstance(selectable, ColumnName):
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
-            elif isinstance(selectable, Literal):
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
-            else:
-                # expression
-                assert isinstance(selectable, Expr)
-                # NOTE: selectable can be arbitrary algebraic expression, including columns
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
-        return Response(True, body=generators)
-
-    def generate_value_generators_over_grouped_recordset(self, selectables: List) -> Response:
-        """
-        Return Response[List[Generators]]
-        """
-        generators = []
-        for selectable in selectables:
-            if isinstance(selectable, Expr):
-                generators.append(ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter))
-            else:
-                # this is unexpected
-                breakpoint()
-                return Response(False)
-
-        return Response(True, body=generators)
-
-    def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
-        """
-        This is a select on non-grouped source
-        """
-        # 0. setup
-        source_schema = self.get_recordset_schema(source_rsname)
-        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, SimpleSchema)
-
-        # 1. generate output schema
-        resp = self.generate_output_schema_ungrouped_source(select_clause.selectables, source_schema)
-        if not resp.success:
-            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
-        out_schema = resp.body
-
-        # 2. generate output value generators
-        resp = self.generate_value_generators_over_recordset(select_clause.selectables)
-        if not resp.success:
-            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
-        value_generators = resp.body
-
-        # 3. generate output resultset
-        resp = self.init_recordset(out_schema)
-        assert resp.success
-        out_rsname = resp.body
-
-        out_column_names = [col.name for col in out_schema.columns]
-        # populate output resultset
-        for record in self.recordset_iter(source_rsname):
-            # get value, one for each output column
-            value_list = [val_gen.get_value(record) for val_gen in value_generators]
-            # convert column values to a record
-            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
-            assert resp.success
-            out_record = resp.body
-            self.append_recordset(out_rsname, out_record)
-
-        return Response(True, body=out_rsname)
-
-    def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
-        """
-        This is a select on a grouped source
-        """
-        source_schema = self.get_recordset_schema(source_rsname)
-        assert isinstance(source_schema, GroupedSchema)
-        resp = self.generate_output_schema_grouped_source(select_clause.selectables, source_schema)
-        if not resp.success:
-            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
-        out_schema = resp.body
-
-        # 2. generate output value generators
-        resp = self.generate_value_generators_over_grouped_recordset(select_clause.selectables)
-        if not resp.success:
-            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
-        value_generators = resp.body
-
-        # 3. generate output resultset
-        # NOTE: a groupedrecordset materializes to a resultset, i.e. groups are squashed
-        resp = self.init_recordset(out_schema)
-        assert resp.success
-        out_rsname = resp.body
-
-        out_column_names = [col.name for col in out_schema.columns]
-        # populate output resultset
-        for grouped_record in self.grouped_recordset_iter(source_rsname):
-            # get value, one for each output column
-            group_schema = self.schemas[source_rsname]
-            assert isinstance(group_schema, GroupedSchema)
-            value_list = [val_gen.get_value(grouped_record) for val_gen in value_generators]
-            # convert column values to a record
-            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
-            assert resp.success
-            out_record = resp.body
-            self.append_recordset(out_rsname, out_record)
-
-        return Response(True, body=out_rsname)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
         handle insert stmnt
         """
-        self.init_new_scope()
+        self.begin_scope()
         table_name = stmnt.table_name.table_name
         if not self.state_manager.has_schema(table_name):
             # check if table exists
@@ -597,8 +369,7 @@ class VirtualMachine(Visitor):
         """
         handle delete stmnt
         """
-        # TODO: seems like a need a scope here
-        self.init_new_scope()
+        self.begin_scope()
         # 1. iterate over source dataset
         # materializing the entire recordset is expensive, but cleaner/easier/faster to implement
         resp = self.materialize(stmnt.table_name)
@@ -628,30 +399,23 @@ class VirtualMachine(Visitor):
         # return list of deleted keys
         return Response(True, body=del_keys)
 
-    # section : statement helpers
-    # general principles:
-    # 1) helpers should be able to handle null types
+    # section : general statement helpers
 
-    def get_schema(self, table_name: Union[str, TableName]) -> SimpleSchema:
-        if isinstance(table_name, TableName):
-            # TODO: I believe the type can be updated to only accept str
-            # unwrap name
-            table_name = table_name.table_name
-
-        if table_name.lower() == CATALOG:
+    def get_schema(self, table_name: str) -> AbstractSchema:
+        table_name = table_name.lower()
+        if table_name == CATALOG:
             return self.state_manager.get_catalog_schema()
         else:
             return self.state_manager.get_schema(table_name)
 
     def get_tree(self, table_name: str) -> Tree:
-        if isinstance(table_name, TableName):
-            # unwrap name
-            table_name = table_name.table_name
-
-        if table_name.lower() == CATALOG:
+        table_name = table_name.lower()
+        if table_name == CATALOG:
             return self.state_manager.get_catalog_tree()
         else:
             return self.state_manager.get_tree(table_name)
+
+    # section : select statement helpers
 
     def materialize(self, source) -> Response:
         """
@@ -659,26 +423,17 @@ class VirtualMachine(Visitor):
         """
         if isinstance(source, SingleSource):
             # NOTE: single source means a single physical table
-            self.scope_register_single_source(source)
             return self.materialize_single_source(source)
 
         elif isinstance(source, TableName):
             source = SingleSource(source)
-            self.scope_register_single_source(source)
             return self.materialize_single_source(source)
-            #return self.materialize_source_from_name(source.table_name)
 
         elif isinstance(source, Joining):
-            self.scope_register_single_joining(source)
             return self.materialize_joining(source)
-
-        #elif isinstance(source, TableName):
-        #    # TODO: seems like this case can be combined with first condition: `isinstance(source, SingleSource)`
-        #    return self.materialize_source_from_name(source.table_name)
 
         else:
             raise ValueError(f"Unknown materialization source type {source}")
-        # case nestedSelect
 
     def materialize_single_source(self, source: SingleSource) -> Response:
         """
@@ -691,11 +446,10 @@ class VirtualMachine(Visitor):
 
     def materialize_source_from_name(self, table_name: TableName, table_alias: str = None) -> Response:
         # unwrap table_name
-        table_name = table_name.table_name
+        table_name = table_name.table_name.lower()
+
         # check if source exists
-        if table_name.lower() != CATALOG and not self.state_manager.has_schema(table_name):
-            # TODO: cleanup. there is confusion on the type of `table_name`; some callpoints
-            # require table name to be a str; other's require it to be TableNam
+        if table_name != CATALOG and not self.state_manager.has_schema(table_name):
             return Response(False, error_message=f"table {table_name} not found")
 
         # get schema for table, and cursor on tree corresponding to table
@@ -972,70 +726,240 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
+    def evaluate_select_clause(self, select_clause: SelectClause, source_rsname: str):
+        """
+        Evaluate the select clause.
+        The select clause can be evaluated on 3 kinds of data sources:
+            - ungrouped data_source (i.e. no group by)
+            - grouped data_source (i.e. with a group by)
+            - no data_source
+
+        The grouping can be implicit from the function, e.g.
+        select max(id)
+        from foo
+        having
+        """
+        # 1. no source
+        if source_rsname is None:
+            return self.evaluate_select_clause_no_source(select_clause)
+        else:
+            source_schema = self.get_recordset_schema(source_rsname)
+            if isinstance(source_schema, GroupedSchema):
+                return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
+            else:
+                return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
+
+    def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
+        raise NotImplementedError
+
+    def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
+        """
+        Generate output schema for an ungrouped source
+        """
+        out_columns = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                # find target type
+                # 1.1.1. only scalar functions can be used
+                func = selectable
+                func_def = resolve_function_name(func.name)
+                oname = f"{func.name}_{func.args[0].name}"
+                out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, ColumnName):
+                resp = self.type_checker.analyze_scalar(selectable, source_schema)
+                assert resp.success
+                # all names are stored as lower case version of name
+                out_column = Column(selectable.name.lower(), resp.body)
+                out_columns.append(out_column)
+            elif isinstance(selectable, Literal):
+                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_columns.append(out_column)
+            else:
+                # selectable is some expr, represented as an instance of `Expr`-
+                # the de-facto root of the expr hierarchy
+                assert isinstance(selectable, Expr)
+                # a stringified or_clause to use as output column name
+                expr_name = self.interpreter.stringify(selectable)
+                resp = self.type_checker.analyze_scalar(selectable, source_schema)
+                if not resp.success:
+                    return Response(False, error_message=resp.error_message)
+                expr_type = resp.body
+                out_column = Column(expr_name, expr_type)
+                out_columns.append(out_column)
+
+        # 1.2. generate schema from columns
+        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        if not resp.success:
+            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+        return Response(True, body=resp.body)
+
+    def generate_output_schema_grouped_source(self, selectables: List[Any], source_schema) -> Response:
+        """
+        Generate output schema for a grouped source
+        """
+        out_columns = []
+        for selectable in selectables:
+            # the parser attempts to simplify exprs without arithmetic or logical operations to a single primitive
+            # i.e. either FuncCall, ColumnName, or Literal; hence we need to handle these specific cases
+            if isinstance(selectable, FuncCall):
+                # find target type
+                # 1.1.1. only aggregation functions can be used
+                func = selectable
+                func_def = resolve_function_name(func.name)
+                oname = f"{func.name}_{func.args[0].name}"
+                out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, ColumnName):
+                resp = self.type_checker.analyze_grouped(selectable, source_schema)
+                assert resp.success, resp.error_message
+                column_type = resp.body
+                out_column = Column(selectable.name, column_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, Literal):
+                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_columns.append(out_column)
+            else:
+                # selectable is some expr, represented as an instance of `Expr`-
+                # the de-facto root of the expr hierarchy
+                assert isinstance(selectable, Expr)
+                # a stringified or_clause to use as output column name
+                expr_name = self.interpreter.stringify(selectable)
+                resp = self.type_checker.analyze_grouped(selectable, source_schema)
+                assert resp.success, resp.error_message
+                expr_type = resp.body
+                out_column = Column(expr_name, expr_type)
+                out_columns.append(out_column)
+
+        # 1.2. generate schema from columns
+        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        if not resp.success:
+            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+        return Response(True, body=resp.body)
+
+    def generate_value_generators_over_recordset(self, selectables: List) -> Response:
+        """
+        Return Response[List[Generators]]
+        """
+        generators = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                generators.append(ValueGeneratorFromRecordOverFunc(selectable, self.interpreter))
+            elif isinstance(selectable, ColumnName):
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+            elif isinstance(selectable, Literal):
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+            else:
+                # expression
+                assert isinstance(selectable, Expr)
+                # NOTE: selectable can be arbitrary algebraic expression, including columns
+                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+        return Response(True, body=generators)
+
+    def generate_value_generators_over_grouped_recordset(self, selectables: List) -> Response:
+        """
+        Return Response[List[Generators]]
+        """
+        generators = []
+        for selectable in selectables:
+            if isinstance(selectable, Expr):
+                generators.append(ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter))
+            else:
+                # this is unexpected
+                breakpoint()
+                return Response(False)
+
+        return Response(True, body=generators)
+
+    def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+        This is a select on non-grouped source
+        """
+        # 0. setup
+        source_schema = self.get_recordset_schema(source_rsname)
+        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, SimpleSchema)
+
+        # 1. generate output schema
+        resp = self.generate_output_schema_ungrouped_source(select_clause.selectables, source_schema)
+        if not resp.success:
+            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+        out_schema = resp.body
+
+        # 2. generate output value generators
+        resp = self.generate_value_generators_over_recordset(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+        value_generators = resp.body
+
+        # 3. generate output resultset
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        out_column_names = [col.name for col in out_schema.columns]
+        # populate output resultset
+        for record in self.recordset_iter(source_rsname):
+            # get value, one for each output column
+            value_list = [val_gen.get_value(record) for val_gen in value_generators]
+            # convert column values to a record
+            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            assert resp.success
+            out_record = resp.body
+            self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
+
+    def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+        """
+        This is a select on a grouped source
+        """
+        source_schema = self.get_recordset_schema(source_rsname)
+        assert isinstance(source_schema, GroupedSchema)
+        resp = self.generate_output_schema_grouped_source(select_clause.selectables, source_schema)
+        if not resp.success:
+            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+        out_schema = resp.body
+
+        # 2. generate output value generators
+        resp = self.generate_value_generators_over_grouped_recordset(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+        value_generators = resp.body
+
+        # 3. generate output resultset
+        # NOTE: a groupedrecordset materializes to a resultset, i.e. groups are squashed
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        out_column_names = [col.name for col in out_schema.columns]
+        # populate output resultset
+        for grouped_record in self.grouped_recordset_iter(source_rsname):
+            # get value, one for each output column
+            group_schema = self.state_manager.get_grouped_recordset_schema(source_rsname)
+            assert isinstance(group_schema, GroupedSchema)
+            value_list = [val_gen.get_value(grouped_record) for val_gen in value_generators]
+            # convert column values to a record
+            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            assert resp.success
+            out_record = resp.body
+            self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
+
     # section: scope management
 
-    def init_new_scope(self):
+    def begin_scope(self):
         """
         Each scope contains many different kinds of objects
                 self.scope_aliased_sources = []
         """
-        self.name_registry.add_scope()
-
-
-        self.scopes.append({
-            SCOPE_COLLECTION_ALIASED_SOURCES_KEY: {},
-            # this is logically an unordered collection;
-            # however since TableName is unhashable, it can't be stored in a set
-            SCOPE_COLLECTION_UNALIASED_SOURCES_KEY: [],
-        })
+        self.state_manager.begin_scope()
 
     def end_scope(self):
-        self.scopes.pop()
-
-    def scope_register_single_source(self, source: SingleSource):
-        if source.table_alias is None:
-            self.scopes[-1][SCOPE_COLLECTION_UNALIASED_SOURCES_KEY].append(source.table_name)
-        else:
-            self.scopes[-1][SCOPE_COLLECTION_ALIASED_SOURCES_KEY][source.table_alias] = source.table_name
-
-    def scope_register_single_joining(self, source: Joining):
-        self.scope_register_single_source(source.left_source)
-        self.scope_register_single_source(source.right_source)
-
-    def scope_resolve_column_name_type(self, name: ColumnName) -> Response:
-        """
-        Return Response[Type[DataType]], i.e. Response(type of column)
-        NOTE: This search is very inefficient; current goal is completeness/correctness - optimization later
-        TODO: nuke me, this has been deprecated by SemanticAnalyzer
-        """
-        parent_alias = name.get_parent_alias()
-        column_base_name = name.get_base_name()
-        # iterate over scopes, starting at most recent scope, and attempt to resolve name
-        for scope in reversed(self.scopes):
-            if parent_alias is not None:
-                aliased_sources = scope[SCOPE_COLLECTION_ALIASED_SOURCES_KEY]
-                source = aliased_sources.get(parent_alias)
-                if source is not None:
-                    # get schema for source
-                    source_schema = self.get_schema(source)
-                    # lookup column in source_schema
-                    column = source_schema.get_column_by_name(column_base_name)
-                    if column is None:
-                        return Response(False, error_message="column not found on source")
-                    return Response(True, body=column.datatype)
-            else:
-                unaliased_sources = scope[SCOPE_COLLECTION_UNALIASED_SOURCES_KEY]
-                # check all unaliased sources
-                # todo: build reverse index column_name -> source_object
-                # presumably building a reverse index should help, and also help catch ambiguous column references
-                for candidate_source in unaliased_sources:
-                    # get schema
-                    source_schema = self.get_schema(candidate_source)
-                    # check if object contains name
-                    column = source_schema.get_column_by_name(column_base_name)
-                    if column is not None:
-                        return Response(True, body=column.datatype)
-                return Response(False, error_message="column not found on source")
+        self.state_manager.end_scope()
 
     # section: record set utilities
 
@@ -1054,14 +978,23 @@ class VirtualMachine(Visitor):
         """
         return self.state_manager.init_grouped_recordset(schema)
 
-    def get_recordset_schema(self, name: str) -> AbstractSchema:
-        return self.state_manager.get_schema(name)
+    def get_recordset_schema(self, name: str) -> Optional[AbstractSchema]:
+        """
+        Attempt to get schema from either grouped or ungrouped recordsets
+        """
+        schema = self.get_grouped_recordset_schema(name)
+        if schema:
+            return schema
+        return self.state_manager.get_recordset_schema(name)
+
+    def get_grouped_recordset_schema(self, name: str) -> AbstractSchema:
+        return self.state_manager.get_grouped_recordset_schema(name)
 
     def append_recordset(self, name: str, record):
         return self.state_manager.append_recordset(name, record)
 
-    def append_grouped_recordset(self, name: str, group_key: tuple, record):
-        self.state_manager.append_grouped_recordset(name, record)
+    def append_grouped_recordset(self, name: str, group_key: Tuple, record):
+        self.state_manager.append_grouped_recordset(name, group_key, record)
 
     def drop_recordset(self, name: str):
         self.state_manager.drop_recordset(name)
@@ -1070,14 +1003,11 @@ class VirtualMachine(Visitor):
         """Return an iterator over recordset
         NOTE: The iterator will be consumed after one iteration
         """
-        return iter(self.rsets[name])
+        return self.state_manager.recordset_iter(name)
 
-    def grouped_recordset_iter(self, name) -> List[GroupedRecord]:
+    def grouped_recordset_iter(self, name: str) -> List[GroupedRecord]:
         """
         return a pair of (group_key, group_recordset_iterator)
         """
-        # NOTE: cloning the group_rset, since it may need to be iterated multiple times
-        ret = [GroupedRecord(self.schemas[name], group_key, list(group_rset))
-                 for group_key, group_rset in self.grouprsets[name].items()]
-        return ret
+        return self.state_manager.grouped_recordset_iter(name)
 

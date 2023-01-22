@@ -193,6 +193,9 @@ class GroupedSchema(AbstractSchema):
         return False
 
 
+NonGroupedSchema = Union[SimpleSchema, ScopedSchema]
+
+
 class CatalogSchema(SimpleSchema):
     """
     Hardcoded schema object for the catalog table.
