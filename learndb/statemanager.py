@@ -5,14 +5,15 @@ and creating tables etc.
 """
 import random
 import string
-from collections import defaultdict, UserList, UserDict
-from typing import Optional, List
+from collections import UserList, UserDict
+from typing import Optional, List, Union
 
 from .btree import Tree
+from .constants import CATALOG_ROOT_PAGE_NUM
 from .dataexchange import Response
 from .pager import Pager
-from .schema import AbstractSchema, SimpleSchema, CatalogSchema, GroupedSchema
 from .record_utils import GroupedRecord
+from .schema import SimpleSchema, ScopedSchema, CatalogSchema, GroupedSchema, NonGroupedSchema
 
 
 class RecordSet(UserList):
@@ -21,13 +22,21 @@ class RecordSet(UserList):
     """
     pass
 
+
 class GroupedRecordSet(UserDict):
     """
     Maintains a dictionary of lists of records, where the dict is
     indexed by the group key
     """
-    pass
+    def __getitem__(self, key):
+        if key not in self.data:
+            self.data[key] = []
+        return self.data[key]
 
+    def __setitem__(self, key, value):
+        if key not in self.data:
+            self.data[key] = []
+        self.data[key].append(value)
 
 
 class Scope:
@@ -39,9 +48,12 @@ class Scope:
         self.aliased_source = {}
         # NOTE: previously this was a list, but now since TableName is alias
         self.unaliased_source = set()
-        # record identifier -> recordset
+        # recordset name -> recordset
         self.record_sets = {}
         self.group_rsets = {}
+        # recordset name -> schema
+        self.rsets_schemas = {}
+        self.group_rsets_schemas = {}
 
     def register_aliased_source(self, source: str, alias: str):
         raise NotImplementedError
@@ -52,79 +64,72 @@ class Scope:
     def get_recordset(self, name: str) -> Optional[RecordSet]:
         return self.record_sets.get(name)
 
-    def add_recordset(self, name: str, recordset: RecordSet) -> None:
+    def add_recordset(self, name: str, schema: NonGroupedSchema, recordset: RecordSet) -> None:
+        """
+        Upsert a new recordset with `name`
+        """
+        self.rsets_schemas[name]= schema
         self.record_sets[name] = recordset
+
+    def drop_recordset(self, name: str):
+        del self.record_sets[name]
+
+    def get_recordset_schema(self, name: str) -> Optional[NonGroupedSchema]:
+        return self.rsets_schemas.get(name)
+
+    def add_grouped_recordset(self, name, schema: GroupedSchema, recordset: GroupedRecordSet) -> None:
+        self.group_rsets_schemas[name] = schema
+        self.group_rsets[name] = recordset
 
     def get_grouped_recordset(self, name: str) -> Optional[GroupedRecordSet]:
         return self.group_rsets.get(name)
 
-    def add_grouped_recordset(self, name, recordset: GroupedRecordSet) -> None:
-        self.group_rsets[name] = recordset
+    def get_grouped_recordset_schema(self, name: str) -> Optional[GroupedSchema]:
+        return self.group_rsets_schemas.get(name)
 
     def cleanup(self):
         """
-        Should recycle any objects
+        TODO: recycle any objects
         """
 
 
 class StateManager:
     """
-    This entity is responsible for management of all state. State includes tables and functions,
-    but all local recordsets, scopes, and materialized sources.
+    This entity is responsible for management of all state of the database
+    (contained a single file).
 
+    State can be broadly divided into: 1) persisted tables (btree and schema),
+    that live in an implicit global scope.
+    2) all objects that live and die with a session, e.g. local recordsets,
+    scopes, and materialized sources.
 
-    ---
-
-    This manages access to all state of the database (contained a single
-    file). This includes
-    data (i.e. tables and indices) and metadata (serde, schema).
-
-    All state for user-defined tables/indices are contained in Tree
-    (provides read/write access to storage) and Table (logical schema,
-    physical layout, deser, i.e. read/write )
+    There is a third category- objects like functions that logically/from the user's
+    perspective live in the same assumed global scope as table names. But these,
+    are managed separately.
 
     This class is responsible for creating Tree and Table objects.
-
     This is responsible for creating/managing the catalog (a special table).
 
     The class is intimately tied to catalog definition, i.e. has magic
     constants for manipulating catalog.
-
-    This class is a catch-all. I should refactor it if needed.
     """
     def __init__(self, filename: str):
+        # database file
         self.db_filename = filename
-        self.pager = None
-        # the catalog root is hardcoded to page 0
-        self.catalog_root_page_num = 0
-        self.catalog_schema = None
-        self.catalog_tree = None
-
-        # mapping from table_name to schema object
-        # schema should be singletons
-        self.schemas = {}
-        self.trees = {}
-        # initialize
-        self.init()
-        self.scopes : List[Scope] = []
-
-    def init(self):
-        """
-
-        NOTE: no special handling is needed if this is a new db. This method
-        will create the catalog tree- which will allocate the root page num.
-
-        :return:
-        """
-
         # initialize pager; this will create the file
         # file create functionality can be moved elsewhere if better suited
         self.pager = Pager.pager_open(self.db_filename)
-        # keep ref to catalog schema
-        # schema are treated as standalone read-only data
+        # the catalog root pagenum is hardcoded
+        self.catalog_root_page_num = CATALOG_ROOT_PAGE_NUM
+        # catalog schema
         self.catalog_schema = CatalogSchema()
-        # create catalog tree
+        # catalog tree
         self.catalog_tree = Tree(self.pager, self.catalog_root_page_num)
+        # mapping from table_name to schema object
+        self.schemas = {}
+        self.trees = {}
+        # scope stack
+        self.scopes : List[Scope] = []
 
     def close(self):
         """
@@ -159,7 +164,6 @@ class StateManager:
         return table_name in self.schemas
 
     def get_schema(self, table_name: str):
-        # todo: this should do a scoped lookup
         return self.schemas[table_name]
 
     def get_catalog_tree(self):
@@ -171,8 +175,7 @@ class StateManager:
     def print_tree(self, table_name: str):
         """
         This method prints the tree
-        Putting this here, since the database encapsulates tree
-        TODO: move this elsewhere
+        Putting this here, since the datastore encapsulates tree
         :return:
         """
         self.get_tree(table_name).print_tree()
@@ -180,15 +183,9 @@ class StateManager:
     def validate_tree(self, table_name: str):
         self.get_tree(table_name).validate()
 
-    # section: record
-
-    @staticmethod
-    def gen_randkey(size=10, prefix=""):
-        return prefix + "".join(random.choice(string.ascii_letters) for i in range(size))
-
     # section: scope management
 
-    def create_scope(self, ):
+    def begin_scope(self, ):
         self.scopes.append(Scope())
 
     def end_scope(self):
@@ -197,29 +194,51 @@ class StateManager:
 
     # recordset management
 
+    @staticmethod
+    def gen_randkey(size=10, prefix=""):
+        return prefix + "".join(random.choice(string.ascii_letters) for i in range(size))
+
     def unique_recordset_name(self) -> str:
         """
         Generate a recordset name unique across all scopes
         """
-        name = self.gen_randkey(prefix="r")
-        scope = self.scopes[-1]
-        while scope.get_recordset(name) is not None:
-            # generate while name is non-unique
+        is_unique = False
+        name = None
+        while not is_unique:
             name = self.gen_randkey(prefix="r")
+            # name must be unique across all scopes
+            for scope in self.scopes:
+                if scope.get_recordset(name) is not None:
+                    break
+            else:
+                is_unique = True
+        return name
 
+    def unique_grouped_recordset_name(self) -> str:
+        """
+        Generate a recordset name unique across all scopes
+        """
+        is_unique = False
+        name = None
+        while not is_unique:
+            name = self.gen_randkey(prefix="g")
+            # name must be unique across all scopes
+            for scope in self.scopes:
+                if scope.get_grouped_recordset(name) is not None:
+                    break
+            else:
+                is_unique = True
+        return name
 
-    def init_recordset(self, schema) -> Response:
+    def init_recordset(self, schema: Union[SimpleSchema, ScopedSchema]) -> Response:
         """
         Creates a new recordset with the associated `schema`, and
         stores it in the current scope.
         Recordset name should be unique across all scopes
         """
-        #
-        name = self.gen_randkey(prefix="r")
+        name = self.unique_recordset_name()
         scope = self.scopes[-1]
-        while scope.get_recordset(name) is not None:
-            # generate while name is non-unique
-            name = self.gen_randkey(prefix="r")
+        scope.add_recordset(name, schema, RecordSet())
         return Response(True, body=name)
 
     def init_grouped_recordset(self, schema: GroupedSchema):
@@ -228,40 +247,73 @@ class StateManager:
         NOTE: A grouped record set is internally stored like
         {group_key_tuple -> list_of_records}
         """
-        name = self.gen_randkey(prefix="g")
-        while name in self.grouprsets:
-            # generate while non-unique
-            name = self.gen_randkey(prefix="g")
-        self.grouprsets[name] = defaultdict(list)
-        self.schemas[name] = schema
+        name = self.unique_grouped_recordset_name()
+        scope = self.scopes[-1]
+        scope.add_grouped_recordset(name, schema, GroupedRecordSet())
         return Response(True, body=name)
 
-    def get_recordset_schema(self, name: str) -> AbstractSchema:
-        return self.name_registry.get_schema(name)
-        # return self.schemas[name]
+    def find_recordset_scope(self, name: str) -> Optional[Scope]:
+        """
+        Find and return (scope, recordset), where scope is the containing scope
+        """
+        for scope in reversed(self.scopes):
+            rset = scope.get_recordset(name)
+            if rset is not None:
+                return scope
+
+    def find_grouped_recordset_scope(self, name: str) -> Optional[Scope]:
+        for scope in reversed(self.scopes):
+            rset = scope.get_grouped_recordset(name)
+            if rset is not None:
+                return scope
+
+    def get_recordset_schema(self, name: str) -> Optional[NonGroupedSchema]:
+        scope = self.find_recordset_scope(name)
+        if scope:
+            return scope.get_recordset_schema(name)
+
+    def get_grouped_recordset_schema(self, name: str) -> Optional[NonGroupedSchema]:
+        scope = self.find_grouped_recordset_scope(name)
+        if scope:
+            return scope.get_grouped_recordset_schema(name)
 
     def append_recordset(self, name: str, record):
-        assert name in self.rsets
-        self.rsets[name].append(record)
+        """
+        find the correct recordset across all scopes;
+        then add record to it
+        """
+        scope = self.find_recordset_scope(name)
+        assert scope is not None
+        recordset = scope.get_recordset(name)
+        recordset.append(record)
 
     def append_grouped_recordset(self, name: str, group_key: tuple, record):
-        self.grouprsets[name][group_key].append(record)
+        scope = self.find_grouped_recordset_scope(name)
+        assert scope is not None
+        recordset = scope.get_grouped_recordset(name)
+        recordset[group_key].append(record)
 
     def drop_recordset(self, name: str):
-        del self.rsets[name]
+        scope = self.find_recordset_scope(name)
+        assert scope is not None
+        scope.drop_recordset(name)
 
     def recordset_iter(self, name: str):
         """Return an iterator over recordset
         NOTE: The iterator will be consumed after one iteration
         """
-        return iter(self.rsets[name])
+        scope = self.find_recordset_scope(name)
+        assert scope is not None
+        return iter(scope.get_recordset(name))
 
     def grouped_recordset_iter(self, name) -> List[GroupedRecord]:
         """
         return a pair of (group_key, group_recordset_iterator)
         """
+        scope = self.find_grouped_recordset_scope(name)
+        assert scope is not None
+        recordset = scope.get_grouped_recordset(name)
+        schema = scope.get_grouped_recordset_schema(name)
         # NOTE: cloning the group_rset, since it may need to be iterated multiple times
-        ret = [GroupedRecord(self.schemas[name], group_key, list(group_rset))
-                 for group_key, group_rset in self.grouprsets[name].items()]
-        return ret
-
+        return [GroupedRecord(schema, group_key, list(group_rset))
+                 for group_key, group_rset in recordset.items()]

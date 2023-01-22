@@ -140,7 +140,7 @@ REAL_EPSILON = 0.00001
 # Higher-level constanst
 # name of catalog
 CATALOG = 'catalog'
-
+CATALOG_ROOT_PAGE_NUM = 0
 
 USAGE = '''
 Supported meta-commands:

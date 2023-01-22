@@ -53,7 +53,6 @@ class LearnDB:
         # NOTE: the method
         if nuke_db_file and os.path.exists(self.db_filepath):
             os.remove(self.db_filepath)
-        self.state_manager = None
         self.pipe = None
         self.virtual_machine = None
         self.configure()
@@ -61,8 +60,9 @@ class LearnDB:
 
     def reset(self):
         config = VMConfig(self.db_filepath)
-        #self.state_manager = StateManager(self.db_filepath)
         self.pipe = Pipe()
+        if self.virtual_machine:
+            self.virtual_machine.terminate()
         self.virtual_machine = VirtualMachine(config, self.pipe)
 
     def configure(self):
@@ -77,7 +77,6 @@ class LearnDB:
         holds a ref to file
         :return:
         """
-        self.close()
         if os.path.exists(self.db_filepath):
             os.remove(self.db_filepath)
         self.reset()
@@ -94,7 +93,7 @@ class LearnDB:
         must be called before exiting, to persist data to disk
         :return:
         """
-        self.state_manager.close()
+        self.virtual_machine.terminate()
 
     def handle_input(self, input_buffer: str) -> Response:
         """
@@ -570,6 +569,17 @@ def devloop():
         "insert into foo (cola, colb) values (1, 'car')",
         "insert into foo (cola, colb) values (2, 'monkey')",
         "select colx, colb from foo"
+    ]
+
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        "select count(custid), country from items group by country",
     ]
 
     for text in texts:

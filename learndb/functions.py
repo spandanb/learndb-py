@@ -227,3 +227,15 @@ def is_scalar_function(func_name: str) -> bool:
     """
     func_name = func_name.lower()
     return func_name in _SCALAR_FUNCTION_REGISTRY
+
+
+def resolve_scalar_func_name(func_name: str) -> Response:
+    if is_scalar_function(func_name):
+        return Response(True, body=resolve_function_name(func_name))
+    return Response(False, error_message=f"Scalar function [{func_name}] not found")
+
+
+def resolve_aggregate_func_name(func_name: str) -> Response:
+    if is_aggregate_function(func_name):
+        return Response(True, body=resolve_function_name(func_name))
+    return Response(False, error_message=f"Aggregate function [{func_name}] not found")
