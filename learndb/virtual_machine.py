@@ -319,7 +319,8 @@ class VirtualMachine(Visitor):
         self.name_registry.set_schema(self.get_recordset_schema(rsname))
 
         resp = self.evaluate_select_clause(stmnt.select_clause, rsname)
-        assert resp.success
+        if not resp.success:
+            return resp
         rsname = resp.body
 
         # 7. order, limit clause
