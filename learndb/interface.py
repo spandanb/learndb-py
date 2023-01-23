@@ -582,6 +582,17 @@ def devloop():
         "select count(custid), country from items group by country",
     ]
 
+    texts = [
+        "create table items ( custid integer primary key, country integer)",
+        "insert into items (custid, country) values (10, 1)",
+        "insert into items (custid, country) values (20, 1)",
+        "insert into items (custid, country) values (100, 2)",
+        "insert into items (custid, country) values (200, 2)",
+        "insert into items (custid, country) values (300, 2)",
+        # "select f.cola from foo f group by f.colb, f.cola",
+        "select count(custid), country from items group by country having count(custid) > 1",
+    ]
+
     for text in texts:
         logging.info(f"handling. {text}")
         resp = db.handle_input(text)

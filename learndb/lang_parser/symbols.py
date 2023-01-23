@@ -541,7 +541,8 @@ class ToAst(Transformer):
         return GroupByClause(args)
 
     def having_clause(self, args):
-        return HavingClause(args)
+        assert len(args) == 1
+        return HavingClause(args[0])
 
     def order_by_clause(self, args):
         return OrderByClause(args)

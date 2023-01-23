@@ -9,7 +9,7 @@ GRAMMAR = '''
                          | create_stmnt
 
         // we only want logically valid statements; and from is required for all other clauses
-        // and so is nested under from clause
+        // and so other clauses (e.g. where) are nested under from clause
         select_stmnt     : select_clause from_clause?
         select_clause    : "select"i selectable ("," selectable)*
         selectable       : expr

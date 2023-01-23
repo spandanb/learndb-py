@@ -12,12 +12,10 @@ from .lang_parser.symbols import (Symbol,
                                  ComparisonOp,
                                  Comparison,
                                  Literal,
-                                 SymbolicDataType,
                                  BinaryArithmeticOperation,
                                  ArithmeticOp,
                                  FuncCall,
-                                 Expr
-                                 )
+                                 Expr)
 
 from .name_registry import NameRegistry
 from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
