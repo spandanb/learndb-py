@@ -6,7 +6,7 @@ and creating tables etc.
 import random
 import string
 from collections import UserList, UserDict
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 
 from .btree import Tree
 from .constants import CATALOG_ROOT_PAGE_NUM
@@ -287,11 +287,21 @@ class StateManager:
         recordset = scope.get_recordset(name)
         recordset.append(record)
 
-    def append_grouped_recordset(self, name: str, group_key: tuple, record):
+    def append_grouped_recordset(self, name: str, group_key: Tuple, record):
         scope = self.find_grouped_recordset_scope(name)
         assert scope is not None
         recordset = scope.get_grouped_recordset(name)
         recordset[group_key].append(record)
+
+    def add_group_grouped_recordset(self, name: str, group_key: Tuple, group_recordset):
+        """
+        Add a new group
+        """
+        scope = self.find_grouped_recordset_scope(name)
+        assert scope is not None
+        recordset = scope.get_grouped_recordset(name)
+        assert group_key not in recordset
+        recordset[group_key] = group_recordset
 
     def drop_recordset(self, name: str):
         scope = self.find_recordset_scope(name)

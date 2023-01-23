@@ -566,7 +566,7 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
-    def filter_grouped_recordset(self, having_clause: HavingClause, source_rsname: str):
+    def filter_grouped_recordset(self, having_clause: HavingClause, source_rsname: str) -> Response:
         """
         A having op, i.e. filtering on grouped recordset can also
         be applied on an ungrouped set where the the whole group is treated as
@@ -575,14 +575,22 @@ class VirtualMachine(Visitor):
         assert isinstance(having_clause, HavingClause)
 
         schema = self.get_recordset_schema(source_rsname)
-        # todo: evaluate any aggregation functions
+        resp = self.init_grouped_recordset(schema)
+        assert resp.success
+        rsname = resp.body
 
         if isinstance(schema, GroupedSchema):
-            raise NotImplementedError
-        elif isinstance(schema, ScopedSchema):
-            raise NotImplementedError
+            # this is similar to the ungrouped case;
+            # but we want to remove the groups for which the condition is false
+            for record in self.grouped_recordset_iter(source_rsname):
+                value = self.interpreter.evaluate_over_grouped_record(having_clause.condition, record)
+                # TODO: can the above be used as is
+                assert isinstance(value, bool), f"Expected bool, received {type(value)}"
+                if value:
+                    self.append_grouped_recordset(rsname, record.group_key, record)
+            return Response(True, body=rsname)
         else:
-            # Schema - not sure if this needs to be split
+            assert isinstance(schema, ScopedSchema)
             raise NotImplementedError
 
     def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: Optional[str],
@@ -994,8 +1002,17 @@ class VirtualMachine(Visitor):
     def append_recordset(self, name: str, record):
         return self.state_manager.append_recordset(name, record)
 
-    def append_grouped_recordset(self, name: str, group_key: Tuple, record):
+    def append_grouped_recordset(self, name: str, group_key: Tuple, record: GroupedRecord):
+        """
+        Append a single record to a given group
+        """
         self.state_manager.append_grouped_recordset(name, group_key, record)
+
+    def add_group_grouped_recordset(self, name: str, group_key: Tuple, recordset):
+        """
+        Add a new group with given key, and recordset.
+        """
+        self.state_manager.add_group_grouped_recordset(name, group_key, recordset)
 
     def drop_recordset(self, name: str):
         self.state_manager.drop_recordset(name)
@@ -1008,7 +1025,7 @@ class VirtualMachine(Visitor):
 
     def grouped_recordset_iter(self, name: str) -> List[GroupedRecord]:
         """
-        return a pair of (group_key, group_recordset_iterator)
+        return a pair of iterator over group records
         """
         return self.state_manager.grouped_recordset_iter(name)
 

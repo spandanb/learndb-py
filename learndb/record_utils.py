@@ -85,6 +85,7 @@ class SimpleRecord(AbstractRecord):
 
     def has_columns(self, column: str) -> bool:
         """
+        TODO: rename has_column
         check whether record has column
 
         :param column:
@@ -211,7 +212,6 @@ class GroupedRecord(AbstractRecord):
         Generate list of column values from group_recordset.
         """
         return [record.get(column_name) for record in self.group_recordset]
-
 
 
 def join_records(left_record: Union[SimpleRecord, ScopedRecord], right_record: Union[SimpleRecord, ScopedRecord],
