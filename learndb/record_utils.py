@@ -185,14 +185,16 @@ class GroupedRecord(AbstractRecord):
     """
 
     def __init__(self, schema: GroupedSchema, group_key: Tuple, group_recordset: List[Union[SimpleRecord, ScopedRecord]]):
+        # NOTE: this schema corresponds to the schema for the whole group
         self.schema = schema
         self.group_key = group_key
         self.group_recordset = group_recordset
 
     def has_columns(self, column: str) -> bool:
+        # TODO: nuke; unused
         return self.schema.has_column()
 
-    def get(self, column: str) -> Any:
+    def get(self, column: str) -> Optional[Any]:
         """
         Return value of grouped `column` from record
         """
@@ -212,6 +214,13 @@ class GroupedRecord(AbstractRecord):
         Generate list of column values from group_recordset.
         """
         return [record.get(column_name) for record in self.group_recordset]
+
+    def get_group_recordset(self) -> List[Union[SimpleRecord, ScopedRecord]]:
+        """
+        Iterator over contained records
+        """
+        return self.group_recordset
+
 
 
 def join_records(left_record: Union[SimpleRecord, ScopedRecord], right_record: Union[SimpleRecord, ScopedRecord],

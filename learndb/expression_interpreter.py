@@ -274,6 +274,7 @@ class ExpressionInterpreter(Visitor):
             # NOTE: we currently only support positional args
             return func.apply(evaluated_pos_arg, {})
         else:
+            assert self.mode == EvalMode.Grouped
             # NOTE: for grouped case, we need to handle 2 cases:
             # case 1) scalar function over grouped column; this is the same as the scalar case
             resp = resolve_scalar_func_name(func_call.name)
