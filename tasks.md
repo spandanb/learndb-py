@@ -56,6 +56,10 @@
   - validations: when parse tree is being turned into ast, assert things like, e.g. no-on clause on cross-join
 
 
+## Optimization
+- If a function invocation is used, e.g. a count(col_a_) in both select, and having the expr value should be cached 
+
+
 ## Parser
 - ensure rules make sense with `expression` symbol
   - this (expression) should wrap or_clause
