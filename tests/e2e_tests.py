@@ -290,7 +290,7 @@ def test_select_group_by_having():
         "insert into items (custid, country) values (200, 2)",
         "insert into items (custid, country) values (300, 2)",
         # "select f.cola from foo f group by f.colb, f.cola",
-        "select count(custid), country from items group by country having count(custid) > 1",
+        "select count(custid), country from items group by country having count(custid) > 2",
     ]
     db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
