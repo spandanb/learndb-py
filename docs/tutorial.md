@@ -1,17 +1,22 @@
 # How to use learndb
 
-- start the REPL: `run repl`
+Start the REPL:
+- `run repl`
 
-- Create a table: `create table fruits (id integer primary key, name text, avg_weight real)`
+Create a table:
+- `create table fruits (id integer primary key, name text, avg_weight real)`
 
-- Insert records:
+Insert records:
 - `insert into fruits (id, name, avg_weight) values (1, 'apple', 4.2);`
 - `insert into fruits (id, name, avg_weight) values (2, 'mangoes', 3.5);`
 - `insert into fruits  (id, name, avg_weight) values (3, 'carrots', 3.3);`
 
-- Query inserted records
-- `select id, name, avg_weight from fruits`
+Query inserted records
+- `sselect id, name, avg_weight from fruits`
 - `select kexy, name, avg_weight from fruits`
+
+Check what tables exists by querying `catalog`:
+- `select sql_text from catalog`
 
 
 ## Hacking/Development.md

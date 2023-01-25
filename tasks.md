@@ -1,11 +1,11 @@
 # Tasks
 
 ## Top Priority
-- release
-    - btree_tests are freezing
-    - failing e2e tests should use fixtures
-    - restructure repo; add learndb/, tests/
-        - what is the user interface? can I create my own driver file
+
+- bug
+  - invalid column name in having clause (possible also in where), crashes the VM
+
+- release 
     - add config file (controls output filepath, etc)
 
     - write tutorial.md
@@ -22,7 +22,9 @@
 
 
 ## User API
+ - metaops to list tables, show table schema
  - add config to control
+    - how to pass config- update entry point method
     - stop_execution_on_error
     - output data file
  - in addition to LearnDB do I want to support:
@@ -74,6 +76,9 @@
 - btree: test all permutations of small test cases
 - add stress tests (stress-tests.txt)
 - use pytest fixtures
+- improve coverage and robustness of test suite
+  - robustness: try randomized inputs
+  - coverage: auto generate new inputs
 
 
 ## VM
