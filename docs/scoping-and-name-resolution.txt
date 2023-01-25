@@ -25,21 +25,8 @@ When a table is defined, it will be added to a global scope.
 
 # Architecture
 
-NOTE: below is a first thought
-
 Name Registry - responsible for registering name, and resolving names
 
-StateManager holds all scoped objects; would be invoked by name registry
-
-StateManager would be managed by Name Registry,
-
-VM would manage StateManager
-
-Name Registry should also handle intermediate sources.
-
------
-
-Take 2:
 StateManager, and NameRegistry are both doing name lookups.
 StateManager already has more of that code. So move all scoping and related ops under StateManager.
 This includes recordsets, group_recordsets, etc.

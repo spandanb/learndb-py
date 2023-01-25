@@ -9,6 +9,7 @@ class NameRegistry:
     """
     This entity is responsible for registering and resolving column name and types
     from records and schemas.
+    TODO: split this into SchemaReader, and RecordReader
     """
 
     def __init__(self):
