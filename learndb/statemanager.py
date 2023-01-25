@@ -28,6 +28,7 @@ class GroupedRecordSet(UserDict):
     Maintains a dictionary of lists of records, where the dict is
     indexed by the group key
     """
+
     def __getitem__(self, key):
         if key not in self.data:
             self.data[key] = []
@@ -44,6 +45,7 @@ class Scope:
     A scope is a logical environment, within which names and objects are contained/defined.
     A passive entity that exposes add, remove, has_ {recordset, groupedrecordset,
     """
+
     def __init__(self):
         self.aliased_source = {}
         # NOTE: previously this was a list, but now since TableName is alias
@@ -68,7 +70,7 @@ class Scope:
         """
         Upsert a new recordset with `name`
         """
-        self.rsets_schemas[name]= schema
+        self.rsets_schemas[name] = schema
         self.record_sets[name] = recordset
 
     def drop_recordset(self, name: str):
@@ -86,6 +88,9 @@ class Scope:
 
     def get_grouped_recordset_schema(self, name: str) -> Optional[GroupedSchema]:
         return self.group_rsets_schemas.get(name)
+
+    def drop_grouped_recordset(self, name: str):
+        raise NotImplementedError
 
     def cleanup(self):
         """
@@ -113,6 +118,7 @@ class StateManager:
     The class is intimately tied to catalog definition, i.e. has magic
     constants for manipulating catalog.
     """
+
     def __init__(self, filename: str):
         # database file
         self.db_filename = filename
@@ -129,7 +135,7 @@ class StateManager:
         self.schemas = {}
         self.trees = {}
         # scope stack
-        self.scopes : List[Scope] = []
+        self.scopes: List[Scope] = []
 
     def close(self):
         """
@@ -254,7 +260,7 @@ class StateManager:
 
     def find_recordset_scope(self, name: str) -> Optional[Scope]:
         """
-        Find and return (scope, recordset), where scope is the containing scope
+        Find and return scope, where scope contains recordset with `name`
         """
         for scope in reversed(self.scopes):
             rset = scope.get_recordset(name)
@@ -262,6 +268,9 @@ class StateManager:
                 return scope
 
     def find_grouped_recordset_scope(self, name: str) -> Optional[Scope]:
+        """
+        Find and return scope, where scope contains grouped recordset with `name`
+        """
         for scope in reversed(self.scopes):
             rset = scope.get_grouped_recordset(name)
             if rset is not None:
@@ -288,6 +297,9 @@ class StateManager:
         recordset.append(record)
 
     def append_grouped_recordset(self, name: str, group_key: Tuple, record):
+        """
+        Add record to a group
+        """
         scope = self.find_grouped_recordset_scope(name)
         assert scope is not None
         recordset = scope.get_grouped_recordset(name)
@@ -295,7 +307,7 @@ class StateManager:
 
     def add_group_grouped_recordset(self, name: str, group_key: Tuple, group_recordset):
         """
-        Add a new group
+        Add a new group, with a given set of records for group_recordset
         """
         scope = self.find_grouped_recordset_scope(name)
         assert scope is not None
@@ -308,6 +320,9 @@ class StateManager:
         assert scope is not None
         scope.drop_recordset(name)
 
+    def drop_grouped_recordset(self, name: str):
+        raise NotImplementedError
+
     def recordset_iter(self, name: str):
         """Return an iterator over recordset
         NOTE: The iterator will be consumed after one iteration
@@ -318,12 +333,13 @@ class StateManager:
 
     def grouped_recordset_iter(self, name) -> List[GroupedRecord]:
         """
-        return a pair of (group_key, group_recordset_iterator)
+        return an iterator over a groups from a grouped recordset
         """
         scope = self.find_grouped_recordset_scope(name)
         assert scope is not None
         recordset = scope.get_grouped_recordset(name)
         schema = scope.get_grouped_recordset_schema(name)
         # NOTE: cloning the group_rset, since it may need to be iterated multiple times
-        return [GroupedRecord(schema, group_key, list(group_rset))
-                 for group_key, group_rset in recordset.items()]
+        # A group is represented by a GroupedRecord
+        return [GroupedRecord(schema, group_key, group_rset)
+                for group_key, group_rset in recordset.items()]

@@ -582,12 +582,12 @@ class VirtualMachine(Visitor):
         if isinstance(schema, GroupedSchema):
             # this is similar to the ungrouped case;
             # but we want to remove the groups for which the condition is false
-            for record in self.grouped_recordset_iter(source_rsname):
-                value = self.interpreter.evaluate_over_grouped_record(having_clause.condition, record)
-                # TODO: can the above be used as is
+            for group_record in self.grouped_recordset_iter(source_rsname):
+                value = self.interpreter.evaluate_over_grouped_record(having_clause.condition, group_record)
                 assert isinstance(value, bool), f"Expected bool, received {type(value)}"
                 if value:
-                    self.append_grouped_recordset(rsname, record.group_key, record)
+                    for record in group_record.get_group_recordset():
+                        self.append_grouped_recordset(rsname, group_record.group_key, record)
             return Response(True, body=rsname)
         else:
             assert isinstance(schema, ScopedSchema)
@@ -1002,7 +1002,7 @@ class VirtualMachine(Visitor):
     def append_recordset(self, name: str, record):
         return self.state_manager.append_recordset(name, record)
 
-    def append_grouped_recordset(self, name: str, group_key: Tuple, record: GroupedRecord):
+    def append_grouped_recordset(self, name: str, group_key: Tuple, record: Union[SimpleRecord, ScopedRecord]):
         """
         Append a single record to a given group
         """
