@@ -20,6 +20,16 @@
 - how to best structure E2E tests? 
   - how should they be named?
 
+## Testing
+- btree: test all permutations of small test cases
+- add stress tests (stress-tests.txt)
+- use pytest fixtures
+  - seems it would be cleaner to define fixtures, i.e. pre-inited dbs with different schemas
+  - right now, I have a lot of boiler plate
+- improve coverage and robustness of test suite
+  - robustness: try randomized inputs
+  - coverage: auto generate new inputs
+
 
 ## User API
  - metaops to list tables, show table schema
@@ -76,13 +86,6 @@
   single-node-in-place compaction
 
 
-## Testing
-- btree: test all permutations of small test cases
-- add stress tests (stress-tests.txt)
-- use pytest fixtures
-- improve coverage and robustness of test suite
-  - robustness: try randomized inputs
-  - coverage: auto generate new inputs
 
 
 ## VM
