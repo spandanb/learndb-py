@@ -28,7 +28,27 @@ def read_columns_from_pipe(pipe, column_indices):
 def db0():
     """
     Return db with schema 0 loaded
-    Doesn't seem to work
+    TODO: This is minimally used; gradually update tests to use this fixture
+    """
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+    commands = [
+        "create table foo ( cola integer primary key, colb integer)",
+        "insert into foo (cola, colb) values (1, 2)",
+        "insert into foo (cola, colb) values (2, 4)",
+        "insert into foo (cola, colb) values (3, 6)",
+    ]
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    return db
+
+
+def db_fruits0():
+    """
+    Return db with fruits schema.
+    TODO: This is unused; gradually update tests to use this fixture
     """
     db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
     db.nuke_dbfile()
@@ -138,9 +158,9 @@ def test_select_no_condition_mixed_type_schema():
     assert actual_keys == [1, 2]
 
 
-def test_select_equality0(db0):
+def test_select_equality_simple_condition(db0):
     """
-    test select with an equality condition
+    test select with a simple equality condition
 
     :return:
     """
@@ -154,9 +174,9 @@ def test_select_equality0(db0):
     assert keys == [1]
 
 
-def test_select_equality1():
+def test_select_equality_compound_condition():
     """
-    test select with an equality condition
+    test select with a compound equality condition
 
     :return:
     """
@@ -312,7 +332,7 @@ def test_select_having():
     """
 
 
-def test_select_algebraic_expr():
+def test_select_algebraic_expr0():
     """
     The goal is to test some algebra in the selectable expr
     """
@@ -327,6 +347,13 @@ def test_select_algebraic_expr():
         # "select count(custid), country from items group by country",
         "select (count(custid) + 1) * 2, from items",
     ]
+
+
+def test_select_algebraic_expr1():
+    texts = [
+
+    ]
+
 
 
 def test_inner_join():
