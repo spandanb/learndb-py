@@ -1,6 +1,13 @@
 # Tasks
 
 ## Top Priority
+- docs
+    - write tutorial.md
+        - have hacking section, i.e. how to start updating the code directly
+- architecture?
+- create a supplement: reference.md. Architecture.md contains the components
+- reference.md should define what all is undefined behavior  
+- generate code docs
 
 - bug
   - invalid column name in having clause (possible also in where), crashes the VM
@@ -8,8 +15,7 @@
 - release 
     - add config file (controls output filepath, etc)
 
-    - write tutorial.md
-        - have hacking section, i.e. how to start updating the code directly
+
     - update README.md
     - track bugs/gotchas
 - btree tests are failing
@@ -40,10 +46,9 @@
  - in addition to LearnDB do I want to support:
  - cursor?
  - records should be immutable-since they're shallow copied; or final records returned to user should be separate
- - python db api, i.e. natively supported ?
  - repl should have help message at beginning
    - have an additional/secondary command to output sql example/primer
-
+ - run learndb with input file
 
 ## documentation/refactoring
 - complete architecture.md

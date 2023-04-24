@@ -1,10 +1,18 @@
 # How to use learndb
 
-The tutorial walks through the basic capabilities of learndb. Commands below
-are shown in pairs of boxes- where the first box is the command to run,
-and the second box is the expected output.
+This tutorial walks through the basic capabilities of learndb. 
+It assumes reader has familiarity with (some dialect of) SQL.
 
-Start the REPL:
+Note: Commands below are shown in pairs of boxes- where the first box is the command to run,
+and the second box is the expected output. The output is omitted where unnecessary.
+
+
+### Preamble
+
+> Ensure learndb is [installed](../README.md)
+
+
+### Start the REPL
 
 ```
 python run.py repl
@@ -12,41 +20,98 @@ python run.py repl
 ```
 db >
 ```
+
+### Create Table and Load Data
+
 Create a table:
 
 ```
-create table fruits (id integer primary key, name text, avg_weight real)
+db > create table fruits (id integer primary key, name text, avg_weight real)
 ```
 ```
 Execution of command 'create table fruits (id integer primary key, name text, avg_weight real)' succeeded
 ```
 Insert records:
 ```
-insert into fruits (id, name, avg_weight) values (1, 'apple', 4.2);
+db > insert into fruits (id, name, avg_weight) values (1, 'apple', 4.2);
 ```
 ```
 Execution of command 'insert into fruits (id, name, avg_weight) values (1, 'apple', 4.2);' succeeded
 ```
+
+> Note: There is no auto incrementing key, and each table requires a primary integer key. Hence, we must specify the id.
+
 Insert more records:
 ```
-insert into fruits (id, name, avg_weight) values (2, 'mangoes', 3.5);
-insert into fruits  (id, name, avg_weight) values (3, 'carrots', 3.3);
+db > insert into fruits (id, name, avg_weight) values (2, 'mangoes', 3.5);
+...
+db > insert into fruits  (id, name, avg_weight) values (3, 'carrots', 3.3);
+...
 ```
 
-Query inserted records
-```
-select id, name, avg_weight from fruits
-```
+### Query records
+Note, there is no support wildcard column expansion, i.e. `select * ...`
 ```
 db > select id, name, avg_weight from fruits
+```
+```
 Execution of command 'select id, name, avg_weight from fruits' succeeded
 Record(id: 1, name: apple, avg_weight: 4.199999809265137)
 Record(id: 2, name: mangoes, avg_weight: 3.5)
 Record(id: 3, name: carrots, avg_weight: 3.299999952316284)
 ```
+### Query Catalog
 
-Check what tables exist by querying `catalog`:
-- `select sql_text from catalog`
+Learndb maintains a table `catalog` which keeps track of all user defined tables and objects.
+We can check what tables exist by querying `catalog` directly.
+
+```
+db > select sql_text from catalog
+```
+```
+Execution of command 'select sql_text from catalog' succeeded
+Record(sql_text: CREATE TABLE fruits ( id Integer PRIMARY KEY, name Text , avg_weight Real  ))
+```
+
+### Filtering results
+
+We can specify conditions of equality or inequality (less-or-equal, less, greater, greater-or-equal)
+
+```
+db > select name, avg_weight from fruits where avg_weight >= 3.5
+```
+```
+Execution of command 'select name, avg_weight from fruits where avg_weight >= 3.5' succeeded
+Record(name: apple, avg_weight: 4.199999809265137)
+Record(name: mangoes, avg_weight: 3.5)
+```
+These conditions consist of a simple predicate where one side has a column reference, and the other side a value.
+Learndb expects the two sides to be expressions, and this means they can consist of arbitrary algebraic operations.
+For example, the previous condition could have been equivalently written as  `avg_weight + 1 >= 4.5`
+
+Further simple predicates can be combined into complex conditions using boolean operators.
+
+Note:  
+```
+
+```
+
+
+
+
+
+
+
+## Supported meta-commands:
+quit REPl
+> .quit
+
+print btree
+> .btree
+
+performs internal consistency checks on tree
+> .validate
+
 
 
 ## Hacking/Development.md

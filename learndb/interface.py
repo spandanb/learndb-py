@@ -39,8 +39,10 @@ def config_logging():
 
 class LearnDB:
     """
+    This provides programmatic interface for interacting with databases managed by Learndb
     This encapsulates functionality over core db functions-
-    exposed via a thin wrapper. This will be the primary user interface.
+    exposed via a thin wrapper in an end user oriented interface.
+    TODO: document how to use this for programmatic access
     """
 
     def __init__(self, db_filepath: str, nuke_db_file: bool = False):
@@ -59,6 +61,9 @@ class LearnDB:
         self.reset()
 
     def reset(self):
+        """
+        Reset state of
+        """
         config = VMConfig(self.db_filepath)
         self.pipe = Pipe()
         if self.virtual_machine:

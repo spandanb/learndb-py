@@ -1,5 +1,11 @@
 # Architecture of LearnDB
 
+The goal of this document is to give a breakdown of the different components of `Learndb`.
+This targeted at users who want to understand and extend the code base.
+
+At the highest-level, we have a RDBMS that encapsulates the creation and management of databases.
+
+
 This goal of this is to document the key aspects of `LearnDB`.
 The following does this from the perspective of typical operations done
 on a db.
