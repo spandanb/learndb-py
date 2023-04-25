@@ -1,4 +1,5 @@
 import logging
+import fcntl
 import os.path
 import sys
 
@@ -21,6 +22,11 @@ from .constants import (
 
 
 class InvalidPageAccess(Exception):
+    pass
+
+
+class DatabaseFileExclusiveLockNotAvailable(Exception):
+    """Unable to obtain exclusive lock on database file"""
     pass
 
 
@@ -201,6 +207,10 @@ class Pager:
                 continue
             self.flush_page(page_num)
 
+        # release lock
+        # get exclusive lock on file
+        fcntl.lockf(self.fileptr, fcntl.LOCK_UN)
+
         # close file
         self.fileptr.close()
 
@@ -230,6 +240,13 @@ class Pager:
             self.fileptr = open(self.filename, "w+b")
             self.create_file_header()
         self.file_length = os.path.getsize(self.filename)
+
+        # get exclusive lock on file or fail
+        ex_lock_or_fail = fcntl.LOCK_EX | fcntl.LOCK_NB
+        try:
+            fcntl.lockf(self.fileptr, ex_lock_or_fail)
+        except BlockingIOError:
+            raise DatabaseFileExclusiveLockNotAvailable("Another process is operating on database")
 
         if self.file_length % PAGE_SIZE != 0 and (self.file_length - FILE_HEADER_SIZE) % PAGE_SIZE != 0:
             logging.error("Db file is not a valid size. Corrupt file.")
