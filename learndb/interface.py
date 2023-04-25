@@ -39,16 +39,34 @@ def config_logging():
 
 class LearnDB:
     """
-    This provides programmatic interface for interacting with databases managed by Learndb
-    This encapsulates functionality over core db functions-
-    exposed via a thin wrapper in an end user oriented interface.
-    TODO: document how to use this for programmatic access
+    This provides programmatic interface for interacting with databases managed by Learndb.
+    This class defines the handle
+
+    An example flow is like:
+    ```
+    # create handler instance
+    db = LearnDB(db_filepath)
+
+    # submit statement
+    resp = db.handle_input("select col_a from foo")
+    assert resp.success
+
+    # below are only needed to read results of statements that produce output
+    # get output pipe
+    pipe = db.get_pipe()
+
+    # print rows
+    while pipe.has_msgs():
+        print(pipe.read())
+
+    # close handle - flushes any in-memory state
+    db.close()
+    ```
     """
 
     def __init__(self, db_filepath: str, nuke_db_file: bool = False):
         """
-
-        :param db_filepath: the db file
+        :param db_filepath: path to DB file; i.e. file that stores state of this database
         :param nuke_db_file: whether to nuke the file before self is initialized
         """
         self.db_filepath = db_filepath
@@ -62,7 +80,7 @@ class LearnDB:
 
     def reset(self):
         """
-        Reset state of
+        Reset state. Recreates pipe and virtual_machine.
         """
         config = VMConfig(self.db_filepath)
         self.pipe = Pipe()
@@ -78,8 +96,8 @@ class LearnDB:
 
     def nuke_dbfile(self):
         """
-        remove db file; requires state_manager be shutdown, since it
-        holds a ref to file
+        remove db file.
+        This effectively removes
         :return:
         """
         if os.path.exists(self.db_filepath):
@@ -211,10 +229,10 @@ class LearnDB:
 
 def repl(db_filepath: str = DB_FILE):
     """
-    repl
+    REPL (read-eval-print loop) for learndb
     """
 
-    # create db client
+    # create handler to Learndb
     db = LearnDB(db_filepath)
 
     print("Welcome to learndb")

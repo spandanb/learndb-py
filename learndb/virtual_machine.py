@@ -118,15 +118,15 @@ class VirtualMachine(Visitor):
         self.output_pipe = output_pipe
         self.config = config
 
-        # 3. initialize utility members
+        # 2. initialize utility members
         self.state_manager = StateManager(config.db_filepath)
         self.name_registry = NameRegistry()
         self.interpreter = ExpressionInterpreter(self.name_registry)
         self.type_checker = SemanticAnalyzer(self.name_registry)
-        # 4. parameters to control VM behavior
-        # 4.1. whether to stop a program execution on first statement failure
+        # 3. parameters to control VM behavior
+        # 3.1. whether to stop a program execution on first statement failure
         self.stop_program_on_statement_failure = config.stop_program_on_statement_failure
-        # 5. initialization actions
+        # 4. initialization actions
         self.init_catalog()
 
     def init_catalog(self):
