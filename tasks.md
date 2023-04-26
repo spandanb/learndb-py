@@ -2,12 +2,14 @@
 
 ## Top Priority
 - docs
-    - write tutorial.md
-        - have hacking section, i.e. how to start updating the code directly
-- architecture?
-- create a supplement: reference.md. Architecture.md contains the components
-- reference.md should define what all is undefined behavior  
-- generate code docs
+  - reference.md
+  - tutorial.md
+  - architecture.md
+- generate code docs (where should these be placed)
+- remove devloops from `interface.py`
+- main user facing file is run.py? can it be called run_learndb.py?
+- put admin tasks somewhere (Make, python doit, shell)
+
 
 - bug
   - invalid column name in having clause (possible also in where), crashes the VM
