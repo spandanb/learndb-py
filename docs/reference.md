@@ -68,6 +68,9 @@ Output is printed to console.
 
 TODO: generate code docs, and link interface.py::Learndb, Pipe here
 
+Two important entities needed to programmatically interact with the database are `Learndb`, i.e. the class that 
+represents a handle to the database, and `Pipe`
+
 ```
 Learndb
   - 
@@ -76,17 +79,49 @@ Learndb
   - 
 ```
 
+```
+# create handler instance
+db = LearnDB(db_filepath)
+
+# submit statement
+resp = db.handle_input("select col_a from foo")
+assert resp.success
+
+# below are only needed to read results of statements that produce output
+# get output pipe
+pipe = db.get_pipe()
+
+# print rows
+while pipe.has_msgs():
+    print(pipe.read())
+    
+# close handle - flushes any in-memory state
+db.close()
+```
+
 #### Output
 
 `Pipe` contains all records.
 
+### Filesystem Storage 
+
+The state of entire DB is stored on a single file. The database can be thought of as a logical entity, that is 
+stored in some physical medium.
+
+There is a 1 to 1 correspondence between a file and its database. Hence, we can consider the implied database, when 
+discussing a database file, and vice versa. Within the context of a single file, there is a single, global, unnamed 
+database. 
+
+This means the language only has 1 part names for tables, i.e. no schema, no namespacing.
+
+Further, deleting the `db.file` effectively equals dropping the entire database.
 
 ### ACID compliance
 
 Atomic - not atomic. No transactions. Also, no guarantee database isn't left in an inconsistent state due to 
 partial statement execution.
 
-Consistent - 
+Consistent - strong consistency; storage layer updated synchronously
 
 Isolated - guaranteed by database file being opened in exclusive read/write mode, and hence only a single connection to 
 database exists.
@@ -95,7 +130,25 @@ Durable - As durable as files on underlying filesystem.
 
 ## The SQL Language (learndb-sql)
 
-The language grammar can be found at: `<repo_root>/learndb/lang_parser/grammar.py`
+The learndb-sql grammar can be found at: `<repo_root>/learndb/lang_parser/grammar.py`. 
+
+### Learndb-sql grammar specification
+
+The grammar for learndb-sql is written using [lark](https://github.com/lark-parser/lark) - a parsing library for custom grammars. 
+learndb-sql grammar rules below are specified in lark 
+[grammar language](https://lark-parser.readthedocs.io/en/latest/grammar.html)metasyntax language. Grammar rules are specified in a form similar to 
+[EBNR notation](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form).
+- the grammar is made up of terminals and rules.  
+- grammar rules consist of `left-hand-side : right-hand-side`, where the left side has the name of the terminal or 
+  rule, and the right side has one or more matching definition expressions  
+- Terminals are tokens, e.g. integer literals, and keywords.
+- Rules are patterns of terminals that are accepted by the language.
+Consider the example rule:
+```
+create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"
+```
+- Here `"create"i` is a terminal that matches the literal `"create"` in a case-insensitive way
+- `table_name` and `column_def_list` are other rules with their own definitions
 
 ### Data Definition
 
@@ -106,21 +159,57 @@ Primary Key - unique, not null
 
 #### Data Types
 
-Integer
+- Integer
+  - 32 bit integer
+- Real
+  - single precision floating point number 
+- Text
+  - unlimited length character string
+- Boolean
+- Null
 
-Real
-
-
+Note, there is a slight difference between data type that are persisted to the database, and those that used at 
+runtime, e.g. to apply a filter
 
 #### Create Table Statement
 
 ```
-Create table
+create_stmnt     : "create"i "table"i table_name "(" column_def_list ")"
+?column_def_list  : (column_def ",")* column_def
+?column_def       : column_name datatype primary_key? not_null?
+datatype         : INTEGER | TEXT | BOOL | NULL | REAL
+
+primary_key      : "primary"i "key"i
+not_null         : "not"i "null"i
+
+table_name       : SCOPED_IDENTIFIER
+IDENTIFIER       : ("_" | ("a".."z") | ("A".."Z"))* ("_" | ("a".."z") | ("A".."Z") | ("0".."9"))+
+SCOPED_IDENTIFIER : (IDENTIFIER ".")* IDENTIFIER
 ```
+An example is 
+```
+Create table fruits (id integer primary key, name text, avg_weight real)
+```
+
+> NOTE: an integer primary key must be declared, i.e. it's declaration and datatype are mandatory 
+
 
 ### Data Manipulation
 
 #### Data Insertion
+
+```
+insert_stmnt     : "insert"i "into"i table_name "(" column_name_list ")" "values"i "(" value_list ")"
+column_name_list : (column_name ",")* column_name
+value_list       : (literal ",")* literal
+```
+
+An example is:
+
+```
+insert into fruits (id, name, avg_weight) values (1, 'apple', 4.2);
+```
+
 
 #### Data Deletion
 
@@ -141,12 +230,19 @@ Create table
 
 ### storage API
 
-### storage layer (this should be)
+### storage layer 
 
 - encoding/decoding
 
+- storage data structure (btree)
+  - add details relevants from useability perspective
+  - add ref, that more details will be found in arch.
 
+#### BTREE impl notes
+- LEAF_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CELLS control how many max children each node type can support
+- Many other constants in `constants.py`
 
+#### Tree traversal
 
 
 The main limitations are lack of transactions, approximate correctness testing/validation, some shortcuts in the 
@@ -155,19 +251,13 @@ expansion, e.g.
 `select * ...`
 
 
-Deleting the `db.file` will effectively drop the entire database.
-
 
  
 
 
 
-## Misc Notes
-- LEAF_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CELLS control how many max children each node type can support
 
 
-
-## Gotchas
 
 
 
@@ -210,13 +300,8 @@ The following are some parts of a DBMS (In no particular order):
 
 
 
-Code Coverage
-- Methodoly
-- Testing for btree was done using randomized number generation. 
-- most other functionality is tested with relatively simple test cases
-  - although they are comprehensive (high code-cov)
-  - but the logical space 
 
+## Gotchas
 
 
 ## Unsupported 
