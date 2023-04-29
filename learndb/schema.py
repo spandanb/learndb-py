@@ -354,7 +354,7 @@ def generate_unvalidated_schema(source_name: str, columns: List[Column]) -> Resp
     TODO: apply any validations that do hold, e.g. column name uniqueness?"""
     return Response(True, body=SimpleSchema(name=source_name, columns=columns))
 
-g
+
 def make_grouped_schema(schema, group_by_columns: List) -> Response:
     """
     Generate a grouped schema from a non-grouped schema. How
