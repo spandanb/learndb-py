@@ -6,6 +6,7 @@ from .lang_parser.symbols import SymbolicDataType
 
 
 class EvalMode(Enum):
+    NoSchema = auto()
     Scalar = auto()
     Grouped = auto()
 

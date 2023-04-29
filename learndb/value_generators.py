@@ -129,6 +129,23 @@ class ValueGeneratorFromRecordOverExpr:
         return value
 
 
+class ValueGeneratorFromNoRecordOverExpr:
+    """
+    Generate value from a no-record. Where the value is the result of evaluating an expr.
+    The expr can be composed of column refs, literals, function calls, and algebraic combinations of these.
+    """
+    def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
+        self.or_clause = or_clause
+        self.interpreter = interpreter
+
+    def get_value(self) -> Any:
+        """
+        Evaluate the or_clause
+        """
+        value = self.interpreter.evaluate_over_no_record(self.or_clause)
+        return value
+
+
 class ValueGeneratorFromRecordGroupOverExpr:
     """
     Generate value from pair of group_key, and recordset for record group. Where the value is the result of evaluating an expr.
@@ -140,7 +157,8 @@ class ValueGeneratorFromRecordGroupOverExpr:
 
     def get_value(self, record: GroupedRecord) -> Any:
         """
-
         """
         value = self.interpreter.evaluate_over_grouped_record(self.or_clause, record)
         return value
+
+

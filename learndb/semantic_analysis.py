@@ -43,9 +43,19 @@ class SemanticAnalyzer(Visitor):
         # schema used to check column existence, etc.
         self.schema = None
 
+    def analyze_no_schema(self, expr):
+        """
+        Public method.
+        Analyze an expr with no schema
+        """
+        self.mode = EvalMode.NoSchema
+        self.schema = None
+        return self.analyze(expr)
+
     def analyze_scalar(self, expr: Symbol, schema):
         """
-        Public method
+        Public method.
+        Analyze a scalar schema
         """
         self.mode = EvalMode.Scalar
         self.schema = schema
@@ -53,7 +63,8 @@ class SemanticAnalyzer(Visitor):
 
     def analyze_grouped(self, expr: Symbol, schema):
         """
-        Public method
+        Public method.
+        Analyze a grouped schema
         """
         self.mode = EvalMode.Grouped
         self.schema = schema
@@ -143,8 +154,21 @@ class SemanticAnalyzer(Visitor):
             func = resp.body
             return func.return_type
 
-        # 2. handle grouped case
+        # 2. handle no schema case
+        elif self.mode == EvalMode.NoSchema:
+            # NOTE: this will also be a scalar function
+            resp = resolve_scalar_func_name(func_name)
+            if not resp.success:
+                # function not found
+                self.error_message = resp.error_message
+                raise SemanticAnalysisError()
+
+            func = resp.body
+            return func.return_type
+
+        # 3. handle grouped case
         else:
+            assert self.mode == EvalMode.Grouped
             # case 1: if function is applied to a grouping column, function must be a scalar function
             # case 2: if function is applied to a non-grouping column, function must be an aggregate function
 
@@ -203,6 +227,12 @@ class SemanticAnalyzer(Visitor):
             raise SemanticAnalysisError()
 
     def visit_column_name(self, column_name: ColumnName) -> Type[DataType]:
+        if self.mode == EvalMode.NoSchema:
+            # no column resolution in NoSchema mode
+            self.error_message = f"Unexpected column name [{column_name}] in query without source"
+            self.failure_type = SemanticAnalysisFailure.ColumnDoesNotExist
+            raise SemanticAnalysisError()
+
         resp = self.name_registry.resolve_column_name_type(column_name.name)
         if resp.success:
             return resp.body

@@ -49,6 +49,14 @@ class ExpressionInterpreter(Visitor):
         return_value = expr.accept(self)
         return return_value
 
+    def evaluate_over_no_record(self, expr: Symbol):
+        """
+        Evaluate `expr` without any record. Here `expr` doesn't make any column references, and hence can be resolved
+        """
+        self.mode = EvalMode.NoSchema
+        self.set_record(None)
+        return self.evaluate(expr)
+
     def evaluate_over_record(self, expr: Symbol, record: Union[SimpleRecord, ScopedRecord]) -> Any:
         """
         Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`

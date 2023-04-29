@@ -60,7 +60,8 @@ from .serde import serialize_record, deserialize_cell
 
 from .value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
                               ValueGeneratorFromRecordOverExpr,
-                              ValueGeneratorFromRecordGroupOverExpr)
+                              ValueGeneratorFromRecordGroupOverExpr,
+                               ValueGeneratorFromNoRecordOverExpr)
 from .vm_utils import datatype_from_symbolic_datatype
 from .expression_interpreter import ExpressionInterpreter
 from .name_registry import NameRegistry
@@ -323,15 +324,15 @@ class VirtualMachine(Visitor):
             return resp
         rsname = resp.body
 
-        # 7. order, limit clause
+        # 7. if from_clause, evaluate order, limit clause
         if from_clause:
             if from_clause.order_by_clause:
-                pass
+                raise NotImplementedError
             if from_clause.limit_clause:
-                pass
+                raise NotImplementedError
 
-            for record in self.recordset_iter(rsname):
-                self.output_pipe.write(record)
+        for record in self.recordset_iter(rsname):
+            self.output_pipe.write(record)
 
         # end scope, and recycle any ephemeral objects in scope
         self.end_scope()
@@ -758,8 +759,43 @@ class VirtualMachine(Visitor):
             else:
                 return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
 
-    def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
-        raise NotImplementedError
+    def generate_output_schema_no_source(self, selectables: List[Any]) -> Response:
+        """
+        Generate output schema for a no source select
+        """
+        out_columns = []
+        for selectable in selectables:
+            if isinstance(selectable, FuncCall):
+                # find target type
+                # 1.1.1. only scalar functions can be used
+                func = selectable
+                func_def = resolve_function_name(func.name)
+                oname = f"{func.name}_{func.args[0].name}"
+                out_column = Column(oname, func_def.return_type)
+                out_columns.append(out_column)
+            elif isinstance(selectable, ColumnName):
+                return Response(False, error_message=f"Unexpected column name [{selectable.name}] in no source query")
+            elif isinstance(selectable, Literal):
+                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_columns.append(out_column)
+            else:
+                # selectable is some expr, represented as an instance of `Expr`-
+                # the de-facto root of the expr hierarchy
+                assert isinstance(selectable, Expr)
+                # a stringified or_clause to use as output column name
+                expr_name = self.interpreter.stringify(selectable)
+                resp = self.type_checker.analyze_no_schema(selectable)
+                if not resp.success:
+                    return Response(False, error_message=resp.error_message)
+                expr_type = resp.body
+                out_column = Column(expr_name, expr_type)
+                out_columns.append(out_column)
+
+        # 1.2. generate schema from columns
+        resp = generate_unvalidated_schema("output_set", out_columns)
+        if not resp.success:
+            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+        return Response(True, body=resp.body)
 
     def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
         """
@@ -798,7 +834,8 @@ class VirtualMachine(Visitor):
                 out_columns.append(out_column)
 
         # 1.2. generate schema from columns
-        # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
+        # we use an "unvalidated" schema because all schema of data persisted to disk is expected to have a primary key
+        # however, this schema only corresponds to schema for data returned to user
         resp = generate_unvalidated_schema("output_set", out_columns)
         if not resp.success:
             return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
@@ -848,6 +885,12 @@ class VirtualMachine(Visitor):
             return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
         return Response(True, body=resp.body)
 
+    def generate_value_generators_over_no_recordset(self, selectables: List) -> Response:
+        generators = []
+        for selectable in selectables:
+            generators.append(ValueGeneratorFromNoRecordOverExpr(selectable, self.interpreter))
+        return Response(True, body=generators)
+
     def generate_value_generators_over_recordset(self, selectables: List) -> Response:
         """
         Return Response[List[Generators]]
@@ -881,6 +924,37 @@ class VirtualMachine(Visitor):
                 return Response(False)
 
         return Response(True, body=generators)
+
+    def evaluate_select_clause_no_source(self, select_clause: SelectClause) -> Response:
+        """
+        Evaluate select on no source
+        """
+        # generate output schema
+        resp = self.generate_output_schema_no_source(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+        out_schema = resp.body
+
+        # 2. generate output value generators
+        resp = self.generate_value_generators_over_no_recordset(select_clause.selectables)
+        if not resp.success:
+            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+        value_generators = resp.body
+
+        # 3. generate output resultset
+        resp = self.init_recordset(out_schema)
+        assert resp.success
+        out_rsname = resp.body
+
+        # 4. populate output resultset- which will contain a single row
+        out_column_names = [col.name for col in out_schema.columns]
+        value_list = [val_gen.get_value() for val_gen in value_generators]
+        resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+        assert resp.success
+        out_record = resp.body
+        self.append_recordset(out_rsname, out_record)
+
+        return Response(True, body=out_rsname)
 
     def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
         """
