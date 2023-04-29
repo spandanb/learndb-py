@@ -345,12 +345,16 @@ def generate_schema(create_stmnt) -> Response:
 
 
 def generate_unvalidated_schema(source_name: str, columns: List[Column]) -> Response:
-    """Generate an unavalidate schema with argument `columns`
-    This is used for output schema, which doesn't have primary key;
+    """Generate an unvalidated schema with argument `columns`.
+
+    This is used for output schema, which doesn't have primary key.
+    NOTE: `unvalidated` means we don't run any validations, e.g. generated
+    schema must have a primary key.
+
     TODO: apply any validations that do hold, e.g. column name uniqueness?"""
     return Response(True, body=SimpleSchema(name=source_name, columns=columns))
 
-
+g
 def make_grouped_schema(schema, group_by_columns: List) -> Response:
     """
     Generate a grouped schema from a non-grouped schema. How
