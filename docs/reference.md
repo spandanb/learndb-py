@@ -341,7 +341,12 @@ Theoretically, a user can define functions in one of two ways:
   
 ## Internals 
 
-### Storage API
+### Storage Layer 
+
+The storage layer consists of an on-disk btree. The btree is accessed through the below API. Any other backing data structure,
+that implements the above API could easily replace the current implementation.
+
+#### Storage API
 
 The Storage API, is the implicit (not formally required by virtual machine) API exposed by the storage layer data structure.
 The API consists of:
@@ -349,17 +354,14 @@ The API consists of:
 - get(key)
 - delete(key)
 
-### storage layer 
 
-The storage layer consists of an on-disk btree. The btree is accessed through the above API. Any other backing data structure,
-that implements the above API could easily replace the current implementation.
-
-#### BTREE implementation notes
-- LEAF_NODE_MAX_CELLS, INTERNAL_NODE_MAX_CELLS control how many max children each node type can support
-- Many other constants in `constants.py`
+#### Btree implementation notes
+- Many constants that control the layout of the btree are set in `constants.py`
+- `LEAF_NODE_MAX_CELLS`, `INTERNAL_NODE_MAX_CELLS` control how many max children, leaf and internal nodes can have, respectively
 
 
-## Unsupported 
+
+## Unsupported Features
 - at a single time, only a writer, per db; i.e. no multi writer
 - no authentication
 - floats implemented very crudely; expression eval uses a fixed epsilon

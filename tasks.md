@@ -1,15 +1,16 @@
 # Tasks
 
 ## Top Priority
-- docs
-  - reference.md
+- docs 
   - tutorial.md
   - architecture.md
-- generate code docs (where should these be placed)
+    - move to docs/
+- generate code docs (where should these be placed, perhaps src_docs)
 - remove devloops from `interface.py`
 - main user facing file is run.py? can it be called run_learndb.py?
 - put admin tasks somewhere (Make, python doit, shell)
 
+- add tests for drop table
 
 - bug
   - invalid column name in having clause (possible also in where), crashes the VM

@@ -242,6 +242,7 @@ class Pager:
         self.file_length = os.path.getsize(self.filename)
 
         # get exclusive lock on file or fail
+        # NOTE: this wont' work on windows
         ex_lock_or_fail = fcntl.LOCK_EX | fcntl.LOCK_NB
         try:
             fcntl.lockf(self.fileptr, ex_lock_or_fail)
