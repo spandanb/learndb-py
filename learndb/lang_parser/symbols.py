@@ -200,6 +200,11 @@ class CreateStmnt(Symbol):
         return f'{self.__class__.__name__}({self.__dict__})'
 
 
+@dataclass
+class DropStmnt(Symbol):
+    table_name: TableName
+
+
 # create statement helpers
 
 class ColumnDef(Symbol):
@@ -470,8 +475,11 @@ class ToAst(Transformer):
 
     @staticmethod
     def create_stmnt(args) -> CreateStmnt:
-        stmnt = CreateStmnt(args[0], args[1])
-        return stmnt
+        return CreateStmnt(args[0], args[1])
+
+    @staticmethod
+    def drop_stmnt(args) -> DropStmnt:
+        return DropStmnt(args[0])
 
     @staticmethod
     def select_stmnt(args) -> SelectStmnt:
