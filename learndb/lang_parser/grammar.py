@@ -60,13 +60,14 @@ GRAMMAR = '''
                          | ( BANG | MINUS ) unary
 
         primary          : literal
-                         | nested_select
+                         | nested
                          | column_name
                          | func_call
+                         | "(" expr ")"
 
         literal          : INTEGER_NUMBER | REAL_NUMBER | STRING | TRUE | FALSE | NULL
 
-        nested_select    : "(" select_stmnt ")"
+        nested    : "(" select_stmnt | expr ")"
 
         // func calls; positional invocations only for now
         func_call        : func_name "(" func_arg_list ")"
