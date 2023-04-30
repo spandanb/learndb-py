@@ -50,6 +50,9 @@ capabilities of the system. It also describes what is (un)supported and undefine
 ## Hacking
 
 ### Install 
+- System requirements
+  - requires a linux/macos system, since it uses `fcntl` to get exclusive read access on database file
+  - python >= 3.9
 - To install for development, i.e. src can be edited from without having to reinstall:
     - `cd <repo_root>`
     - create virtualenv: `python3 -m venv venv `
@@ -58,7 +61,6 @@ capabilities of the system. It also describes what is (un)supported and undefine
     - install in edit mode: `python3 -m pip install -e .`
     
 ### Run REPL
-> Requires > python 3.10 and pytest
 
 ```
 source venv/bin/activate
@@ -74,7 +76,7 @@ TODO: ^ validate
 - `python -m pytest tests/btree_tests.py`  # suppressed out
 
 - Run end-to-end tests:
-`... e2e_tests.py`
+`python -m pytest -s  tests/e2e_tests.py`
 
 - Run serde tests:
 `... serde_tests.py`
@@ -98,12 +100,9 @@ e.g. ` python -m pydoc -w .\btree.py`
 ## References consulted
 
 - I started this project by following cstack's awesome [tutorial](https://cstack.github.io/db_tutorial/)
-
 - Later I was primarily referencing: [SQLite Database System: Design and Implementation (1st ed)](https://books.google.com/books?id=9Z6IQQnX1JEC&source=gbs_similarbooks)
-
-- Sqllite file format: [docs](https://www.sqlite.org/fileformat2.html) 
-- MIT's 6-830 Notes: [6-830 Course Notes](https://ocw.mit.edu/courses/electrical-engineering-and-computer-science/6-830-database-systems-fall-2010)
-- Postgres SQL and [documentation](https://www.postgresql.org/docs/11/index.html)
+- Sqlite file format: [docs](https://www.sqlite.org/fileformat2.html)
+- Postgres for how certain SQL statements are implemented and how their [documentation](https://www.postgresql.org/docs/11/index.html) is organized
 
 ## Project Management
 - immanent work/issues are tracked in `tasks.md`

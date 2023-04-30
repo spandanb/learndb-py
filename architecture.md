@@ -5,9 +5,26 @@ This is targeted at users who want to understand the code base.
 
 At the highest-level, we have an RDBMS that encapsulates the creation and management of databases.
 
-The operations are specified through a set of statements. These statements  
-manipulate the state of the database. The state of the database is persisted in a single file. But for the execution 
-of some statement, the state is held across memory and disk.
+Let's consider interactions from the user's perspective. The user provides a set of statements, which correspond to a set 
+of operations on the database. The system, processes the input, and attempts to perform these operations - which may change
+state of the database. The state of the database is persisted in a single file. But for the execution 
+of some statement, the state is held across memory and disk. Only when the system is closed, is the state of the database
+persisted to disk. 
+
+This description highlights some of the core entities/components that constitute `LearnDB`
+
+At one level of abstractions, we can think of the high-level functional areas:
+- parsing user inputs
+- state/storage management
+- computing user inputs over stored 
+
+## Key Modules/Entities
+- LearnDB
+- State Manager
+- Virtual Machine
+- Btree (Persistent Storage) 
+- Pager
+
 
 This divides the system into a frontend - that converts user specified sql
 into an AST. The AST is the representation that the backend operates on.
@@ -31,10 +48,3 @@ Currently, a database is associated with a single db file.
 
 ## Defining a Table
     
-
-## Key Modules/Entities
-- LearnDB
-- State Manager
-- Virtual Machine
-- Btree (Persistent Storage) 
-- Pager

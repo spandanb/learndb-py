@@ -89,11 +89,9 @@ These conditions consist of a simple predicate where one side has a column refer
 Learndb expects the two sides to be expressions, and this means they can consist of arbitrary algebraic operations.
 For example, the previous condition could have been equivalently written as  `avg_weight + 1 >= 4.5`
 
-Further simple predicates can be combined into complex conditions using boolean operators.
-
-Note:  
+Further simple predicates can be combined into complex conditions using boolean operators, example:
 ```
-
+db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight <= 10.0) or name = 'mango' 
 ```
 
 
