@@ -242,11 +242,15 @@ class Pager:
         self.file_length = os.path.getsize(self.filename)
 
         # get exclusive lock on file or fail
+        # multiple programs may have opened the database file, but only one will get exclusive
+        # lock, while the others will get killed and cleaned up
+
         # NOTE: this wont' work on windows
         ex_lock_or_fail = fcntl.LOCK_EX | fcntl.LOCK_NB
         try:
             fcntl.lockf(self.fileptr, ex_lock_or_fail)
         except BlockingIOError:
+            self.fileptr.close()
             raise DatabaseFileExclusiveLockNotAvailable("Another process is operating on database")
 
         if self.file_length % PAGE_SIZE != 0 and (self.file_length - FILE_HEADER_SIZE) % PAGE_SIZE != 0:
