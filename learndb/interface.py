@@ -202,12 +202,11 @@ class LearnDB:
         """
         if self.is_meta_command(input_buffer):
             m_resp = self.do_meta_command(input_buffer)
-            if m_resp.success == MetaCommandResult.Success:
+            if m_resp.success:
                 return Response(True, status=MetaCommandResult.Success)
 
-            elif m_resp == MetaCommandResult.UnrecognizedCommand:
-                print("Unrecognized meta command")
-                return Response(False, status=MetaCommandResult.UnrecognizedCommand)
+            print("Unable to process meta command")
+            return Response(False, status=m_resp.status)
 
         p_resp = self.prepare_statement(input_buffer)
         if not p_resp.success:
@@ -615,6 +614,10 @@ def devloop():
         # "select f.cola from foo f group by f.colb, f.cola",
         "select count(custid), country from items group by country having count(custid) > 1",
     ]
+
+    #texts = ["select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight <= 10.0) or name = 'mango'"]
+    texts = ["create table fruits (id integer primary key, name text, avg_weight real);"
+        "drop table fruits"]
 
     for text in texts:
         logging.info(f"handling. {text}")
