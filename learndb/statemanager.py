@@ -163,6 +163,13 @@ class StateManager:
     def register_schema(self, table_name: str, schema: SimpleSchema):
         self.schemas[table_name] = schema
 
+    def unregister_table(self, table_name: str):
+        """
+        Remove table_name entry from both trees and schemas cache
+        """
+        del self.trees[table_name]
+        del self.schemas[table_name]
+
     def get_catalog_schema(self):
         return self.catalog_schema
 

@@ -40,7 +40,8 @@ from .lang_parser.symbols import (
     OrClause,
     Literal,
     Expr,
-    InsertStmnt
+    InsertStmnt,
+    DropStmnt
 )
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .record_utils import (
@@ -197,8 +198,13 @@ class VirtualMachine(Visitor):
         :param stmnt:
         :return:
         """
-        return_value = stmnt.accept(self)
-        return return_value
+        try:
+            return_value = stmnt.accept(self)
+            return return_value
+        except AttributeError:
+            # stmnt is not sub type of Symbol
+            logging.error(f"Attempted execute on non-Symbol object: [{stmnt}]")
+            raise
 
     # section : top-level statement handlers
 
@@ -267,6 +273,43 @@ class VirtualMachine(Visitor):
         # 8. register tree
         tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
         self.state_manager.register_tree(table_name, tree)
+        return Response(True)
+
+    def visit_drop_stmnt(self, stmnt: DropStmnt) -> Response:
+        """
+        Handle drop table stmnt
+        """
+        # 1. delete table from catalog
+        catalog_tree = self.state_manager.get_catalog_tree()
+        catalog_schema = self.state_manager.get_catalog_schema()
+        pager = self.state_manager.get_pager()
+        cursor = Cursor(pager, catalog_tree)
+        table_to_drop = stmnt.table_name.table_name
+
+        # 1.1. find key of table _to_be_deleted in catalog
+        table_key = None
+        # iterate over table entries
+        while cursor.end_of_table is False:
+            cell = cursor.get_cell()
+            resp = deserialize_cell(cell, catalog_schema)
+            assert resp.success, "deserialize failed while reading catalog"
+            table_record = resp.body
+
+            if table_record.get("name") == table_to_drop:
+                table_key = table_record.get("pkey")
+
+            cursor.advance()
+
+        if table_key is None:
+            logging.warning(f"Attempted delete on non-existent table [{table_to_drop}]")
+            return Response(False)
+
+        # 1.2. delete
+        catalog_tree.delete(table_key)
+
+        # 2. unregister table
+        self.state_manager.unregister_table(stmnt.table_name.table_name)
+
         return Response(True)
 
     def visit_select_stmnt(self, stmnt) -> Response:
