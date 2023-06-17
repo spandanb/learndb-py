@@ -166,7 +166,12 @@ class GroupedSchema(AbstractSchema):
 
     @property
     def columns(self):
-        return self.schema.columns
+        if isinstance(self.schema, SimpleSchema):
+            return self.schema.columns
+        else:
+            assert isinstance(self.schema, ScopedSchema)
+            # add the alias into the column name
+            breakpoint()
 
     def get_column_by_name(self, name) -> Optional[Column]:
         name = name.lower()
