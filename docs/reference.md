@@ -151,6 +151,7 @@ that allows defining a custom grammar, and parsers for text based on the grammar
 - Here `"create"i`, `"("`, and `")"` are literals that matche `create`, `(`, an`)`,  respectively.
   - `table_name` and `column_def_list` are other rules with their own definitions
 
+
 ### Data Definition
 
 #### Constraints

@@ -94,7 +94,11 @@ Further simple predicates can be combined into complex conditions using boolean 
 db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight <= 10.0) or name = 'mango' 
 ```
 
+### Joining Tables
 
+```
+
+```
 
 
 
