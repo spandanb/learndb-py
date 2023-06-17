@@ -113,7 +113,7 @@ class LearnDB:
 
     def close(self):
         """
-        must be called before exiting, to persist data to disk
+        NOTE: must be called before exiting, to persist data to disk
         :return:
         """
         self.virtual_machine.terminate()
@@ -231,7 +231,7 @@ def repl(db_filepath: str = DB_FILE):
     REPL (read-eval-print loop) for learndb
     """
 
-    # create handler to Learndb
+    # create Learndb handler
     db = LearnDB(db_filepath)
 
     print("Welcome to learndb")
@@ -248,6 +248,32 @@ def repl(db_filepath: str = DB_FILE):
 
         while pipe.has_msgs():
             print(pipe.read())
+
+
+def run_file(input_filepath: str, db_filepath: str = DB_FILE) -> Response:
+    """
+    Execute statements in file.
+    """
+    # create Learndb handler
+    db = LearnDB(db_filepath)
+
+    if not os.path.exists(input_filepath):
+        return Response(False, error_message=f"Argument file [{input_filepath}] not found")
+
+    with open(input_filepath) as fp:
+        contents = fp.read()
+
+    resp = db.handle_input(contents)
+    if not resp.success:
+        print(f"Command execution failed due to [{resp.error_message}] ")
+
+    # get output pipe
+    pipe = db.get_pipe()
+
+    while pipe.has_msgs():
+        print(pipe.read())
+
+    db.close()
 
 
 def devloop_add_del():
@@ -643,7 +669,7 @@ python run.py file <filepath>
     // read file at <filepath>
     """
     if len(args) < 1:
-        print(f"Error: run-mode not specified")
+        print("Error: run-mode not specified")
         print(args_description)
         return
 
@@ -657,9 +683,14 @@ python run.py file <filepath>
     elif runmode == 'devloop':
         devloop()
     elif runmode == 'file':
-        # todo support input and output file
+        # todo:  and output file
         # if no output file, write to console
-        pass
+        if len(args) < 2:
+            print("Error: Expected input filepath")
+            print(args_description)
+            return
+        input_filepath = args[1].lower()
+        run_file(input_filepath)
     else:
         print(f"Error: Invalid run mode [{runmode}]")
         print(args_description)
