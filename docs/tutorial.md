@@ -97,10 +97,32 @@ db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight
 ### Joining Tables
 
 For this we'll introduce the employees schema
+```
+create table employees (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    salary INTEGER,
+    depid INTEGER
+);
 
-TODO: fill in
+INSERT INTO employees(id, name, salary, depid) VALUES (1, 'John', 100, 1);
+INSERT INTO employees(id, name, salary, depid) VALUES (2, 'Anita', 200, 1);
+INSERT INTO employees(id, name, salary, depid) VALUES (3, 'Gab', 100, 2);
+
+create table department (
+    depid INTEGER PRIMARY KEY,
+    name TEXT
+);
+
+INSERT INTO department(depid, name) VALUES (1, 'accounting');
+INSERT INTO department(depid, name) VALUES (2, 'sales');
 ```
 
+Next, we can do join the two tables:
+```
+select e.name, d.name from employees e inner join department d on e.depid = d.depid
+
+select count(e.name), d.depid from employees e inner join department d on e.depid = d.depid group by d.depid
 ```
 
 
