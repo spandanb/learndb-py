@@ -119,6 +119,7 @@ INSERT INTO department(depid, name) VALUES (2, 'sales');
 ```
 
 Next, we can do join the two tables:
+Note: the explicit use of "inner" when specifying the join
 ```
 select e.name, d.name from employees e inner join department d on e.depid = d.depid
 
