@@ -96,6 +96,9 @@ db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight
 
 ### Joining Tables
 
+For this we'll introduce the employees schema
+
+TODO: fill in
 ```
 
 ```
@@ -123,3 +126,4 @@ performs internal consistency checks on tree
 - repl can only accept a single line, i.e. command can not be split, over multiple lines.
   - No support for select star, i.e. `select * from foo`
   - Input sql can contain column names in mixed case. However, internally names are stored and accessed with the lower case version of the name.
+- join type must be explicit, i.e. for inner join, "inner" is required

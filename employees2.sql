@@ -1,0 +1,1 @@
+select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.depid
