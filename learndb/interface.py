@@ -642,8 +642,10 @@ def devloop():
     ]
 
     #texts = ["select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight <= 10.0) or name = 'mango'"]
-    texts = ["create table fruits (id integer primary key, name text, avg_weight real);"
-        "drop table fruits"]
+    #texts = ["create table fruits (id integer primary key, name text, avg_weight real);"
+    #    "drop table fruits"]
+
+
 
     for text in texts:
         logging.info(f"handling. {text}")

@@ -10,7 +10,7 @@ While, records- i.e. data-containing objects with the structure
 specified by the schema-, and related utilities are contained in record_utils.py
 """
 
-
+from copy import copy
 from typing import List, Optional, Union
 
 from .datatypes import DataType, Integer, Text, Blob, Real
@@ -165,13 +165,22 @@ class GroupedSchema(AbstractSchema):
         self.group_by_columns = group_by_columns
 
     @property
-    def columns(self):
+    def columns(self) -> List[Column]:
         if isinstance(self.schema, SimpleSchema):
             return self.schema.columns
         else:
             assert isinstance(self.schema, ScopedSchema)
-            # add the alias into the column name
-            breakpoint()
+            # the children schema store columns without the alias
+            # we will create a new (flat) column list with
+            # alias prepended to column name
+            # as this is needed to ensure column existence checks work as expected
+            columns = []
+            for alias, schema in self.schema.schemas.items():
+                for column in schema.columns:
+                    column_copy = copy(column)
+                    column_copy.name = f"{alias}.{column.name}"
+                    columns.append(column_copy)
+            return columns
 
     def get_column_by_name(self, name) -> Optional[Column]:
         name = name.lower()

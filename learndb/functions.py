@@ -71,6 +71,14 @@ class FunctionDefinition:
     def return_type(self) -> Type[DataType]:
         return self._return_type
 
+    @staticmethod
+    def is_valid_term(param: Type[DataType], term) -> bool:
+        """Check if term matches param"""
+        if param == DataType:
+            # means any type
+            return True
+        return param.is_valid_term(term)
+
     def validate_args(self, pos_args: List[Any], named_args: Dict[str, Any]) -> Response:
         """
         Validate pos and named args.
@@ -95,14 +103,14 @@ class FunctionDefinition:
                 for item in param:
                     # check each item in the collection
                     for value in arg:
-                        if not item.is_valid_term(value):
+                        if not self.is_valid_term(item, value):
                             return Response(False,
                                             error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
                 
                                                           f"Expected argument of type [{item.typename}]")
             else:
                 # 1.2.2. arg is a literal
-                if not param.is_valid_term(arg):
+                if not self.is_valid_term(param, arg):
                     return Response(False, error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
                                                      f"Expected argument of type [{param.typename}]")
 
@@ -169,8 +177,9 @@ def value_count_function_body(values: List[Any]) -> int:
     return count
 
 
+# a type of datatype means, it can accept any type
 count_function = FunctionDefinition(
-    "count", [[Integer]], {}, value_count_function_body, Integer
+    "count", [[DataType]], {}, value_count_function_body, Integer
 )
 
 # if we have same function for integers and floats, we'll name the int function
