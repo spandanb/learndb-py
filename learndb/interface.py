@@ -645,7 +645,10 @@ def devloop():
     #texts = ["create table fruits (id integer primary key, name text, avg_weight real);"
     #    "drop table fruits"]
 
-
+    texts = [
+        "select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid",
+        #"select count(e.name), d.depid, d.name from employees e right join department d on e.depid = d.depid group by d.depid"
+    ]
 
     for text in texts:
         logging.info(f"handling. {text}")

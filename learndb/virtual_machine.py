@@ -553,7 +553,8 @@ class VirtualMachine(Visitor):
         # in the nest iteration of joining
         first = stack.pop()
         resp = self.materialize(first)
-        assert resp.success
+        if not resp.success:
+            return resp
         rsname = resp.body
         left_source_name = first.table_alias or first.table_name.table_name
         while stack:

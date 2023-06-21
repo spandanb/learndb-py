@@ -116,6 +116,7 @@ create table department (
 
 INSERT INTO department(depid, name) VALUES (1, 'accounting');
 INSERT INTO department(depid, name) VALUES (2, 'sales');
+INSERT INTO department(depid, name) VALUES (3, 'engineering');
 ```
 
 Next, we can do join the two tables:
@@ -124,8 +125,15 @@ Note: the explicit use of "inner" when specifying the join
 select e.name, d.name from employees e inner join department d on e.depid = d.depid
 
 select count(e.name), d.depid from employees e inner join department d on e.depid = d.depid group by d.depid
+>
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 2, d.depid: 1)
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.depid: 2)
 ```
-
+Note, this only has the rows for departments with at least one employee.
+In order to display departments with no employees we need to do left or right join, e.g.
+```sql
+select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid
+```
 
 
 
