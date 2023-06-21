@@ -172,7 +172,7 @@ float_square_function = FunctionDefinition(
 
 def value_count_function_body(values: List[Any]) -> int:
     count = 0
-    for value in values:
+    for _ in values:
         count += 1
     return count
 
