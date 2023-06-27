@@ -16,7 +16,8 @@ create table department (
 
 INSERT INTO department(depid, name) VALUES (1, 'accounting');
 INSERT INTO department(depid, name) VALUES (2, 'sales');
+INSERT INTO department(depid, name) VALUES (3, 'engineering');
 
-select e.name, d.name from employees e inner join department d on e.depid = d.depid
 
-select count(e.name), d.depid from employees e inner join department d on e.depid = d.depid group by d.depid
+
+select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid;

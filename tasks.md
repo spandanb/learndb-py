@@ -5,12 +5,18 @@
   - tutorial.md
   - architecture.md
     - move to docs/
+
+- tests
+  - add tests for drop table
+  - group by + having
+  
+- implement limit, offset
 - generate code docs (where should these be placed, perhaps src_docs)
 - remove devloops from `interface.py`
 - main user facing file is run.py? can it be called run_learndb.py?
 - put admin tasks somewhere (Make, python doit, shell)
 
-- add tests for drop table
+
 
 - bug
   - invalid column name in having clause (possible also in where), crashes the VM

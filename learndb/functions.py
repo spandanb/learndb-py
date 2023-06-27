@@ -171,9 +171,14 @@ float_square_function = FunctionDefinition(
 # aggregate function definitions
 
 def value_count_function_body(values: List[Any]) -> int:
+    """
+    Note: count(*) counts every row (not supported in learndb)
+    count(column) should only count non-null columns
+    """
     count = 0
-    for _ in values:
-        count += 1
+    for value in values:
+        if value is not None:
+            count += 1
     return count
 
 

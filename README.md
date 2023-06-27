@@ -78,6 +78,11 @@ TODO: ^ validate
 - Run end-to-end tests:
 `python -m pytest -s  tests/e2e_tests.py`
 
+- Run end-to-end tests (employees):
+`python -m pytest -s  tests/e2e_tests_employees.py`
+
+`python -m pytest -s  tests/e2e_tests_employees.py -k test_equality_select`
+
 - Run serde tests:
 `... serde_tests.py`
 
