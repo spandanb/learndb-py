@@ -132,7 +132,7 @@ Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=col
 Note, this only has the rows for departments with at least one employee.
 In order to display departments with no employees we need to do left or right join, e.g.
 ```sql
-select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid
+select count(e.name), d.depid, d.name from  department d left join employees e on e.depid = d.depid group by d.depid, d.name
 ```
 
 

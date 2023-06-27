@@ -675,9 +675,9 @@ class VirtualMachine(Visitor):
                         self.append_recordset(rsname, record)
 
         elif join_clause.join_type == JoinType.LeftOuter:
-            # there should be at least one record each left record
-            left_record_added = False
             for left_rec in left_iter:
+                # there should be at least one record each left record
+                left_record_added = False
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
                     record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
@@ -709,7 +709,7 @@ class VirtualMachine(Visitor):
                         right_joined_index[index] = True
 
             # handle any un-joined right records
-            for index, right_rec in self.recordset_iter(right_rsname):
+            for index, right_rec in enumerate(self.recordset_iter(right_rsname)):
                 if right_joined_index[index]:
                     continue
                 left_rec = create_null_record(left_schema)

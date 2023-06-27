@@ -150,7 +150,7 @@ class LearnDB:
                 return Response(False, status=MetaCommandResult.InvalidArgument)
             tree_name = splits[1]
             print("Printing tree" + "-"*50)
-            self.state_manager.print_tree(tree_name)
+            self.virtual_machine.state_manager.print_tree(tree_name)
             print("Finished printing tree" + "-"*50)
             return Response(True, status=MetaCommandResult.Success)
         elif command == ".validate":
@@ -160,7 +160,7 @@ class LearnDB:
                 print("Invalid argument to .validate| Usage: > .validate <table-name>")
                 return Response(False, status=MetaCommandResult.InvalidArgument)
             tree_name = splits[1]
-            self.state_manager.validate_tree(tree_name)
+            self.virtual_machine.state_manager.validate_tree(tree_name)
             print("Validation succeeded.......")
             return Response(True, status=MetaCommandResult.Success)
         elif command == ".nuke":
