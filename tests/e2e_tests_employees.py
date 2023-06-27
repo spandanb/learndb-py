@@ -93,14 +93,11 @@ def test_select_right_join_and_group_by(db_employees):
 
 
 def test_select_group_by_and_having(db_employees):
-    # todo: add having test
-    [
-
-        "select e.name, d.name from employees e inner join department d on e.depid = d.depid",
-
-        "select count(e.name), d.depid from employees e inner join department d on e.depid = d.depid group by d.depid",
-
-        "select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid",
-
-        "select count(e.name), d.depid, d.name from employees e right join department d on e.depid = d.depid group by d.depid, d.name",
-    ]
+    db_employees.handle_input("select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.name having count(e.name) < 2")
+    employees = {}
+    while db_employees.get_pipe().has_msgs():
+        record = db_employees.get_pipe().read()
+        employee_count = record.at_index(0)
+        dep_name = record.at_index(1)
+        employees[dep_name] = employee_count
+    assert employees["sales"] == 1
