@@ -129,7 +129,7 @@ class LearnDB:
 
     @staticmethod
     def is_meta_command(command: str) -> bool:
-        return command[0] == '.'
+        return command and command[0] == '.'
 
     def do_meta_command(self, command: str) -> Response:
         """
