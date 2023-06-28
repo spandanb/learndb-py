@@ -15,7 +15,7 @@ and the second box is the expected output. The output is omitted where unnecessa
 ### Start the REPL
 
 ```
-python run.py repl
+python run_learndb.py repl
 ```
 ```
 db >
@@ -96,7 +96,7 @@ db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight
 
 ### Joining Tables
 
-For this we'll introduce the employees schema
+For this we'll introduce the `employees` schema
 ```
 create table employees (
     id INTEGER PRIMARY KEY,
@@ -122,21 +122,56 @@ INSERT INTO department(depid, name) VALUES (3, 'engineering');
 Next, we can do join the two tables:
 Note: the explicit use of "inner" when specifying the join
 ```
-select e.name, d.name from employees e inner join department d on e.depid = d.depid
+db > select e.name, d.name from employees e inner join department d on e.depid = d.depid
+```
+```
+Execution of command 'select e.name, d.name from employees e inner join department d on e.depid = d.depid' succeeded
+Record(e.name: John, d.name: accounting)
+Record(e.name: Anita, d.name: accounting)
+Record(e.name: Gab, d.name: sales)
+...
+```
 
-select count(e.name), d.depid from employees e inner join department d on e.depid = d.depid group by d.depid
->
-Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 2, d.depid: 1)
-Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.depid: 2)
+### Group by clause
+
+```
+db > select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.name
+```
+
+```
+Execution of command 'select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.name' succeeded
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 2, d.name: accounting)
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.name: sales)
 ```
 Note, this only has the rows for departments with at least one employee.
 In order to display departments with no employees we need to do left or right join, e.g.
 ```sql
-select count(e.name), d.depid, d.name from  department d left join employees e on e.depid = d.depid group by d.depid, d.name
+db > select count(e.name), d.name from  department d left join employees e on e.depid = d.depid group by d.name
+```
+```
+Execution of command 'select count(e.name), d.name from  department d left join employees e on e.depid = d.depid group by d.name;' succeeded
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 2, d.name: accounting)
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.name: sales)
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 0, d.name: engineering)
+```
+Or equivalently 
+```sql
+db > select count(e.name), d.name from employees e right join department d on e.depid = d.depid group by d.name
 ```
 
+### Having clause 
+We may use a `having` clause to filter groups based on the output of an aggregate function.
+For example, we may want to list all "small" departments; where we define "small" as having strictly less than 2 employees.
+We can use a having clause like:
 
+```
+db > select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.name having count(e.name) < 2
+```
 
+```
+Execution of command 'select count(e.name), d.name from employees e inner join department d on e.depid = d.depid group by d.name having count(e.name) < 2' succeeded
+Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.name: sales)```
+```
 
 ## Supported meta-commands:
 quit REPl

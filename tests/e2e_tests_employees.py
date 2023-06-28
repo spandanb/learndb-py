@@ -100,4 +100,5 @@ def test_select_group_by_and_having(db_employees):
         employee_count = record.at_index(0)
         dep_name = record.at_index(1)
         employees[dep_name] = employee_count
+    assert len(employees) == 1
     assert employees["sales"] == 1
