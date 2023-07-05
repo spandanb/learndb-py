@@ -21,16 +21,6 @@ class MetaCommandResult(Enum):
     InvalidArgument = auto()
 
 
-class PrepareResult(Enum):
-    Success = auto()
-    UnrecognizedStatement = auto()
-
-
-class ExecuteResult(Enum):
-    Success = auto()
-    TableFull = auto()
-
-
 class StatementType(Enum):
     Uninitialized = auto()
     Insert = auto()
