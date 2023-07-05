@@ -186,6 +186,10 @@ Order by multiple columns
 db > select name, salary from employees order by salary desc, name asc
 ```
 
+### Limit Clause
+```
+db > select name, salary from employees order by salary desc, name asc limit 10
+```
 
 ## Supported meta-commands:
 quit REPl

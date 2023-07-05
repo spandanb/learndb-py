@@ -375,7 +375,7 @@ class OrderedColumn(Symbol):
 
 @dataclass
 class LimitClause(Symbol):
-    limit: Any
+    limit: int
     offset: Any = None
 
 
