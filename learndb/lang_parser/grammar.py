@@ -18,13 +18,15 @@ GRAMMAR = '''
         where_clause     : "where"i condition
         group_by_clause  : "group"i "by"i column_name ("," column_name)*
         having_clause    : "having"i condition
-        order_by_clause  : "order"i "by"i (column_name ("asc"i|"desc"i)?)*
+        order_by_clause  : "order"i "by"i ordered_column ("," ordered_column)*
         limit_clause     : "limit"i INTEGER_NUMBER ("offset"i INTEGER_NUMBER)?
 
         source            : single_source
                           | joining
 
         single_source      : table_name table_alias?
+
+        ordered_column     : column_name (asc|desc)?
 
         //split conditioned and unconditioned (cross) join as cross join does not have an on-clause
         ?joining          : unconditioned_join | conditioned_join
@@ -38,6 +40,11 @@ GRAMMAR = '''
         right_outer      : "right"i ["outer"i]
         full_outer       : "full"i ["outer"i]
         cross            : "cross"i
+
+        asc              : "asc"i
+                         | "ascending"i
+        desc             : "desc"i
+                         | "descending"i
 
         // `expr` is the de-facto root of the expression hierarchy
         expr             : condition
