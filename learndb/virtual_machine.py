@@ -43,7 +43,8 @@ from .lang_parser.symbols import (
     InsertStmnt,
     DropStmnt,
     OrderByClause,
-    OrderingQualifier
+    OrderingQualifier,
+    LimitClause
 )
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .record_utils import (
@@ -80,7 +81,6 @@ class VMConfig:
     """
     db_filepath: str
     stop_program_on_statement_failure = True
-
 
 
 class SelectClauseSourceType(Enum):
@@ -376,7 +376,9 @@ class VirtualMachine(Visitor):
                 assert resp.success
                 rsname = resp.body
             if from_clause.limit_clause:
-                raise NotImplementedError
+                resp = self.evaluate_limit_clause(from_clause.limit_clause, rsname)
+                assert resp.success
+                rsname = resp.body
 
         for record in self.recordset_iter(rsname):
             self.output_pipe.write(record)
@@ -458,27 +460,6 @@ class VirtualMachine(Visitor):
         return VirtualMachine.quicksort(left, order_by_clause) + middle + VirtualMachine.quicksort(right,
                                                                                                    order_by_clause)
 
-    def evaluate_order_by_clause(self, order_by_clause: OrderByClause, source_rsname: str) -> Response:
-        """
-        Evaluate order clause, i.e. order resultset `rsname` and return ordered resultset
-
-        Todo: move method below
-        """
-        schema = self.get_recordset_schema(source_rsname)
-        resp = self.init_recordset(schema)
-        assert resp.success
-        # generate new result set
-        rsname = resp.body
-
-        # materialize
-        records = [record for record in self.recordset_iter(source_rsname)]
-        # sort
-        sorted_records = self.quicksort(records, order_by_clause)
-        # add to resultset
-        for record in sorted_records:
-            self.append_recordset(rsname, record)
-
-        return Response(True, body=rsname)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
@@ -690,6 +671,8 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=rsname)
 
+    # section: where clause helpers
+
     def filter_recordset(self, where_clause: WhereClause, source_rsname: str) -> Response:
         """
         Apply where_clause on source_rsname and return filtered resultset
@@ -709,6 +692,8 @@ class VirtualMachine(Visitor):
                 self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
+
+    # section: having clause helpers
 
     def filter_grouped_recordset(self, having_clause: HavingClause, source_rsname: str) -> Response:
         """
@@ -736,6 +721,8 @@ class VirtualMachine(Visitor):
         else:
             assert isinstance(schema, ScopedSchema)
             raise NotImplementedError
+
+    # section: join clause helpers
 
     def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: Optional[str],
                        right_sname: str) -> Response:
@@ -1174,6 +1161,42 @@ class VirtualMachine(Visitor):
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
+
+    # section: order by clause helpers
+
+    def evaluate_order_by_clause(self, order_by_clause: OrderByClause, source_rsname: str) -> Response:
+        """
+        Evaluate order clause, i.e. order resultset `rsname` and return ordered resultset
+        """
+        schema = self.get_recordset_schema(source_rsname)
+        resp = self.init_recordset(schema)
+        assert resp.success
+        # generate new result set
+        rsname = resp.body
+
+        # materialize
+        records = [record for record in self.recordset_iter(source_rsname)]
+        # sort
+        sorted_records = self.quicksort(records, order_by_clause)
+        # add to resultset
+        for record in sorted_records:
+            self.append_recordset(rsname, record)
+
+        return Response(True, body=rsname)
+
+    # section: limit clause helpers
+
+    def evaluate_limit_clause(self, limit_clause: LimitClause, source_rsname: str) -> Response:
+        schema = self.get_recordset_schema(source_rsname)
+        resp = self.init_recordset(schema)
+        assert resp.success
+        # generate new result set
+        rsname = resp.body
+        for index, record in enumerate(self.recordset_iter(source_rsname)):
+            if index >= limit_clause.limit:
+                break
+            self.append_recordset(rsname, record)
+        return Response(True, body=rsname)
 
     # section: scope management
 
