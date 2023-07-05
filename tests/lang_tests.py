@@ -1,7 +1,9 @@
+"""
+Tests to validate whether learndb-sql statements are parsed as expected
+"""
 import pytest
 
 from .context import SqlFrontEnd
-#from lang_parser.sqlhandler import SqlFrontEnd
 
 
 def test_select_stmnt():
@@ -96,7 +98,7 @@ def test_drop_stmnt():
 
 
 def test_multi_stmnt():
-    cmd = "create table foo ( colA integer, colB text); select cola from foo"
+    cmd = "create table foo ( colA integer primary key, colB text); select cola from foo"
     handler = SqlFrontEnd()
     handler.parse(cmd)
     assert handler.is_success()

@@ -35,6 +35,11 @@ class ColumnModifier(Enum):
     Nil = auto()  # no modifier - likely not needed
 
 
+class OrderingQualifier(Enum):
+    Ascending = auto()
+    Descending = auto()
+
+
 class SymbolicDataType(Enum):
     """
     Enums for system datatypes
@@ -359,7 +364,13 @@ class HavingClause(Symbol):
 
 @dataclass
 class OrderByClause(Symbol):
-    columns: List[Any]
+    columns: List[OrderedColumn]
+
+
+@dataclass
+class OrderedColumn(Symbol):
+    column: ColumnName
+    qualifier: OrderingQualifier
 
 
 @dataclass
@@ -553,7 +564,18 @@ class ToAst(Transformer):
         return HavingClause(args[0])
 
     def order_by_clause(self, args):
+        # assume default ordering: asc
+        # args is a list that starts with column_name
+        # the next arg coud
         return OrderByClause(args)
+
+    def ordered_column(self, args):
+        if len(args) == 1:
+            # default ascending order
+            return OrderedColumn(args[0], OrderingQualifier.Ascending)
+        else:
+            assert len(args) == 2
+            return OrderedColumn(args[0], args[1])
 
     def limit_clause(self, args):
         if len(args) == 1:
@@ -749,13 +771,19 @@ class ToAst(Transformer):
         else:
             raise ValueError(f"Unrecognized datatype [{datatype}]")
 
-    def primary_key(self, arg):
+    def primary_key(self, _):
         # this rule doesn't have any children nodes
         return ColumnModifier.PrimaryKey
 
-    def not_null(self, arg):
+    def not_null(self, _):
         # this rule doesn't have any children nodes
         return ColumnModifier.NotNull
+
+    def desc(self, _):
+        return OrderingQualifier.Descending
+
+    def asc(self, _):
+        return OrderingQualifier.Ascending
 
     def column_def(self, args):
         """
