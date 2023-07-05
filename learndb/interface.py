@@ -20,9 +20,8 @@ from random import randint, shuffle  # for testing
 from .constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .lang_parser.symbols import Program
-from .dataexchange import Response, MetaCommandResult, ExecuteResult, PrepareResult
+from .dataexchange import Response, MetaCommandResult
 from .pipe import Pipe
-from .statemanager import StateManager
 from .virtual_machine import VirtualMachine, VMConfig
 
 
@@ -210,9 +209,7 @@ class LearnDB:
 
         p_resp = self.prepare_statement(input_buffer)
         if not p_resp.success:
-            if p_resp.status == PrepareResult.UnrecognizedStatement:
-                print(f"Unrecognized keyword at start of '{input_buffer}'")
-            return Response(False, status={p_resp.status}, error_message=p_resp.error_message)
+            return Response(False, error_message=p_resp.error_message)
 
         # handle non-meta command
         # execute statement can be handled by the interpreter
@@ -475,8 +472,7 @@ def devloop_old():
 
 
 def devloop():
-    db = LearnDB(DB_FILE, nuke_db_file=True)
-    db.nuke_dbfile()
+    db = LearnDB(DB_FILE)  # nuke_db_file=True)
 
     text = "select cola from foo f cross join june"
     text = "select cola, colb from foo f left join bar r on fx = ry;"
@@ -645,10 +641,8 @@ def devloop():
     #texts = ["create table fruits (id integer primary key, name text, avg_weight real);"
     #    "drop table fruits"]
 
-    texts = [
-        "select count(e.name), d.depid from  department d left join employees e on e.depid = d.depid group by d.depid",
-        #"select count(e.name), d.depid, d.name from employees e right join department d on e.depid = d.depid group by d.depid"
-    ]
+    #texts = ["select name, salary from employees order by salary"]
+    texts = ["select name, salary from employees order by salary asc, name desc"]
 
     for text in texts:
         logging.info(f"handling. {text}")

@@ -173,6 +173,20 @@ Execution of command 'select count(e.name), d.name from employees e inner join d
 Record(expr(expr=funccall(name=token('identifier', 'count'), args=[expr(expr=columnname(name=token('scoped_identifier', 'e.name')))])): 1, d.name: sales)```
 ```
 
+### Order By Clause
+Now consider that we may want to order the results based on the value of one or more columns. 
+We can achieve this using an `order by` clause.
+
+```
+db > select name, salary from employees order by salary desc
+```
+
+Order by multiple columns
+```
+db > select name, salary from employees order by salary desc, name asc
+```
+
+
 ## Supported meta-commands:
 quit REPl
 > .quit

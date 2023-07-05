@@ -22,8 +22,8 @@ def db_employees():
                 depid INTEGER)""",
 
         "INSERT INTO employees(id, name, salary, depid) VALUES (1, 'John', 100, 1)",
-        "INSERT INTO employees(id, name, salary, depid) VALUES (2, 'Anita', 200, 1)",
-        "INSERT INTO employees(id, name, salary, depid) VALUES (3, 'Gab', 100, 2)",
+        "INSERT INTO employees(id, name, salary, depid) VALUES (2, 'Anita', 300, 1)",
+        "INSERT INTO employees(id, name, salary, depid) VALUES (3, 'Gab', 200, 2)",
 
         """create table department (
             depid INTEGER PRIMARY KEY,

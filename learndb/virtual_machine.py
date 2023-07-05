@@ -41,7 +41,9 @@ from .lang_parser.symbols import (
     Literal,
     Expr,
     InsertStmnt,
-    DropStmnt
+    DropStmnt,
+    OrderByClause,
+    OrderingQualifier
 )
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .record_utils import (
@@ -370,7 +372,9 @@ class VirtualMachine(Visitor):
         # 7. if from_clause, evaluate order, limit clause
         if from_clause:
             if from_clause.order_by_clause:
-                raise NotImplementedError
+                resp = self.evaluate_order_by_clause(from_clause.order_by_clause, rsname)
+                assert resp.success
+                rsname = resp.body
             if from_clause.limit_clause:
                 raise NotImplementedError
 
@@ -380,6 +384,101 @@ class VirtualMachine(Visitor):
         # end scope, and recycle any ephemeral objects in scope
         self.end_scope()
         return Response(True)
+
+    @staticmethod
+    def quicksort(records: List, order_by_clause: OrderByClause):
+        """
+        Sort a list of records according to an order by clause.
+
+        If the order by clause has more than one column, secondary columns only
+        matter if one column matches
+
+        """
+        if len(records) <= 1:
+            return records
+        pivot = records[len(records) // 2]
+        # the left has all values less than the pivot
+        # left = [x for x in records if x < pivot]
+        left = []
+        for record in records:
+            # evaluate whether record < pivot
+            # go from left to right ordering column
+            # if a column value is equal (for a given record to the pivot), look at the next ordering column
+            # otherwise the value is either less, in which case append to "left"
+            # else skip this record
+            for ord_col in order_by_clause.columns:
+                record_value = record.get(ord_col.column.name)
+                pivot_value = pivot.get(ord_col.column.name)
+                if ord_col.qualifier == OrderingQualifier.Descending:
+                    # for desc columns, comparison is inverted from asc
+                    if record_value > pivot_value:
+                        left.append(record)
+                        break
+                    elif record_value < pivot_value:
+                        break
+                else:
+                    if record_value < pivot_value:
+                        left.append(record)
+                        break
+                    elif record_value > pivot_value:
+                        break
+                    # else: continue; i.e. equality on curr column, check next column
+
+        middle = []
+        # evaluate whether record == pivot
+        for record in records:
+            for ord_col in order_by_clause.columns:
+                record_value = record.get(ord_col.column.name)
+                pivot_value = pivot.get(ord_col.column.name)
+                # TODO: does this equality need to handle floats in a special way?
+                if record_value == pivot_value:
+                    middle.append(record)
+                else:
+                    break
+
+        right = []
+        for record in records:
+            # evaluate whether record > pivot
+            for ord_col in order_by_clause.columns:
+                record_value = record.get(ord_col.column.name)
+                pivot_value = pivot.get(ord_col.column.name)
+                if ord_col.qualifier == OrderingQualifier.Descending:
+                    if record_value < pivot_value:
+                        right.append(record)
+                        break
+                    elif record_value > pivot_value:
+                        break
+                else:
+                    if record_value > pivot_value:
+                        right.append(record)
+                        break
+                    elif record_value < pivot_value:
+                        break
+
+        return VirtualMachine.quicksort(left, order_by_clause) + middle + VirtualMachine.quicksort(right,
+                                                                                                   order_by_clause)
+
+    def evaluate_order_by_clause(self, order_by_clause: OrderByClause, source_rsname: str) -> Response:
+        """
+        Evaluate order clause, i.e. order resultset `rsname` and return ordered resultset
+
+        Todo: move method below
+        """
+        schema = self.get_recordset_schema(source_rsname)
+        resp = self.init_recordset(schema)
+        assert resp.success
+        # generate new result set
+        rsname = resp.body
+
+        # materialize
+        records = [record for record in self.recordset_iter(source_rsname)]
+        # sort
+        sorted_records = self.quicksort(records, order_by_clause)
+        # add to resultset
+        for record in sorted_records:
+            self.append_recordset(rsname, record)
+
+        return Response(True, body=rsname)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
