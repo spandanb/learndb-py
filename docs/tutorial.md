@@ -186,6 +186,30 @@ Order by multiple columns
 db > select name, salary from employees order by salary desc, name asc
 ```
 
+Note, however, the columns referred to in order by clause must be in the select clause. To illustrate this point, consider:
+
+```
+db > CREATE TABLE fruits ( 
+        id INTEGER PRIMARY KEY, 
+        name TEXT, 
+        avg_weight INTEGER);
+...       
+db > INSERT INTO fruits (id, name, avg_weight) values (1, 'apple', 200);
+...
+db > INSERT INTO fruits (id, name, avg_weight) values (2, 'orange', 140);
+...
+....
+```
+
+Specifically, the below will fail:
+```
+select name from fruits order by id
+```
+However, by including the `id` in the select clause, this issue can be overcome, i.e.
+```
+select name, id from fruits order by id
+```
+
 ### Limit Clause
 ```
 db > select name, salary from employees order by salary desc, name asc limit 10
@@ -211,3 +235,4 @@ performs internal consistency checks on tree
   - No support for select star, i.e. `select * from foo`
   - Input sql can contain column names in mixed case. However, internally names are stored and accessed with the lower case version of the name.
 - join type must be explicit, i.e. for inner join, "inner" is required
+- any column used in order by clause, must appear in select

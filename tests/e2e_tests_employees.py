@@ -42,7 +42,35 @@ def db_employees():
     return db
 
 
+@pytest.fixture
+def db_fruits():
+    db = LearnDB(TEST_DB_FILE, nuke_db_file=True)
+    db.nuke_dbfile()
+    commands = [
+        """CREATE TABLE fruits ( 
+        id INTEGER PRIMARY KEY, 
+        name TEXT, 
+        avg_weight INTEGER)
+        """,
+        "insert into fruits (id, name, avg_weight) values (1, 'apple', 200)",
+        "insert into fruits (id, name, avg_weight) values (2, 'orange', 140)",
+        "insert into fruits (id, name, avg_weight) values (3, 'pineapple', 1000)",
+        "insert into fruits (id, name, avg_weight) values (4, 'grape', 5)",
+        "insert into fruits (id, name, avg_weight) values (5, 'pear', 166)",
+        "insert into fruits (id, name, avg_weight) values (6, 'mango', 140)",
+        "insert into fruits (id, name, avg_weight) values (7, 'watermelon', 10000)",
+        "insert into fruits (id, name, avg_weight) values (8, 'banana', 118)",
+        "insert into fruits (id, name, avg_weight) values (9, 'peach', 147)",
+    ]
+    for cmd in commands:
+        resp = db.handle_input(cmd)
+        assert resp.success, f"{cmd} failed with {resp.error_message}"
+
+    return db
+
+
 # test
+
 
 def test_select_inner_join(db_employees):
     db_employees.handle_input("select e.name, d.name from employees e inner join department d on e.depid = d.depid")
@@ -102,3 +130,27 @@ def test_select_group_by_and_having(db_employees):
         employees[dep_name] = employee_count
     assert len(employees) == 1
     assert employees["sales"] == 1
+
+
+def test_order_limit(db_fruits):
+    db_fruits.handle_input("select name, id from fruits order by id limit 5")
+    values = []
+    while db_fruits.get_pipe().has_msgs():
+        record = db_fruits.get_pipe().read()
+        fruit = record.at_index(0)
+        values.append(fruit)
+    expected = ['apple', 'orange', 'pineapple', 'grape', 'pear']
+    assert expected == values
+
+
+def test_multi_column_order(db_fruits):
+    db_fruits.handle_input("select name, avg_weight from fruits order by avg_weight, name desc limit 4")
+    values = []
+    while db_fruits.get_pipe().has_msgs():
+        record = db_fruits.get_pipe().read()
+        fruit = record.at_index(0)
+        values.append(fruit)
+    # critically, mango and orange have the same weight
+    # descending ordering on name, means mango does first
+    expected = ['grape', 'banana', 'orange', 'mango']
+    assert expected == values
