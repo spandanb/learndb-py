@@ -1193,7 +1193,7 @@ class VirtualMachine(Visitor):
         # generate new result set
         rsname = resp.body
         for index, record in enumerate(self.recordset_iter(source_rsname)):
-            if index >= limit_clause.limit:
+            if index >= limit_clause.limit.value:
                 break
             self.append_recordset(rsname, record)
         return Response(True, body=rsname)

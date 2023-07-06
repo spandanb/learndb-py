@@ -628,3 +628,6 @@ def test_bugfix_mixed_case_identifiers():
     db.handle_input(cmd)
     pipe = db.get_pipe()
     assert pipe.has_msgs(), "expected rows"
+
+
+
