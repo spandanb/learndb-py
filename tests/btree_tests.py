@@ -90,7 +90,7 @@ def test_inserts(test_cases):
                 key = record.get("cola")
                 result_keys.append(key)
 
-            db.state_manager.validate_tree("foo")
+            db.virtual_machine.state_manager.validate_tree("foo")
             sorted_test_case = [k for k in sorted(test_case[:idx+1])]
             assert result_keys == sorted_test_case, f"result {result_keys} doesn't not match {sorted_test_case}"
 
@@ -146,7 +146,7 @@ def test_deletes(test_cases):
                     result_keys.append(key)
 
                 try:
-                    db.state_manager.validate_tree("foo")
+                    db.virtual_machine.state_manager.validate_tree("foo")
                 except Exception as e:
                     raise Exception(f"validate tree failed for {idx} {del_keys} with {e}")
                 sorted_test_case = [k for k in sorted(del_keys[idx+1:])]

@@ -23,3 +23,5 @@ from learndb import datatypes
 from learndb.schema import SimpleSchema, Column
 from learndb.record_utils import SimpleRecord
 from learndb.serde import deserialize_cell, serialize_record
+
+from learndb.pager import Pager

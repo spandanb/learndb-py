@@ -2,8 +2,8 @@
 Get a page, return a page. close pager.
 """
 
-from pager import Pager
-from test_constants import TEST_DB_FILE
+from .context import Pager
+from .test_constants import TEST_DB_FILE
 
 
 def test_free_pages_persisted():
