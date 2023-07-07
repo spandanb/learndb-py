@@ -433,10 +433,11 @@ class VirtualMachine(Visitor):
                 record_value = record.get(ord_col.column.name)
                 pivot_value = pivot.get(ord_col.column.name)
                 # TODO: does this equality need to handle floats in a special way?
-                if record_value == pivot_value:
-                    middle.append(record)
-                else:
+                if record_value != pivot_value:
                     break
+            else:
+                # all columns matched, hence no break
+                middle.append(record)
 
         right = []
         for record in records:
@@ -457,9 +458,8 @@ class VirtualMachine(Visitor):
                     elif record_value < pivot_value:
                         break
 
-        return VirtualMachine.quicksort(left, order_by_clause) + middle + VirtualMachine.quicksort(right,
-                                                                                                   order_by_clause)
-
+        return VirtualMachine.quicksort(left, order_by_clause) + middle + \
+            VirtualMachine.quicksort(right, order_by_clause)
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
