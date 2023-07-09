@@ -332,6 +332,8 @@ python run.py devloop
     // start a dev-loop function
 python run.py file <filepath>
     // read file at <filepath>
+python stress.py 
+    // run stress test
     """
     if len(args) < 1:
         print("Error: run-mode not specified")

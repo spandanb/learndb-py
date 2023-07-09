@@ -1,11 +1,19 @@
-# Tasks
+it # Tasks
 
 ## Top Priority
 
-- docs 
-  - tutorial.md
+- docs
   - architecture.md
-    - move to docs/
+    - explain diagram
+    - abstract flow in diagram
+    - components
+    - relationship between component
+      - e.g. pager operates on files
+      - btree operates on node === page
+      - VM operates on rows
+
+- docs
+  - tutorial.md
   - README
   - generate code docs (where should these be placed, perhaps src_docs)
 

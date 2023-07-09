@@ -186,7 +186,6 @@ class VirtualMachine(Visitor):
             table_schema = resp.body
 
             # get tree
-            # should vm be responsible for this
             tree = Tree(
                 self.state_manager.get_pager(), table_record.get("root_pagenum")
             )
