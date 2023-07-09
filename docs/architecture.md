@@ -11,7 +11,7 @@ state of the database. The state of the database is persisted in a single file. 
 of some statement, the state is held across memory and disk. Only when the system is closed, is the state of the database
 persisted to disk. 
 
-This description highlights some of the core entities/components that constitute `LearnDB`
+This description highlights some core entities/components that constitute `LearnDB`
 
 At one level of abstractions, we can think of the high-level functional areas:
 - parsing user inputs
@@ -25,14 +25,18 @@ At one level of abstractions, we can think of the high-level functional areas:
 - Btree (Persistent Storage) 
 - Pager
 
-
 This divides the system into a frontend - that converts user specified sql
 into an AST. The AST is the representation that the backend operates on.
 
 The backend consists chiefly of the Learndb virtual machine (VM). The VM takes an AST (instructions), and a database 
 (represented by a file) and runs the instructions over the database, in the process evolving the database.
 
-<DIAGRAM>
+![](./leardb_architecture.png)
+
+## Entities
+### Pager
+- manages IO to database file
+- db file is exposed as a set of pages to  
 
 
 Consider a typical flow, where a user (of this or any other DBMS) would: 
@@ -43,8 +47,13 @@ Consider a typical flow, where a user (of this or any other DBMS) would:
 - read contents of a table
 
 ## Creating a Database
-Currently, a database is associated with a single db file.
-
+Currently, a database is associated with a single db file. So a database file implicitly corresponds to one database.
+The database file has a header; when the header is set- database is initialized 
+- a file has pages
+- a page is a fixed size contiguous chunk of the file.
+- 
 
 ## Defining a Table
-    
+There is a hardcoded table, catalog. Hardcoded means has a fixed root page number for the tree.
+An entry is allocated into 
+
