@@ -1738,8 +1738,7 @@ class Tree:
     @staticmethod
     def internal_node_has_right_child(node: bytes) -> bool:
         value = node[INTERNAL_NODE_HAS_RIGHT_CHILD_OFFSET: INTERNAL_NODE_HAS_RIGHT_CHILD_OFFSET + INTERNAL_NODE_HAS_RIGHT_CHILD_SIZE]
-        int_val = int.from_bytes(value, sys.byteorder)
-        return bool(int_val)
+        return bool.from_bytes(value, sys.byteorder)
 
     @staticmethod
     def leaf_node_cell(node: bytes, cell_num: int) -> bytes:
