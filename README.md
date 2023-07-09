@@ -70,6 +70,8 @@ TODO: ^ validate
 
 ### Run Tests
 
+- Run all tests:
+- `python -m pytest tests/*.py`
 
 - Run btree tests:
 -`python -m pytest -s tests/btree_tests.py`  # stdout
@@ -91,7 +93,7 @@ TODO: ^ validate
 
 - Run specific test:
 `python -m pytest tests.py -k test_name`
-  
+
 - Clear pytest cache
 `python -m pytest --cache-clear`
 
