@@ -25,9 +25,9 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install -r requirements.txt
         python3 -m pip install -e .
-        # pip install flake8 pytest pytest-cov
-        # pip install pytest
-        # if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+         pip install flake8 pytest # pytest-cov
+         pip install pytest
+         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 #    - name: E2E Tests
 #      run: |
 #        python -m pytest ./tests/e2e_tests.py --cache-clear -v -x
@@ -43,6 +43,9 @@ jobs:
 #    - name: Pager Tests
 #      run: |
 #        pytest ./tests/pager_tests.py --cache-clear -v -x
+    - name: Flake8
+      run: |
+        flake8 learndb --ignore E501
     - name: All Tests
       run: |
         python -m pytest ./tests/*.py --cache-clear -v -x
