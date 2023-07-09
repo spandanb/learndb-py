@@ -1,4 +1,4 @@
-"""
+g"""
 Set of tests on employees schema
 """
 import pytest
@@ -154,3 +154,24 @@ def test_multi_column_order(db_fruits):
     # descending ordering on name, means mango does first
     expected = ['grape', 'banana', 'orange', 'mango']
     assert expected == values
+
+
+def test_table_drop(db_employees):
+    db_employees.handle_input("SELECT name from catalog")
+    table_names = []
+    while db_employees.get_pipe().has_msgs():
+        record = db_employees.get_pipe().read()
+        table_name = record.at_index(0)
+        table_names.append(table_name)
+    assert len(table_names) == 2
+    assert "department" in table_names and "employees" in table_names
+
+    db_employees.handle_input("DROP TABLE employees")
+    db_employees.handle_input("SELECT name from catalog")
+    table_names = []
+    while db_employees.get_pipe().has_msgs():
+        record = db_employees.get_pipe().read()
+        table_name = record.at_index(0)
+        table_names.append(table_name)
+    assert len(table_names) == 1
+    assert table_names[0] == "department"

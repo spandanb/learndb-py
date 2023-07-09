@@ -299,6 +299,7 @@ class VirtualMachine(Visitor):
 
             if table_record.get("name") == table_to_drop:
                 table_key = table_record.get("pkey")
+                break
 
             cursor.advance()
 
