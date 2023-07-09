@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 This module contains the highest level user-interaction and resource allocation
 i.e. management of entities, like parser, virtual machine, pager, etc. that implement
@@ -21,6 +22,7 @@ from .virtual_machine import VirtualMachine, VMConfig
 
 
 # section: core execution/user-interface logic
+
 
 def config_logging():
     # config logger
@@ -123,7 +125,7 @@ class LearnDB:
 
     @staticmethod
     def is_meta_command(command: str) -> bool:
-        return command and command[0] == '.'
+        return command and command[0] == "."
 
     def do_meta_command(self, command: str) -> Response:
         """
@@ -143,9 +145,9 @@ class LearnDB:
                 print("Invalid argument to .btree| Usage: > .btree <table-name>")
                 return Response(False, status=MetaCommandResult.InvalidArgument)
             tree_name = splits[1]
-            print("Printing tree" + "-"*50)
+            print("Printing tree" + "-" * 50)
             self.virtual_machine.state_manager.print_tree(tree_name)
-            print("Finished printing tree" + "-"*50)
+            print("Finished printing tree" + "-" * 50)
             return Response(True, status=MetaCommandResult.Success)
         elif command == ".validate":
             print("Validating tree....")
@@ -177,7 +179,9 @@ class LearnDB:
         parser = SqlFrontEnd()
         parser.parse(command)
         if not parser.is_success():
-            return Response(False, error_message=f"parse failed due to: [{parser.error_summary()}]")
+            return Response(
+                False, error_message=f"parse failed due to: [{parser.error_summary()}]"
+            )
         return Response(True, body=parser.get_parsed())
 
     def execute_statement(self, program: Program) -> Response:
@@ -250,7 +254,9 @@ def run_file(input_filepath: str, db_filepath: str = DB_FILE) -> Response:
     db = LearnDB(db_filepath)
 
     if not os.path.exists(input_filepath):
-        return Response(False, error_message=f"Argument file [{input_filepath}] not found")
+        return Response(
+            False, error_message=f"Argument file [{input_filepath}] not found"
+        )
 
     with open(input_filepath) as fp:
         contents = fp.read()
@@ -276,13 +282,12 @@ def run_stress(db_filepath: str = DB_FILE):
     run_add_del_stress_suite(db)
 
 
-
 def devloop():
     # todo: nuke me
-    
+
     db = LearnDB(DB_FILE)  # nuke_db_file=True)
 
-    #texts = ["select name, salary from employees order by salary"]
+    # texts = ["select name, salary from employees order by salary"]
     texts = ["select name, salary from employees order by salary asc, name desc"]
     texts = [
         """CREATE TABLE fruits ( 
@@ -299,7 +304,7 @@ def devloop():
         "insert into fruits (id, name, avg_weight) values (7, 'watermelon', 10000)",
         "insert into fruits (id, name, avg_weight) values (8, 'banana', 118)",
         "insert into fruits (id, name, avg_weight) values (9, 'peach', 147)",
-        #"select name, id from fruits order by id limit 5"
+        # "select name, id from fruits order by id limit 5"
     ]
     texts = [
         "select name, avg_weight from fruits order by avg_weight, name desc limit 4"
@@ -313,7 +318,6 @@ def devloop():
             logging.info("read from pipe: {}".format(db.pipe.read()))
 
     db.close()
-
 
 
 def parse_args_and_start(args: List):
@@ -354,4 +358,3 @@ python run.py file <filepath>
         print(f"Error: Invalid run mode [{runmode}]")
         print(args_description)
         return
-

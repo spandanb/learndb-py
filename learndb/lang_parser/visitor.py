@@ -7,6 +7,7 @@ class HandlerNotFoundException(Exception):
     A specific handler (method) is not found;
     defined by me
     """
+
     pass
 
 
@@ -24,7 +25,7 @@ class Visitor:
      https://refactoring.guru/design-patterns/visitor/python/example
     """
 
-    def visit(self, symbol: 'Symbol'):
+    def visit(self, symbol: "Symbol"):
         """
         this will determine which specific handler to invoke; dispatch
         """
@@ -32,9 +33,11 @@ class Visitor:
         # determine the name of the handler method from class of expr
         # NB: this requires the class and handler have the
         # same name in PascalCase and snake_case, respectively
-        handler = f'visit_{suffix}'
+        handler = f"visit_{suffix}"
         if hasattr(self, handler):
             return getattr(self, handler)(symbol)
         else:
             logging.warning(f"Visitor does not have {handler}")
-            raise HandlerNotFoundException(f"Visitor [{self.__class__.__name__}] does not have {handler}")
+            raise HandlerNotFoundException(
+                f"Visitor [{self.__class__.__name__}] does not have {handler}"
+            )

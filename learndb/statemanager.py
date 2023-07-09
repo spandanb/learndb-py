@@ -13,13 +13,20 @@ from .constants import CATALOG_ROOT_PAGE_NUM
 from .dataexchange import Response
 from .pager import Pager
 from .record_utils import GroupedRecord
-from .schema import SimpleSchema, ScopedSchema, CatalogSchema, GroupedSchema, NonGroupedSchema
+from .schema import (
+    SimpleSchema,
+    ScopedSchema,
+    CatalogSchema,
+    GroupedSchema,
+    NonGroupedSchema,
+)
 
 
 class RecordSet(UserList):
     """
     Maintains a list of records
     """
+
     pass
 
 
@@ -66,7 +73,9 @@ class Scope:
     def get_recordset(self, name: str) -> Optional[RecordSet]:
         return self.record_sets.get(name)
 
-    def add_recordset(self, name: str, schema: NonGroupedSchema, recordset: RecordSet) -> None:
+    def add_recordset(
+        self, name: str, schema: NonGroupedSchema, recordset: RecordSet
+    ) -> None:
         """
         Upsert a new recordset with `name`
         """
@@ -79,7 +88,9 @@ class Scope:
     def get_recordset_schema(self, name: str) -> Optional[NonGroupedSchema]:
         return self.rsets_schemas.get(name)
 
-    def add_grouped_recordset(self, name, schema: GroupedSchema, recordset: GroupedRecordSet) -> None:
+    def add_grouped_recordset(
+        self, name, schema: GroupedSchema, recordset: GroupedRecordSet
+    ) -> None:
         self.group_rsets_schemas[name] = schema
         self.group_rsets[name] = recordset
 
@@ -198,7 +209,9 @@ class StateManager:
 
     # section: scope management
 
-    def begin_scope(self, ):
+    def begin_scope(
+        self,
+    ):
         self.scopes.append(Scope())
 
     def end_scope(self):
@@ -209,7 +222,9 @@ class StateManager:
 
     @staticmethod
     def gen_randkey(size=10, prefix=""):
-        return prefix + "".join(random.choice(string.ascii_letters) for i in range(size))
+        return prefix + "".join(
+            random.choice(string.ascii_letters) for i in range(size)
+        )
 
     def unique_recordset_name(self) -> str:
         """
@@ -348,5 +363,7 @@ class StateManager:
         schema = scope.get_grouped_recordset_schema(name)
         # NOTE: cloning the group_rset, since it may need to be iterated multiple times
         # A group is represented by a GroupedRecord
-        return [GroupedRecord(schema, group_key, group_rset)
-                for group_key, group_rset in recordset.items()]
+        return [
+            GroupedRecord(schema, group_key, group_rset)
+            for group_key, group_rset in recordset.items()
+        ]

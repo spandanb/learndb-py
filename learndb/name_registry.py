@@ -30,7 +30,9 @@ class NameRegistry:
         """
         Return true if operand is a name, i.e. IDENTIFIER or SCOPED_IDENTIFIER
         """
-        if isinstance(operand, Token) and (operand.type == "IDENTIFIER" or operand.type == "SCOPED_IDENTIFIER"):
+        if isinstance(operand, Token) and (
+            operand.type == "IDENTIFIER" or operand.type == "SCOPED_IDENTIFIER"
+        ):
             return True
         elif isinstance(operand, ColumnName):
             return True

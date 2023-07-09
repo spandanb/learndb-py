@@ -2,11 +2,7 @@ import sys
 from enum import Enum
 from typing import Type
 
-from .constants import (CELL_KEY_SIZE_SIZE,
-                       CELL_DATA_SIZE_SIZE,
-                       INTEGER_SIZE,
-                       REAL_SIZE
-                       )
+from .constants import CELL_KEY_SIZE_SIZE, CELL_DATA_SIZE_SIZE, INTEGER_SIZE, REAL_SIZE
 
 from .datatypes import DataType, Null, Integer, Text, Blob, Real
 from .dataexchange import Response
@@ -24,6 +20,7 @@ class SerialType(Enum):
     """
     serial-type of encoded data
     """
+
     Null = 0
     Integer = 1
     Real = 2
@@ -104,9 +101,9 @@ def serialize_record(record: SimpleRecord) -> Response:
 
     """
     # encode columns in definition order
-    key = b''
-    data_header = b''
-    data = b''
+    key = b""
+    data_header = b""
+    data = b""
     # 1. encode chunks of payload
     for column in record.schema.columns:
         # get column value
@@ -115,7 +112,7 @@ def serialize_record(record: SimpleRecord) -> Response:
         if column.is_primary_key:
             # ensure primary key is an int
             # this validation should be done at schema generation time
-            #if value is None:
+            # if value is None:
             #    breakpoint()
             assert column.datatype == Integer, "Primary key must be an integer"
             assert value is not None, "Primary key must exist"
@@ -124,7 +121,10 @@ def serialize_record(record: SimpleRecord) -> Response:
         else:
             # check if a value is required
             if value is None and column.is_nullable is False:
-                return Response(False, error_message=f"Required column [{column.name}] missing value")
+                return Response(
+                    False,
+                    error_message=f"Required column [{column.name}] missing value",
+                )
 
             if value is None:
                 serial_type = SerialType.Null
@@ -134,7 +134,9 @@ def serialize_record(record: SimpleRecord) -> Response:
                 serial_type = datatype_to_serialtype(column.datatype)
                 # all columns except null can be serialized;
                 # in the future, there may be non-null unserializable types, e.g. bool
-                assert column.datatype.is_serializable, f"non-null unserializable column [{column.name}]"
+                assert (
+                    column.datatype.is_serializable
+                ), f"non-null unserializable column [{column.name}]"
 
                 # serialize header
                 serialized_serial_type = Integer.serialize(serial_type.value)
@@ -177,14 +179,14 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
     values = {}  # colname -> value
     # read the columns in the cell
     offset = 0
-    key_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    key_size = Integer.deserialize(cell[offset : offset + INTEGER_SIZE])
     offset += CELL_KEY_SIZE_SIZE
-    data_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    data_size = Integer.deserialize(cell[offset : offset + INTEGER_SIZE])
     offset += CELL_DATA_SIZE_SIZE
 
     # read key column
     # bytes corresponding to key
-    key_bytes = cell[offset: offset + key_size]
+    key_bytes = cell[offset : offset + key_size]
     key = Integer.deserialize(key_bytes)
     key_columns = [col.name for col in schema.columns if col.is_primary_key]
 
@@ -199,7 +201,7 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
     col_pos = 0
 
     # read non-key columns
-    header_size = Integer.deserialize(cell[offset: offset + INTEGER_SIZE])
+    header_size = Integer.deserialize(cell[offset : offset + INTEGER_SIZE])
     # this is the abs addr value
     header_abs_ubound = offset + header_size
 
@@ -214,7 +216,9 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
     data_offset = offset + header_size
     while header_offset < header_abs_ubound:
         # read until all column metadata has been run
-        serial_type_value = Integer.deserialize(cell[header_offset: header_offset + INTEGER_SIZE])
+        serial_type_value = Integer.deserialize(
+            cell[header_offset : header_offset + INTEGER_SIZE]
+        )
         serial_type = SerialType(serial_type_value)
         # resolve datatype
         datatype = serialtype_to_datatype(serial_type)
@@ -224,7 +228,9 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
         # check whether column type is variable length
         varlen = 0
         if not datatype.is_fixed_length:
-            varlen = Integer.deserialize(cell[header_offset: header_offset + INTEGER_SIZE])
+            varlen = Integer.deserialize(
+                cell[header_offset : header_offset + INTEGER_SIZE]
+            )
             header_offset += INTEGER_SIZE
 
         # resolve column name
@@ -243,14 +249,16 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
         elif datatype.is_fixed_length:
             # handle fixed-length type
             # increment body by a fixed amount
-            values[column.name] = datatype.deserialize(cell[data_offset: data_offset + datatype.fixed_length])
+            values[column.name] = datatype.deserialize(
+                cell[data_offset : data_offset + datatype.fixed_length]
+            )
             data_offset += datatype.fixed_length
         else:
             assert datatype.is_fixed_length is False
             assert varlen > 0
             # handle variable length type
             # increment body by a variable amount
-            data_bstring = cell[data_offset: data_offset + varlen]
+            data_bstring = cell[data_offset : data_offset + varlen]
             values[column.name] = datatype.deserialize(data_bstring)
             data_offset += varlen
 
@@ -283,25 +291,23 @@ def get_cell_key_in_page(node: bytes, cell_offset: int) -> int:
     :return:
     """
     offset = cell_offset
-    key_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
+    key_size = Integer.deserialize(node[offset : offset + INTEGER_SIZE])
     offset += CELL_KEY_SIZE_SIZE
     # skip over data size field
     offset += CELL_DATA_SIZE_SIZE
 
     # read key column
     # bytes corresponding to key
-    key_bytes = node[offset: offset + key_size]
+    key_bytes = node[offset : offset + key_size]
     key = Integer.deserialize(key_bytes)
     return key
 
 
 def get_cell_size(node: bytes, cell_offset: int) -> int:
     offset = cell_offset
-    key_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
+    key_size = Integer.deserialize(node[offset : offset + INTEGER_SIZE])
     offset += CELL_KEY_SIZE_SIZE
     # skip over data size field
-    data_size = Integer.deserialize(node[offset: offset + INTEGER_SIZE])
+    data_size = Integer.deserialize(node[offset : offset + INTEGER_SIZE])
     offset += CELL_DATA_SIZE_SIZE
     return INTEGER_SIZE + INTEGER_SIZE + key_size + data_size
-
-

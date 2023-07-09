@@ -44,7 +44,7 @@ from .lang_parser.symbols import (
     DropStmnt,
     OrderByClause,
     OrderingQualifier,
-    LimitClause
+    LimitClause,
 )
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .record_utils import (
@@ -55,17 +55,29 @@ from .record_utils import (
     ScopedRecord,
     create_record,
     create_null_record,
-    create_record_from_raw_values
+    create_record_from_raw_values,
 )
 from .statemanager import StateManager
-from .schema import (generate_schema, generate_unvalidated_schema, schema_to_ddl, AbstractSchema, SimpleSchema,
-                    ScopedSchema, make_grouped_schema, GroupedSchema, Column)
+from .schema import (
+    generate_schema,
+    generate_unvalidated_schema,
+    schema_to_ddl,
+    AbstractSchema,
+    SimpleSchema,
+    ScopedSchema,
+    make_grouped_schema,
+    GroupedSchema,
+    Column,
+)
 from .serde import serialize_record, deserialize_cell
 
-from .value_generators import (ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord,
-                              ValueGeneratorFromRecordOverExpr,
-                              ValueGeneratorFromRecordGroupOverExpr,
-                               ValueGeneratorFromNoRecordOverExpr)
+from .value_generators import (
+    ValueGeneratorFromRecordOverFunc,
+    ValueExtractorFromRecord,
+    ValueGeneratorFromRecordOverExpr,
+    ValueGeneratorFromRecordGroupOverExpr,
+    ValueGeneratorFromNoRecordOverExpr,
+)
 from .vm_utils import datatype_from_symbolic_datatype
 from .expression_interpreter import ExpressionInterpreter
 from .name_registry import NameRegistry
@@ -79,6 +91,7 @@ class VMConfig:
     """
     Contains config for VM
     """
+
     db_filepath: str
     stop_program_on_statement_failure = True
 
@@ -88,6 +101,7 @@ class SelectClauseSourceType(Enum):
     Represents the kind of source that the select clause is executed over;
     This passed from validation layer of select clause to evaluator
     """
+
     NoSource = auto()
     SimpleSource = auto()
     ScopedSource = auto()
@@ -116,6 +130,7 @@ class VirtualMachine(Visitor):
     RecordSet types, is because that would require logic for interpreting
     symbols into RecordSet; and I want that logic to not be replicated outside vm.
     """
+
     def __init__(self, config: VMConfig, output_pipe):
         # 1. input params
         # 1.1. output pipe where results of select are writen to
@@ -129,7 +144,9 @@ class VirtualMachine(Visitor):
         self.type_checker = SemanticAnalyzer(self.name_registry)
         # 3. parameters to control VM behavior
         # 3.1. whether to stop a program execution on first statement failure
-        self.stop_program_on_statement_failure = config.stop_program_on_statement_failure
+        self.stop_program_on_statement_failure = (
+            config.stop_program_on_statement_failure
+        )
         # 4. initialization actions
         self.init_catalog()
 
@@ -170,7 +187,9 @@ class VirtualMachine(Visitor):
 
             # get tree
             # should vm be responsible for this
-            tree = Tree(self.state_manager.get_pager(), table_record.get("root_pagenum"))
+            tree = Tree(
+                self.state_manager.get_pager(), table_record.get("root_pagenum")
+            )
 
             # register schema
             self.state_manager.register_schema(table_record.get("name"), table_schema)
@@ -191,7 +210,9 @@ class VirtualMachine(Visitor):
         try:
             return self.execute(program)
         except Exception as e:
-            logging.error(f"ERROR: virtual machine program execution failed due to [{e}|]")
+            logging.error(
+                f"ERROR: virtual machine program execution failed due to [{e}|]"
+            )
             raise
 
     def execute(self, stmnt: Symbol) -> Response:
@@ -225,7 +246,10 @@ class VirtualMachine(Visitor):
             stmnt_resp = self.execute(stmt)
             if self.stop_program_on_statement_failure and stmnt_resp.success is False:
                 # early exit
-                return Response(False, error_message=f"{stmt} failed due to [{stmnt_resp.error_message}]")
+                return Response(
+                    False,
+                    error_message=f"{stmt} failed due to [{stmnt_resp.error_message}]",
+                )
             stmnt_responses.append(stmnt_resp)
         return Response(True, body=stmnt_responses)
 
@@ -238,13 +262,18 @@ class VirtualMachine(Visitor):
         response = generate_schema(stmnt)
         if not response.success:
             # schema generation failed
-            return Response(False, error_message=f'schema generation failed due to [{response.error_message}]')
+            return Response(
+                False,
+                error_message=f"schema generation failed due to [{response.error_message}]",
+            )
         table_schema = response.body
         table_name = table_schema.name.table_name
         assert isinstance(table_name, str), "table_name is not string"
 
         # 2. check whether table name is unique
-        assert self.state_manager.table_exists(table_name) is False, f"table {table_name} exists"
+        assert (
+            self.state_manager.table_exists(table_name) is False
+        ), f"table {table_name} exists"
 
         # 3. allocate tree for new table
         page_num = self.state_manager.allocate_tree()
@@ -255,15 +284,21 @@ class VirtualMachine(Visitor):
         sql_text = schema_to_ddl(table_schema)
         # logging.info(f'visit_create_stmnt: generated DDL: {sql_text}')
         catalog_schema = self.state_manager.get_catalog_schema()
-        response = create_catalog_record(pkey, table_name, page_num, sql_text, catalog_schema)
+        response = create_catalog_record(
+            pkey, table_name, page_num, sql_text, catalog_schema
+        )
         if not response.success:
-            return Response(False, error_message=f'Failure due to {response.error_message}')
+            return Response(
+                False, error_message=f"Failure due to {response.error_message}"
+            )
 
         # 5. serialize table record, i.e. record in catalog table for new user table
         table_record = response.body
         response = serialize_record(table_record)
         if not response.success:
-            return Response(False, error_message=f'Serialization failed: [{response.error_message}]')
+            return Response(
+                False, error_message=f"Serialization failed: [{response.error_message}]"
+            )
 
         # 6. insert entry into catalog tree
         cell = response.body
@@ -332,14 +367,20 @@ class VirtualMachine(Visitor):
             # materialize source in from clause
             resp = self.materialize(stmnt.from_clause.source.source)
             if not resp.success:
-                return Response(False, error_message=f"[from_clause] source materialization failed due to {resp.error_message}")
+                return Response(
+                    False,
+                    error_message=f"[from_clause] source materialization failed due to {resp.error_message}",
+                )
             rsname = resp.body
 
             # 3. apply filter on source - where clause
             if from_clause.where_clause:
                 resp = self.filter_recordset(from_clause.where_clause, rsname)
                 if not resp.success:
-                    return Response(False, error_message=f"[where_clause] filtering failed due to {resp.error_message}")
+                    return Response(
+                        False,
+                        error_message=f"[where_clause] filtering failed due to {resp.error_message}",
+                    )
                 # filtering produces a new resultset
                 rsname = resp.body
 
@@ -347,7 +388,10 @@ class VirtualMachine(Visitor):
             if from_clause.group_by_clause:
                 resp = self.group_recordset(from_clause.group_by_clause, rsname)
                 if not resp.success:
-                    return Response(False, error_message=f"[group_by_clause] failed due to {resp.error_message}")
+                    return Response(
+                        False,
+                        error_message=f"[group_by_clause] failed due to {resp.error_message}",
+                    )
                 rsname = resp.body
 
             # 5. apply having clause
@@ -373,7 +417,9 @@ class VirtualMachine(Visitor):
         # 7. if from_clause, evaluate order, limit clause
         if from_clause:
             if from_clause.order_by_clause:
-                resp = self.evaluate_order_by_clause(from_clause.order_by_clause, rsname)
+                resp = self.evaluate_order_by_clause(
+                    from_clause.order_by_clause, rsname
+                )
                 assert resp.success
                 rsname = resp.body
             if from_clause.limit_clause:
@@ -459,8 +505,11 @@ class VirtualMachine(Visitor):
                     elif record_value < pivot_value:
                         break
 
-        return VirtualMachine.quicksort(left, order_by_clause) + middle + \
-            VirtualMachine.quicksort(right, order_by_clause)
+        return (
+            VirtualMachine.quicksort(left, order_by_clause)
+            + middle
+            + VirtualMachine.quicksort(right, order_by_clause)
+        )
 
     def visit_insert_stmnt(self, stmnt: InsertStmnt) -> Response:
         """
@@ -476,7 +525,10 @@ class VirtualMachine(Visitor):
         schema = self.state_manager.get_schema(table_name)
         resp = create_record(stmnt.column_name_list, stmnt.value_list, schema)
         if not resp.success:
-            return Response(False, error_message=f"Insert record failed due to [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"Insert record failed due to [{resp.error_message}]",
+            )
 
         record = resp.body
         # get table's tree
@@ -570,7 +622,9 @@ class VirtualMachine(Visitor):
         # does table_names need to be resolved?
         return self.materialize_source_from_name(source.table_name, source.table_alias)
 
-    def materialize_source_from_name(self, table_name: TableName, table_alias: str = None) -> Response:
+    def materialize_source_from_name(
+        self, table_name: TableName, table_alias: str = None
+    ) -> Response:
         # unwrap table_name
         table_name = table_name.table_name.lower()
 
@@ -602,7 +656,11 @@ class VirtualMachine(Visitor):
             assert resp.success
             record = resp.body
             # if an alias is defined
-            record = ScopedRecord.from_single_simple_record(record, table_alias, rs_schema) if table_alias else record
+            record = (
+                ScopedRecord.from_single_simple_record(record, table_alias, rs_schema)
+                if table_alias
+                else record
+            )
 
             self.append_recordset(rsname, record)
             # advance cursor
@@ -648,7 +706,9 @@ class VirtualMachine(Visitor):
 
             right_source = next_join.right_source
             # name within local scope, i.e. tablename or alias
-            right_source_name = right_source.table_alias or right_source.table_name.table_name
+            right_source_name = (
+                right_source.table_alias or right_source.table_name.table_name
+            )
             resp = self.materialize_single_source(right_source)
             assert resp.success
             next_rsname = resp.body
@@ -665,7 +725,9 @@ class VirtualMachine(Visitor):
             # for simple joins; also no need to refactor this now; once I test more complex cases
             # the API will become clearer
 
-            resp = self.join_recordset(next_join, rsname, next_rsname, left_source_name, right_source_name)
+            resp = self.join_recordset(
+                next_join, rsname, next_rsname, left_source_name, right_source_name
+            )
             left_source_name = None
             assert resp.success
             rsname = resp.body
@@ -674,7 +736,9 @@ class VirtualMachine(Visitor):
 
     # section: where clause helpers
 
-    def filter_recordset(self, where_clause: WhereClause, source_rsname: str) -> Response:
+    def filter_recordset(
+        self, where_clause: WhereClause, source_rsname: str
+    ) -> Response:
         """
         Apply where_clause on source_rsname and return filtered resultset
         """
@@ -687,7 +751,9 @@ class VirtualMachine(Visitor):
         rsname = resp.body
 
         for record in self.recordset_iter(source_rsname):
-            value = self.interpreter.evaluate_over_record(where_clause.condition, record)
+            value = self.interpreter.evaluate_over_record(
+                where_clause.condition, record
+            )
             assert isinstance(value, bool), f"Expected bool, received {type(value)}"
             if value:
                 self.append_recordset(rsname, record)
@@ -696,7 +762,9 @@ class VirtualMachine(Visitor):
 
     # section: having clause helpers
 
-    def filter_grouped_recordset(self, having_clause: HavingClause, source_rsname: str) -> Response:
+    def filter_grouped_recordset(
+        self, having_clause: HavingClause, source_rsname: str
+    ) -> Response:
         """
         A having op, i.e. filtering on grouped recordset can also
         be applied on an ungrouped set where the the whole group is treated as
@@ -713,11 +781,15 @@ class VirtualMachine(Visitor):
             # this is similar to the ungrouped case;
             # but we want to remove the groups for which the condition is false
             for group_record in self.grouped_recordset_iter(source_rsname):
-                value = self.interpreter.evaluate_over_grouped_record(having_clause.condition, group_record)
+                value = self.interpreter.evaluate_over_grouped_record(
+                    having_clause.condition, group_record
+                )
                 assert isinstance(value, bool), f"Expected bool, received {type(value)}"
                 if value:
                     for record in group_record.get_group_recordset():
-                        self.append_grouped_recordset(rsname, group_record.group_key, record)
+                        self.append_grouped_recordset(
+                            rsname, group_record.group_key, record
+                        )
             return Response(True, body=rsname)
         else:
             assert isinstance(schema, ScopedSchema)
@@ -725,8 +797,14 @@ class VirtualMachine(Visitor):
 
     # section: join clause helpers
 
-    def join_recordset(self, join_clause, left_rsname: str, right_rsname: str, left_sname: Optional[str],
-                       right_sname: str) -> Response:
+    def join_recordset(
+        self,
+        join_clause,
+        left_rsname: str,
+        right_rsname: str,
+        left_sname: Optional[str],
+        right_sname: str,
+    ) -> Response:
         """
         join record based on record type and return joined recordset.
 
@@ -744,7 +822,9 @@ class VirtualMachine(Visitor):
         """
         left_schema = self.get_recordset_schema(left_rsname)
         right_schema = self.get_recordset_schema(right_rsname)
-        schema = ScopedSchema.from_schemas(left_schema, right_schema, left_sname, right_sname)
+        schema = ScopedSchema.from_schemas(
+            left_schema, right_schema, left_sname, right_sname
+        )
         resp = self.init_recordset(schema)
         assert resp.success
         rsname = resp.body
@@ -756,8 +836,12 @@ class VirtualMachine(Visitor):
                 # for each left record we need to iterate over each right_record
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
+                    if self.interpreter.evaluate_over_record(
+                        join_clause.condition, record
+                    ):
                         # join condition matched
                         self.append_recordset(rsname, record)
 
@@ -767,8 +851,12 @@ class VirtualMachine(Visitor):
                 left_record_added = False
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
+                    if self.interpreter.evaluate_over_record(
+                        join_clause.condition, record
+                    ):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         left_record_added = True
@@ -776,7 +864,9 @@ class VirtualMachine(Visitor):
                     # add a null right record
                     # create and join records
                     right_rec = create_null_record(right_schema)
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
                     self.append_recordset(rsname, record)
 
         elif join_clause.join_type == JoinType.RightOuter:
@@ -789,8 +879,12 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
+                    if self.interpreter.evaluate_over_record(
+                        join_clause.condition, record
+                    ):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         right_joined_index[index] = True
@@ -800,7 +894,9 @@ class VirtualMachine(Visitor):
                 if right_joined_index[index]:
                     continue
                 left_rec = create_null_record(left_schema)
-                record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                record = ScopedRecord.from_records(
+                    left_rec, right_rec, left_sname, right_sname, schema
+                )
                 self.append_recordset(rsname, record)
 
         elif join_clause.join_type == JoinType.FullOuter:
@@ -810,8 +906,12 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for index, right_rec in enumerate(right_iter):
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
-                    if self.interpreter.evaluate_over_record(join_clause.condition, record):
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
+                    if self.interpreter.evaluate_over_record(
+                        join_clause.condition, record
+                    ):
                         # join condition matched
                         self.append_recordset(rsname, record)
                         left_record_added = True
@@ -820,14 +920,18 @@ class VirtualMachine(Visitor):
                     # add a null right record
                     # create and join records
                     right_rec = create_null_record(right_schema)
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
                     self.append_recordset(rsname, record)
             # handle any un-joined right records
             for index, right_rec in self.recordset_iter(right_rsname):
                 if right_joined_index[index]:
                     continue
                 left_rec = create_null_record(left_schema)
-                record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                record = ScopedRecord.from_records(
+                    left_rec, right_rec, left_sname, right_sname, schema
+                )
                 self.append_recordset(rsname, record)
 
         else:
@@ -835,7 +939,9 @@ class VirtualMachine(Visitor):
             for left_rec in left_iter:
                 right_iter = self.recordset_iter(right_rsname)
                 for right_rec in right_iter:
-                    record = ScopedRecord.from_records(left_rec, right_rec, left_sname, right_sname, schema)
+                    record = ScopedRecord.from_records(
+                        left_rec, right_rec, left_sname, right_sname, schema
+                    )
                     self.append_recordset(rsname, record)
 
         return Response(True, body=rsname)
@@ -886,9 +992,13 @@ class VirtualMachine(Visitor):
         else:
             source_schema = self.get_recordset_schema(source_rsname)
             if isinstance(source_schema, GroupedSchema):
-                return self.evaluate_select_clause_grouped_source(select_clause, source_rsname)
+                return self.evaluate_select_clause_grouped_source(
+                    select_clause, source_rsname
+                )
             else:
-                return self.evaluate_select_clause_ungrouped_source(select_clause, source_rsname)
+                return self.evaluate_select_clause_ungrouped_source(
+                    select_clause, source_rsname
+                )
 
     def generate_output_schema_no_source(self, selectables: List[Any]) -> Response:
         """
@@ -905,9 +1015,15 @@ class VirtualMachine(Visitor):
                 out_column = Column(oname, func_def.return_type)
                 out_columns.append(out_column)
             elif isinstance(selectable, ColumnName):
-                return Response(False, error_message=f"Unexpected column name [{selectable.name}] in no source query")
+                return Response(
+                    False,
+                    error_message=f"Unexpected column name [{selectable.name}] in no source query",
+                )
             elif isinstance(selectable, Literal):
-                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_column = Column(
+                    str(selectable.value),
+                    datatype_from_symbolic_datatype(selectable.type),
+                )
                 out_columns.append(out_column)
             else:
                 # selectable is some expr, represented as an instance of `Expr`-
@@ -925,10 +1041,15 @@ class VirtualMachine(Visitor):
         # 1.2. generate schema from columns
         resp = generate_unvalidated_schema("output_set", out_columns)
         if not resp.success:
-            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+            return Response(
+                False,
+                error_message=f"Generate output schema failed due to {resp.error_message}",
+            )
         return Response(True, body=resp.body)
 
-    def generate_output_schema_ungrouped_source(self, selectables: List[Any], source_schema) -> Response:
+    def generate_output_schema_ungrouped_source(
+        self, selectables: List[Any], source_schema
+    ) -> Response:
         """
         Generate output schema for an ungrouped source
         """
@@ -949,7 +1070,10 @@ class VirtualMachine(Visitor):
                 out_column = Column(selectable.name.lower(), resp.body)
                 out_columns.append(out_column)
             elif isinstance(selectable, Literal):
-                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_column = Column(
+                    str(selectable.value),
+                    datatype_from_symbolic_datatype(selectable.type),
+                )
                 out_columns.append(out_column)
             else:
                 # selectable is some expr, represented as an instance of `Expr`-
@@ -969,10 +1093,15 @@ class VirtualMachine(Visitor):
         # however, this schema only corresponds to schema for data returned to user
         resp = generate_unvalidated_schema("output_set", out_columns)
         if not resp.success:
-            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+            return Response(
+                False,
+                error_message=f"Generate output schema failed due to {resp.error_message}",
+            )
         return Response(True, body=resp.body)
 
-    def generate_output_schema_grouped_source(self, selectables: List[Any], source_schema) -> Response:
+    def generate_output_schema_grouped_source(
+        self, selectables: List[Any], source_schema
+    ) -> Response:
         """
         Generate output schema for a grouped source
         """
@@ -995,7 +1124,10 @@ class VirtualMachine(Visitor):
                 out_column = Column(selectable.name, column_type)
                 out_columns.append(out_column)
             elif isinstance(selectable, Literal):
-                out_column = Column(str(selectable.value), datatype_from_symbolic_datatype(selectable.type))
+                out_column = Column(
+                    str(selectable.value),
+                    datatype_from_symbolic_datatype(selectable.type),
+                )
                 out_columns.append(out_column)
             else:
                 # selectable is some expr, represented as an instance of `Expr`-
@@ -1013,13 +1145,20 @@ class VirtualMachine(Visitor):
         # we use an "unvalidated" schema because all schema of data persisted is expected to have a primary key
         resp = generate_unvalidated_schema("output_set", out_columns)
         if not resp.success:
-            return Response(False, error_message=f"Generate output schema failed due to {resp.error_message}")
+            return Response(
+                False,
+                error_message=f"Generate output schema failed due to {resp.error_message}",
+            )
         return Response(True, body=resp.body)
 
-    def generate_value_generators_over_no_recordset(self, selectables: List) -> Response:
+    def generate_value_generators_over_no_recordset(
+        self, selectables: List
+    ) -> Response:
         generators = []
         for selectable in selectables:
-            generators.append(ValueGeneratorFromNoRecordOverExpr(selectable, self.interpreter))
+            generators.append(
+                ValueGeneratorFromNoRecordOverExpr(selectable, self.interpreter)
+            )
         return Response(True, body=generators)
 
     def generate_value_generators_over_recordset(self, selectables: List) -> Response:
@@ -1029,26 +1168,38 @@ class VirtualMachine(Visitor):
         generators = []
         for selectable in selectables:
             if isinstance(selectable, FuncCall):
-                generators.append(ValueGeneratorFromRecordOverFunc(selectable, self.interpreter))
+                generators.append(
+                    ValueGeneratorFromRecordOverFunc(selectable, self.interpreter)
+                )
             elif isinstance(selectable, ColumnName):
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+                generators.append(
+                    ValueGeneratorFromRecordOverExpr(selectable, self.interpreter)
+                )
             elif isinstance(selectable, Literal):
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+                generators.append(
+                    ValueGeneratorFromRecordOverExpr(selectable, self.interpreter)
+                )
             else:
                 # expression
                 assert isinstance(selectable, Expr)
                 # NOTE: selectable can be arbitrary algebraic expression, including columns
-                generators.append(ValueGeneratorFromRecordOverExpr(selectable, self.interpreter))
+                generators.append(
+                    ValueGeneratorFromRecordOverExpr(selectable, self.interpreter)
+                )
         return Response(True, body=generators)
 
-    def generate_value_generators_over_grouped_recordset(self, selectables: List) -> Response:
+    def generate_value_generators_over_grouped_recordset(
+        self, selectables: List
+    ) -> Response:
         """
         Return Response[List[Generators]]
         """
         generators = []
         for selectable in selectables:
             if isinstance(selectable, Expr):
-                generators.append(ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter))
+                generators.append(
+                    ValueGeneratorFromRecordGroupOverExpr(selectable, self.interpreter)
+                )
             else:
                 # this is unexpected
                 breakpoint()
@@ -1063,13 +1214,21 @@ class VirtualMachine(Visitor):
         # generate output schema
         resp = self.generate_output_schema_no_source(select_clause.selectables)
         if not resp.success:
-            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"schema generation failed with [{resp.error_message}]",
+            )
         out_schema = resp.body
 
         # 2. generate output value generators
-        resp = self.generate_value_generators_over_no_recordset(select_clause.selectables)
+        resp = self.generate_value_generators_over_no_recordset(
+            select_clause.selectables
+        )
         if not resp.success:
-            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"Unable to generate value generators due to [{resp.error_message}]",
+            )
         value_generators = resp.body
 
         # 3. generate output resultset
@@ -1087,24 +1246,36 @@ class VirtualMachine(Visitor):
 
         return Response(True, body=out_rsname)
 
-    def evaluate_select_clause_ungrouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+    def evaluate_select_clause_ungrouped_source(
+        self, select_clause: SelectClause, source_rsname: str
+    ) -> Response:
         """
         This is a select on non-grouped source
         """
         # 0. setup
         source_schema = self.get_recordset_schema(source_rsname)
-        assert isinstance(source_schema, ScopedSchema) or isinstance(source_schema, SimpleSchema)
+        assert isinstance(source_schema, ScopedSchema) or isinstance(
+            source_schema, SimpleSchema
+        )
 
         # 1. generate output schema
-        resp = self.generate_output_schema_ungrouped_source(select_clause.selectables, source_schema)
+        resp = self.generate_output_schema_ungrouped_source(
+            select_clause.selectables, source_schema
+        )
         if not resp.success:
-            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"schema generation failed with [{resp.error_message}]",
+            )
         out_schema = resp.body
 
         # 2. generate output value generators
         resp = self.generate_value_generators_over_recordset(select_clause.selectables)
         if not resp.success:
-            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"Unable to generate value generators due to [{resp.error_message}]",
+            )
         value_generators = resp.body
 
         # 3. generate output resultset
@@ -1118,28 +1289,42 @@ class VirtualMachine(Visitor):
             # get value, one for each output column
             value_list = [val_gen.get_value(record) for val_gen in value_generators]
             # convert column values to a record
-            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            resp = create_record_from_raw_values(
+                out_column_names, value_list, out_schema
+            )
             assert resp.success
             out_record = resp.body
             self.append_recordset(out_rsname, out_record)
 
         return Response(True, body=out_rsname)
 
-    def evaluate_select_clause_grouped_source(self, select_clause: SelectClause, source_rsname: str) -> Response:
+    def evaluate_select_clause_grouped_source(
+        self, select_clause: SelectClause, source_rsname: str
+    ) -> Response:
         """
         This is a select on a grouped source
         """
         source_schema = self.get_recordset_schema(source_rsname)
         assert isinstance(source_schema, GroupedSchema)
-        resp = self.generate_output_schema_grouped_source(select_clause.selectables, source_schema)
+        resp = self.generate_output_schema_grouped_source(
+            select_clause.selectables, source_schema
+        )
         if not resp.success:
-            return Response(False, error_message=f"schema generation failed with [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"schema generation failed with [{resp.error_message}]",
+            )
         out_schema = resp.body
 
         # 2. generate output value generators
-        resp = self.generate_value_generators_over_grouped_recordset(select_clause.selectables)
+        resp = self.generate_value_generators_over_grouped_recordset(
+            select_clause.selectables
+        )
         if not resp.success:
-            return Response(False, error_message=f"Unable to generate value generators due to [{resp.error_message}]")
+            return Response(
+                False,
+                error_message=f"Unable to generate value generators due to [{resp.error_message}]",
+            )
         value_generators = resp.body
 
         # 3. generate output resultset
@@ -1152,11 +1337,17 @@ class VirtualMachine(Visitor):
         # populate output resultset
         for grouped_record in self.grouped_recordset_iter(source_rsname):
             # get value, one for each output column
-            group_schema = self.state_manager.get_grouped_recordset_schema(source_rsname)
+            group_schema = self.state_manager.get_grouped_recordset_schema(
+                source_rsname
+            )
             assert isinstance(group_schema, GroupedSchema)
-            value_list = [val_gen.get_value(grouped_record) for val_gen in value_generators]
+            value_list = [
+                val_gen.get_value(grouped_record) for val_gen in value_generators
+            ]
             # convert column values to a record
-            resp = create_record_from_raw_values(out_column_names, value_list, out_schema)
+            resp = create_record_from_raw_values(
+                out_column_names, value_list, out_schema
+            )
             assert resp.success
             out_record = resp.body
             self.append_recordset(out_rsname, out_record)
@@ -1165,7 +1356,9 @@ class VirtualMachine(Visitor):
 
     # section: order by clause helpers
 
-    def evaluate_order_by_clause(self, order_by_clause: OrderByClause, source_rsname: str) -> Response:
+    def evaluate_order_by_clause(
+        self, order_by_clause: OrderByClause, source_rsname: str
+    ) -> Response:
         """
         Evaluate order clause, i.e. order resultset `rsname` and return ordered resultset
         """
@@ -1187,7 +1380,9 @@ class VirtualMachine(Visitor):
 
     # section: limit clause helpers
 
-    def evaluate_limit_clause(self, limit_clause: LimitClause, source_rsname: str) -> Response:
+    def evaluate_limit_clause(
+        self, limit_clause: LimitClause, source_rsname: str
+    ) -> Response:
         schema = self.get_recordset_schema(source_rsname)
         resp = self.init_recordset(schema)
         assert resp.success
@@ -1243,7 +1438,9 @@ class VirtualMachine(Visitor):
     def append_recordset(self, name: str, record):
         return self.state_manager.append_recordset(name, record)
 
-    def append_grouped_recordset(self, name: str, group_key: Tuple, record: Union[SimpleRecord, ScopedRecord]):
+    def append_grouped_recordset(
+        self, name: str, group_key: Tuple, record: Union[SimpleRecord, ScopedRecord]
+    ):
         """
         Append a single record to a given group
         """
@@ -1269,4 +1466,3 @@ class VirtualMachine(Visitor):
         return a pair of iterator over group records
         """
         return self.state_manager.grouped_recordset_iter(name)
-

@@ -4,8 +4,16 @@ from typing import Optional, Type
 from .dataexchange import Response
 from .datatypes import DataType
 from .functions import resolve_scalar_func_name, resolve_aggregate_func_name
-from .lang_parser.symbols import (Symbol, Expr, OrClause, AndClause, BinaryArithmeticOperation, FuncCall,
-                                  ColumnName, Literal)
+from .lang_parser.symbols import (
+    Symbol,
+    Expr,
+    OrClause,
+    AndClause,
+    BinaryArithmeticOperation,
+    FuncCall,
+    ColumnName,
+    Literal,
+)
 from .lang_parser.visitor import Visitor
 from .name_registry import NameRegistry
 from .vm_utils import datatype_from_symbolic_datatype, EvalMode
@@ -35,6 +43,7 @@ class SemanticAnalyzer(Visitor):
         e.g. 2+ 2.0 will fail due to a type mismatch
 
     """
+
     def __init__(self, name_registry: NameRegistry):
         self.name_registry = name_registry
         self.mode = None
@@ -80,7 +89,9 @@ class SemanticAnalyzer(Visitor):
             return_value = self.evaluate(expr)
             return Response(True, body=return_value)
         except SemanticAnalysisError:
-            return Response(False, status=self.failure_type, error_message=self.error_message)
+            return Response(
+                False, status=self.failure_type, error_message=self.error_message
+            )
 
     def evaluate(self, expr: Symbol) -> Type[DataType]:
         return_value = expr.accept(self)
@@ -128,8 +139,10 @@ class SemanticAnalyzer(Visitor):
         op2_type = self.evaluate(operation.operand2)
         # for now, we will only support strict type checking, i.e.
         if op1_type != op2_type:
-            self.error_message = (f"Type mismatch; {operation.operand1} is of type {op1_type}; "
-                                  f"{operation.operand2} is of type {op2_type}")
+            self.error_message = (
+                f"Type mismatch; {operation.operand1} is of type {op1_type}; "
+                f"{operation.operand2} is of type {op2_type}"
+            )
             raise SemanticAnalysisError()
         return op1_type
 
@@ -181,7 +194,9 @@ class SemanticAnalyzer(Visitor):
                 for column in columns:
                     if not self.schema.is_grouping_column(column.name):
                         self.failure_type = SemanticAnalysisFailure.FunctionMismatch
-                        self.error_message = "Scalar function in grouped select expects grouping columns"
+                        self.error_message = (
+                            "Scalar function in grouped select expects grouping columns"
+                        )
                         raise SemanticAnalysisError()
 
                 func = resp.body
@@ -194,8 +209,10 @@ class SemanticAnalyzer(Visitor):
                 # i.e. min, max, count, etc.
                 if len(func_call.args) != 1:
                     self.failure_type = SemanticAnalysisFailure.FunctionMismatch
-                    self.error_message = f"Aggregate function expects one and only one column reference; " \
-                                         f"received {len(func_call.args)}"
+                    self.error_message = (
+                        f"Aggregate function expects one and only one column reference; "
+                        f"received {len(func_call.args)}"
+                    )
                     raise SemanticAnalysisError()
 
                 arg_expr = func_call.args[0]
@@ -203,7 +220,9 @@ class SemanticAnalyzer(Visitor):
 
                 if not isinstance(column_name, ColumnName):
                     self.failure_type = SemanticAnalysisFailure.FunctionMismatch
-                    self.error_message = "Aggregate function expects a single column reference"
+                    self.error_message = (
+                        "Aggregate function expects a single column reference"
+                    )
                     raise SemanticAnalysisError()
 
                 if not self.schema.has_column(column_name.name):
@@ -214,8 +233,10 @@ class SemanticAnalyzer(Visitor):
                 if not self.schema.is_non_grouping_column(column_name.name):
                     # ensure column_arg is a non-grouping column
                     self.failure_type = SemanticAnalysisFailure.FunctionMismatch
-                    self.error_message = f"Expected non-grouping column as arg to aggregate function; " \
-                                         f"received column [{column_name.name}] for function [{func_name}] "
+                    self.error_message = (
+                        f"Expected non-grouping column as arg to aggregate function; "
+                        f"received column [{column_name.name}] for function [{func_name}] "
+                    )
                     raise SemanticAnalysisError()
 
                 func = resp.body
@@ -229,7 +250,9 @@ class SemanticAnalyzer(Visitor):
     def visit_column_name(self, column_name: ColumnName) -> Type[DataType]:
         if self.mode == EvalMode.NoSchema:
             # no column resolution in NoSchema mode
-            self.error_message = f"Unexpected column name [{column_name}] in query without source"
+            self.error_message = (
+                f"Unexpected column name [{column_name}] in query without source"
+            )
             self.failure_type = SemanticAnalysisFailure.ColumnDoesNotExist
             raise SemanticAnalysisError()
 

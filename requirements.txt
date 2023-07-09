@@ -1,2 +1,3 @@
+black==23.3.0
 lark==1.0.0
-pytest
+pytest==7.1.2

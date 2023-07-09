@@ -18,7 +18,7 @@ from .dataexchange import Response
 from .datatypes import DataType, Integer, Real, Text, Blob
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class InvalidFunctionArguments(Exception):
@@ -49,12 +49,15 @@ class FunctionDefinition:
     In that case, it may be easier to represent this with a new type,
         e.g. NamedParam(arg_type: DataType, has_default_value: bool, default_value: Any)
     """
-    def __init__(self,
-                 func_name: str,
-                 pos_params: List[Union[Type[DataType], List[Type[DataType]]]],
-                 named_params: Dict[str, Type[DataType]],
-                 func_body: Callable,
-                 return_type: Type[DataType]):
+
+    def __init__(
+        self,
+        func_name: str,
+        pos_params: List[Union[Type[DataType], List[Type[DataType]]]],
+        named_params: Dict[str, Type[DataType]],
+        func_body: Callable,
+        return_type: Type[DataType],
+    ):
         self.name = func_name
         self.pos_params = pos_params
         self.named_params = named_params
@@ -79,7 +82,9 @@ class FunctionDefinition:
             return True
         return param.is_valid_term(term)
 
-    def validate_args(self, pos_args: List[Any], named_args: Dict[str, Any]) -> Response:
+    def validate_args(
+        self, pos_args: List[Any], named_args: Dict[str, Any]
+    ) -> Response:
         """
         Validate pos and named args.
         Validate pos args on existence and type;
@@ -91,8 +96,11 @@ class FunctionDefinition:
         # 1. validate positional params
         # 1.1. check arity- positional params are all required
         if len(pos_args) != len(self.pos_params):
-            return Response(False, error_message=f"Arity mismatch between expected positional params [{len(pos_args)}] "
-                                                 f"and received args [{len(self.pos_params)}]")
+            return Response(
+                False,
+                error_message=f"Arity mismatch between expected positional params [{len(pos_args)}] "
+                f"and received args [{len(self.pos_params)}]",
+            )
         # 1.2. validate types
         for idx, arg in enumerate(pos_args):
             param = self.pos_params[idx]
@@ -104,30 +112,42 @@ class FunctionDefinition:
                     # check each item in the collection
                     for value in arg:
                         if not self.is_valid_term(item, value):
-                            return Response(False,
-                                            error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
-                
-                                                          f"Expected argument of type [{item.typename}]")
+                            return Response(
+                                False,
+                                error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
+                                f"Expected argument of type [{item.typename}]",
+                            )
             else:
                 # 1.2.2. arg is a literal
                 if not self.is_valid_term(param, arg):
-                    return Response(False, error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
-                                                     f"Expected argument of type [{param.typename}]")
+                    return Response(
+                        False,
+                        error_message=f"Invalid positional argument type [{arg}] at index {idx}. "
+                        f"Expected argument of type [{param.typename}]",
+                    )
 
         # 2. validate named params
         # 2.1. validate arity - for now all named params are required
         if len(named_args) != len(self.named_params):
-            return Response(False, error_message=f"Arity mismatch between expected named params [{len(named_args)}] "
-                                                 f"and received args [{self.named_params}]")
+            return Response(
+                False,
+                error_message=f"Arity mismatch between expected named params [{len(named_args)}] "
+                f"and received args [{self.named_params}]",
+            )
         # validate existence and type
         for arg_name, arg_value in named_args.items():
             if arg_name not in self.named_params:
-                return Response(False, error_message=f"Unexpected named argument [{arg_name}]")
+                return Response(
+                    False, error_message=f"Unexpected named argument [{arg_name}]"
+                )
             else:
                 param = self.named_params[arg_name]
                 param.is_valid_term(arg_value)
-                return Response(False, error_message=f"Invalid named argument type [{arg_name}] for param [{arg_name}]."
-                                                     f"Expected argument of type [{param.typename}]")
+                return Response(
+                    False,
+                    error_message=f"Invalid named argument type [{arg_name}] for param [{arg_name}]."
+                    f"Expected argument of type [{param.typename}]",
+                )
 
         return Response(True)
 
@@ -144,7 +164,9 @@ class FunctionDefinition:
         # 1. validate args
         resp = self.validate_args(pos_args, named_args)
         if not resp.success:
-            raise InvalidFunctionArguments(f"Invocation of function [{self.name}] failed with: {resp.error_message}")
+            raise InvalidFunctionArguments(
+                f"Invocation of function [{self.name}] failed with: {resp.error_message}"
+            )
 
         # 2. apply function to args
         return self.body(*pos_args, **named_args)
@@ -152,11 +174,12 @@ class FunctionDefinition:
 
 # scalar function definitions
 
+
 def number_square_function_body(x: T) -> T:
     """
     Body for integer/float square
     """
-    return x*x
+    return x * x
 
 
 # square an int
@@ -169,6 +192,7 @@ float_square_function = FunctionDefinition(
 
 
 # aggregate function definitions
+
 
 def value_count_function_body(values: List[Any]) -> int:
     """
@@ -192,15 +216,13 @@ count_function = FunctionDefinition(
 _SCALAR_FUNCTION_REGISTRY = {
     "square": integer_square_function,
     "square_float": float_square_function,
-
 }
 
-_AGGREGATE_FUNCTION_REGISTRY = {
-    "count": count_function
-}
+_AGGREGATE_FUNCTION_REGISTRY = {"count": count_function}
 
 
 # public functions
+
 
 def resolve_function_name(name: str) -> FunctionDefinition:
     """

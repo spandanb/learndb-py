@@ -8,7 +8,8 @@ class Cursor:
     a database (on-disk) page, i.e. reading and understanding header values.
     A cursor exposes an interface to read, insert and delete rows.
     """
-    def __init__(self, pager: 'Pager', tree: 'Tree'):
+
+    def __init__(self, pager: "Pager", tree: "Tree"):
         self.tree = tree
         self.pager = pager
         self.page_num = tree.root_page_num
@@ -23,7 +24,9 @@ class Cursor:
         # start with root and descend until we hit left most leaf
         node = self.pager.get_page(self.page_num)
         while Tree.get_node_type(node) == NodeType.NodeInternal:
-            assert Tree.internal_node_has_right_child(node), "invalid tree with no right child"
+            assert Tree.internal_node_has_right_child(
+                node
+            ), "invalid tree with no right child"
             if Tree.internal_node_num_keys(node) == 0:
                 # get right child- unary tree
                 child_page_num = Tree.internal_node_right_child(node)
@@ -34,7 +37,7 @@ class Cursor:
 
         self.cell_num = 0
         # node must be leaf node
-        self.end_of_table = (Tree.leaf_node_num_cells(node) == 0)
+        self.end_of_table = Tree.leaf_node_num_cells(node) == 0
 
     def get_cell(self) -> bytes:
         """

@@ -1,34 +1,46 @@
 # Tasks
 
 ## Top Priority
+
 - docs 
   - tutorial.md
   - architecture.md
     - move to docs/
+  - README
+  - generate code docs (where should these be placed, perhaps src_docs)
 
-- tests
-  - add tests for drop table
-  - group by + having
-  
-- implement limit, offset
-- generate code docs (where should these be placed, perhaps src_docs)
-- remove devloops from `interface.py`
-- main user facing file is run.py? can it be called run_learndb.py?
+- bad ux:
+  - "select tbl_name from catalog"
+    - invalid column name - perhaps valid columns can be surfaces
+  - "drop table table_doesnot_exist"
+    - weird message
+
+- tests 
+  - add more lang_tests
+  - no_source tests?
+
+- is the usage of constants::NULLPTR valid?
+
+
+- increase constants::INTERNAL_NODE_MAX_CELLS
+- constants::LEAF_NODE_MAX_CELLS
+
+- validate ordering
+  - quicksort: does this equality need to handle floats in a special way?
+
+
 - put admin tasks somewhere (Make, python doit, shell)
+  - run all tests
+  - run black
+  - 
 
-
-
-- bug
-  - invalid column name in having clause (possible also in where), crashes the VM
 
 - release 
     - add config file (controls output filepath, etc)
 
-
-    - update README.md
+  
     - track bugs/gotchas
-- btree tests are failing
-- write e2e tests for passing, and failing use cases
+
 - - ungrouped source impl
 - for lang_tests, I should assert on contents, right now only checking if parse is successful
 - cleanup learndb.py; ensure all devloops are encoded in some test cases

@@ -5,20 +5,27 @@ from .constants import REAL_EPSILON
 from .datatypes import is_term_valid_for_datatype, DataType, Integer, Real, Text, Blob
 from .functions import resolve_scalar_func_name, resolve_aggregate_func_name
 from .lang_parser.visitor import Visitor
-from .lang_parser.symbols import (Symbol,
-                                 OrClause,
-                                 AndClause,
-                                 ColumnName,
-                                 ComparisonOp,
-                                 Comparison,
-                                 Literal,
-                                 BinaryArithmeticOperation,
-                                 ArithmeticOp,
-                                 FuncCall,
-                                 Expr)
+from .lang_parser.symbols import (
+    Symbol,
+    OrClause,
+    AndClause,
+    ColumnName,
+    ComparisonOp,
+    Comparison,
+    Literal,
+    BinaryArithmeticOperation,
+    ArithmeticOp,
+    FuncCall,
+    Expr,
+)
 
 from .name_registry import NameRegistry
-from .record_utils import SimpleRecord, ScopedRecord, GroupedRecord, InvalidNameException
+from .record_utils import (
+    SimpleRecord,
+    ScopedRecord,
+    GroupedRecord,
+    InvalidNameException,
+)
 from .vm_utils import EvalMode, datatype_from_symbolic_datatype
 
 
@@ -30,6 +37,7 @@ class ExpressionInterpreter(Visitor):
     The Interpreter is purely stateless- providing stateless functionality like
     evaluating expressions to value, to booleans, determining expression type, and other utils like stringify exprs.
     """
+
     def __init__(self, name_registry: NameRegistry):
         self.name_registry = name_registry
         # mode determines whether this is evaluating an expr over a scalar record, or a grouped recordset
@@ -57,7 +65,9 @@ class ExpressionInterpreter(Visitor):
         self.set_record(None)
         return self.evaluate(expr)
 
-    def evaluate_over_record(self, expr: Symbol, record: Union[SimpleRecord, ScopedRecord]) -> Any:
+    def evaluate_over_record(
+        self, expr: Symbol, record: Union[SimpleRecord, ScopedRecord]
+    ) -> Any:
         """
         Evaluate `expr` over `record` i.e. evaluating any column references from value in `record`
         """
@@ -191,21 +201,33 @@ class ExpressionInterpreter(Visitor):
         else:
             right_value = self.evaluate(comparison.right_op)
 
-        if comparison.operator != ComparisonOp.Equal and comparison.operator != ComparisonOp.NotEqual:
+        if (
+            comparison.operator != ComparisonOp.Equal
+            and comparison.operator != ComparisonOp.NotEqual
+        ):
             # equality and inequality can be for any datatypes
             # less than etc. comparisons are only defined for numeric types
-            assert isinstance(left_value, numbers.Number) and isinstance(right_value, numbers.Number)
+            assert isinstance(left_value, numbers.Number) and isinstance(
+                right_value, numbers.Number
+            )
 
         # NOTE: we handle both integer and real (floating point) numbers
         # if the two numbers are integers or are more than REAL_EPSILON apart, we can do a strict comparison
         # however, if they are not so; we must evaluate fuzzy comparison
-        if isinstance(left_value, float) and abs(left_value - right_value) <= REAL_EPSILON:
-            return self.evaluate_fuzzy_comparison(comparison, left_value, right_value, REAL_EPSILON)
+        if (
+            isinstance(left_value, float)
+            and abs(left_value - right_value) <= REAL_EPSILON
+        ):
+            return self.evaluate_fuzzy_comparison(
+                comparison, left_value, right_value, REAL_EPSILON
+            )
         else:
             return self.evaluate_strict_comparison(comparison, left_value, right_value)
 
     @staticmethod
-    def evaluate_strict_comparison(comparison, left_value: Union[int, float], right_value: Union[int, float]) -> bool:
+    def evaluate_strict_comparison(
+        comparison, left_value: Union[int, float], right_value: Union[int, float]
+    ) -> bool:
         """
         Evaluate strict comparison between `left_value` and `right_value`
         """
@@ -225,7 +247,9 @@ class ExpressionInterpreter(Visitor):
         return pred_value
 
     @staticmethod
-    def evaluate_fuzzy_comparison(comparison, left_value: float, right_value: float, epsilon: float):
+    def evaluate_fuzzy_comparison(
+        comparison, left_value: float, right_value: float, epsilon: float
+    ):
         """
         Evaluate fuzzy comparison between `left_value` and `right_value`.
         NOTE: real numbers can't be exactly compared; two reals are equal if
@@ -314,4 +338,3 @@ class ExpressionInterpreter(Visitor):
         data_type = datatype_from_symbolic_datatype(literal.type)
         assert is_term_valid_for_datatype(data_type, literal.value)
         return literal.value
-

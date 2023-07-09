@@ -33,6 +33,7 @@ class InvalidPageAccess(Exception):
 
 class DatabaseFileExclusiveLockNotAvailable(Exception):
     """Unable to obtain exclusive lock on database file"""
+
     pass
 
 
@@ -56,6 +57,7 @@ class Pager:
             - on disk list of free pages
             - end of file (by increasing file by a page size)
     """
+
     def __init__(self, filename: str):
         self.header = None
         self.pages = [None for _ in range(TABLE_MAX_PAGES)]
@@ -129,7 +131,9 @@ class Pager:
         get `page` given `page_num`
         """
         if page_num >= TABLE_MAX_PAGES:
-            raise InvalidPageAccess(f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})")
+            raise InvalidPageAccess(
+                f"Tried to fetch page out of bounds (requested page = {page_num}, max pages = {TABLE_MAX_PAGES})"
+            )
 
         if self.pages[page_num] is None:
             # cache miss. Allocate memory and load from file.
@@ -141,7 +145,9 @@ class Pager:
                 # into `page`
                 self.fileptr.seek(FILE_PAGE_AREA_OFFSET + page_num * PAGE_SIZE)
                 read_page = self.fileptr.read(PAGE_SIZE)
-                assert len(read_page) == PAGE_SIZE, "corrupt file: read page returned byte array smaller than page"
+                assert (
+                    len(read_page) == PAGE_SIZE
+                ), "corrupt file: read page returned byte array smaller than page"
                 page[:PAGE_SIZE] = read_page
 
             self.pages[page_num] = page
@@ -178,7 +184,10 @@ class Pager:
         page_num = self.returned_pages[-1]
         while page_num:
             # check if: 1) is tail page and 2) is on disk
-            if page_num == self.num_pages - 1 and page_num == self.num_pages_on_disk - 1:
+            if (
+                page_num == self.num_pages - 1
+                and page_num == self.num_pages_on_disk - 1
+            ):
                 # truncate file
                 self.file_length -= PAGE_SIZE
                 assert self.file_length >= 0, f"invalid file length {self.file_length}"
@@ -187,7 +196,9 @@ class Pager:
                 self.num_pages_on_disk -= 1
                 self.returned_pages.pop()
 
-                page_num = self.returned_pages[-1] if len(self.returned_pages) > 0 else None
+                page_num = (
+                    self.returned_pages[-1] if len(self.returned_pages) > 0 else None
+                )
             else:
                 break
 
@@ -274,13 +285,22 @@ class Pager:
             fcntl.lockf(self.fileptr, ex_lock_or_fail)
         except BlockingIOError:
             self.fileptr.close()
-            raise DatabaseFileExclusiveLockNotAvailable("Another process is operating on database")
+            raise DatabaseFileExclusiveLockNotAvailable(
+                "Another process is operating on database"
+            )
 
-        if self.file_length % PAGE_SIZE != 0 and (self.file_length - FILE_HEADER_SIZE) % PAGE_SIZE != 0:
+        if (
+            self.file_length % PAGE_SIZE != 0
+            and (self.file_length - FILE_HEADER_SIZE) % PAGE_SIZE != 0
+        ):
             logging.error("Db file is not a valid size. Corrupt file.")
             sys.exit(EXIT_FAILURE)
 
-        self.num_pages = (self.file_length - FILE_HEADER_SIZE) // PAGE_SIZE if self.file_length != 0 else 0
+        self.num_pages = (
+            (self.file_length - FILE_HEADER_SIZE) // PAGE_SIZE
+            if self.file_length != 0
+            else 0
+        )
         self.num_pages_on_disk = self.num_pages
         # next free page is the last page of the file
         self.next_allocatable_page_num = self.num_pages
@@ -299,8 +319,10 @@ class Pager:
         header = bytearray(FILE_HEADER_SIZE)
         assert FILE_HEADER_VERSION_FIELD_SIZE >= len(FILE_HEADER_VERSION_VALUE)
         # set version field
-        header[FILE_HEADER_VERSION_FIELD_OFFSET:
-               FILE_HEADER_VERSION_FIELD_OFFSET + FILE_HEADER_VERSION_FIELD_SIZE] = FILE_HEADER_VERSION_VALUE
+        header[
+            FILE_HEADER_VERSION_FIELD_OFFSET : FILE_HEADER_VERSION_FIELD_OFFSET
+            + FILE_HEADER_VERSION_FIELD_SIZE
+        ] = FILE_HEADER_VERSION_VALUE
 
         # initialize free page head to null
         # NOTE: these are strictly not needed, since a new page would be all zeroes,
@@ -308,11 +330,15 @@ class Pager:
         # However, this makes explicit what file init should look like, and is robust
         # to scenarios where the above assumptions dont hold.
         value = NULLPTR.to_bytes(FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        header[FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET:
-               FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE] = value
+        header[
+            FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET : FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
         value = False.to_bytes(FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET, sys.byteorder)
-        header[FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET:
-               FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE] = value
+        header[
+            FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET : FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET
+            + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE
+        ] = value
 
         self.header = header
 
@@ -331,13 +357,17 @@ class Pager:
         self.fileptr.seek(0)
         self.header = bytearray(self.fileptr.read(FILE_HEADER_SIZE))
         # free page list is set
-        has_free_page_list_bytes = self.header[FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET:
-                                          FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE]
+        has_free_page_list_bytes = self.header[
+            FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET : FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET
+            + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE
+        ]
         has_free_page_list = bool.from_bytes(has_free_page_list_bytes, sys.byteorder)
         self.has_free_page_list = has_free_page_list
         # get free list head ptr
-        next_free_page_bytes = self.header[FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET:
-                                           FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE]
+        next_free_page_bytes = self.header[
+            FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET : FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE
+        ]
         next_free_page = int.from_bytes(next_free_page_bytes, sys.byteorder)
         self.free_page_list_head = next_free_page
 
@@ -348,13 +378,17 @@ class Pager:
         :param page:
         :return: (has_next_free_page, next_free_page_num)
         """
-        has_next_free_page_bytes = page[FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET:
-                                        FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE]
+        has_next_free_page_bytes = page[
+            FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE
+        ]
         has_next_free_page = bool.from_bytes(has_next_free_page_bytes, sys.byteorder)
         next_page_num = 0
         if has_next_free_page:
-            value = page[FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET:
-                         FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE]
+            value = page[
+                FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
+                + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE
+            ]
             next_page_num = int.from_bytes(value, sys.byteorder)
         return has_next_free_page, next_page_num
 
@@ -367,11 +401,17 @@ class Pager:
         :return:
         """
         value = True.to_bytes(FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        page[FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET: FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
-                                                       + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE] = value
-        value = next_page_num.to_bytes(FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        page[FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET:
-             FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE] = value
+        page[
+            FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
+        value = next_page_num.to_bytes(
+            FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder
+        )
+        page[
+            FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
 
     @staticmethod
     def set_free_page_next_null(page: bytearray):
@@ -380,20 +420,30 @@ class Pager:
         """
 
         value = False.to_bytes(FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        page[FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET: FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
-                                                       + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE] = value
+        page[
+            FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FREE_PAGE_HAS_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
         value = NULLPTR.to_bytes(FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        page[FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET:
-             FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE] = value
+        page[
+            FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET : FREE_PAGE_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FREE_PAGE_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
 
     @staticmethod
     def set_free_page_head(header: bytearray, next_page_num: int):
         value = True.to_bytes(FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE, sys.byteorder)
-        header[FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET: FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET
-                                                      + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE] = value
-        value = next_page_num.to_bytes(FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder)
-        header[FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET:
-               FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE] = value
+        header[
+            FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET : FILE_HEADER_HAS_FREE_PAGE_LIST_OFFSET
+            + FILE_HEADER_HAS_FREE_PAGE_LIST_SIZE
+        ] = value
+        value = next_page_num.to_bytes(
+            FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE, sys.byteorder
+        )
+        header[
+            FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET : FILE_HEADER_NEXT_FREE_PAGE_HEAD_OFFSET
+            + FILE_HEADER_NEXT_FREE_PAGE_HEAD_SIZE
+        ] = value
 
     def flush_header(self):
         """
@@ -419,4 +469,3 @@ class Pager:
         self.fileptr.seek(byte_offset)
         to_write = self.pages[page_num]
         self.fileptr.write(to_write)
-

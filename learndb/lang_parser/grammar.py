@@ -1,5 +1,5 @@
 # lark grammar for a subset of learndb-sql using
-GRAMMAR = '''
+GRAMMAR = """
         program          : stmnt
                          | terminated
                          | (terminated)+ stmnt?
@@ -160,4 +160,4 @@ GRAMMAR = '''
         %import common.SIGNED_NUMBER    -> REAL_NUMBER
         %import common.WS
         %ignore WS
-'''
+"""
