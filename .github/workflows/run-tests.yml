@@ -5,9 +5,9 @@ name: Python application
 
 on:
   push:
-    branches: [ main, feature/persist-pages ]
+    branches: [ main]
   pull_request:
-    branches: [ main, feature/persist-pages ]
+    branches: [ main]
 
 jobs:
   build:
@@ -28,18 +28,21 @@ jobs:
         # pip install flake8 pytest pytest-cov
         # pip install pytest
         # if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: E2E Tests
+#    - name: E2E Tests
+#      run: |
+#        python -m pytest ./tests/e2e_tests.py --cache-clear -v -x
+#    - name: Btree Tests
+#      run: |
+#        python -m pytest ./tests/btree_tests.py --cache-clear -v -x
+#    - name: Language Tests
+#      run: |
+#        pytest ./tests/lang_tests.py --cache-clear -v -x
+#    - name: Serde Tests
+#      run: |
+#        pytest ./tests/serde_tests.py --cache-clear -v -x
+#    - name: Pager Tests
+#      run: |
+#        pytest ./tests/pager_tests.py --cache-clear -v -x
+    - name: All Tests
       run: |
-        python -m pytest ./tests/e2e_tests.py --cache-clear -v -x
-    - name: Btree Tests
-      run: |
-        python -m pytest ./tests/btree_tests.py --cache-clear -v -x
-    - name: Language Tests
-      run: |
-        pytest ./tests/lang_tests.py --cache-clear -v -x
-    - name: Serde Tests
-      run: |
-        pytest ./tests/serde_tests.py --cache-clear -v -x
-    - name: Pager Tests
-      run: |
-        pytest ./tests/pager_tests.py --cache-clear -v -x
+        python -m pytest ./tests/*.py --cache-clear -v -x
