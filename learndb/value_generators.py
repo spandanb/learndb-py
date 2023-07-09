@@ -23,6 +23,7 @@ class ColumnRefSelectableAtom:
 
     Here, `upper(name)` is a selectable, and `name` is a ColumnRefSelectableAtom, and 1 is a LiteralSelectableAtom.
     """
+
     name: Any
 
 
@@ -31,10 +32,13 @@ class LiteralSelectableAtom:
     """
     Represents a literal selectable
     """
+
     value: Any
 
 
-SelectableAtom = NewType("SelectableAtom", Union[ColumnRefSelectableAtom, LiteralSelectableAtom])
+SelectableAtom = NewType(
+    "SelectableAtom", Union[ColumnRefSelectableAtom, LiteralSelectableAtom]
+)
 
 
 class ValueExtractorFromRecord:
@@ -44,6 +48,7 @@ class ValueExtractorFromRecord:
 
     TODO: nuke if this is covered by ValueGeneratorFromRecordOverExpr
     """
+
     def __init__(self, pos_arg: SelectableAtom):
         self.pos_arg = pos_arg
 
@@ -71,8 +76,12 @@ class ValueGeneratorFromRecordOverFunc:
 
     """
 
-    def __init__(self, pos_args: List[SelectableAtom],
-                 named_args: Dict[str, SelectableAtom], func: FunctionDefinition):
+    def __init__(
+        self,
+        pos_args: List[SelectableAtom],
+        named_args: Dict[str, SelectableAtom],
+        func: FunctionDefinition,
+    ):
         """
         pos_args: List of SelectableAtoms which represents either: 1) static values, 2) column identifiers
         named_args: Dict of ^
@@ -117,6 +126,7 @@ class ValueGeneratorFromRecordOverExpr:
 
     This generalizes the ValueGeneratorFromRecordOverFunc, ValueExtractorFromRecord
     """
+
     def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
         self.or_clause = or_clause
         self.interpreter = interpreter
@@ -134,6 +144,7 @@ class ValueGeneratorFromNoRecordOverExpr:
     Generate value from a no-record. Where the value is the result of evaluating an expr.
     The expr can be composed of column refs, literals, function calls, and algebraic combinations of these.
     """
+
     def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
         self.or_clause = or_clause
         self.interpreter = interpreter
@@ -151,14 +162,12 @@ class ValueGeneratorFromRecordGroupOverExpr:
     Generate value from pair of group_key, and recordset for record group. Where the value is the result of evaluating an expr.
     The expr can be composed of column refs, literals, function calls, and algebraic combinations of these.
     """
+
     def __init__(self, or_clause: OrClause, interpreter: ExpressionInterpreter):
         self.or_clause = or_clause
         self.interpreter = interpreter
 
     def get_value(self, record: GroupedRecord) -> Any:
-        """
-        """
+        """ """
         value = self.interpreter.evaluate_over_grouped_record(self.or_clause, record)
         return value
-
-

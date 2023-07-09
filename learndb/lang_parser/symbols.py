@@ -16,7 +16,7 @@ from .visitor import Visitor
 
 # constants
 
-WHITESPACE = ' '
+WHITESPACE = " "
 
 # enum types
 
@@ -47,6 +47,7 @@ class SymbolicDataType(Enum):
     There is 1-1 correspondence to VM's notions of datatypes, which are datatypes we can
     do algebra atop.
     """
+
     Integer = auto()
     Text = auto()
     Real = auto()
@@ -72,10 +73,12 @@ class ArithmeticOp(Enum):
 
 # symbol class
 
+
 class Symbol(ast_utils.Ast):
     """
     The root of AST hierarchy
     """
+
     # NOTE: classes with preceding "_" will be skipped
 
     def accept(self, visitor: Visitor) -> Any:
@@ -126,16 +129,18 @@ class Symbol(ast_utils.Ast):
         if hasattr(self, "asdict"):
             children = self.asdict()
         else:
-            children = {key: getattr(self, key)
-                        for key in dir(self)
-                        if (not key.startswith("_") and not callable(getattr(self, key)))}
+            children = {
+                key: getattr(self, key)
+                for key in dir(self)
+                if (not key.startswith("_") and not callable(getattr(self, key)))
+            }
         lines = []
 
         child_depth = depth if self.is_virtual() else depth + 1
         preceding = WHITESPACE * depth
         if not self.is_virtual():
             classname = self.__class__.__name__
-            lines.append(f'{preceding}{classname}:{os.linesep}')
+            lines.append(f"{preceding}{classname}:{os.linesep}")
 
         for key, value in children.items():
             child = getattr(self, key)
@@ -153,7 +158,9 @@ class Symbol(ast_utils.Ast):
         # TODO: nuke; unused
         return "".join(self.prettyprint())
 
-    def find_descendents(self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]]) -> List:
+    def find_descendents(
+        self, descendent_type: Union[Type[Symbol], Tuple[Type[Symbol]]]
+    ) -> List:
         """
         Search through all descendents via BFS
         and return list of matches.
@@ -202,7 +209,7 @@ class CreateStmnt(Symbol):
         return str(self)
 
     def __str__(self):
-        return f'{self.__class__.__name__}({self.__dict__})'
+        return f"{self.__class__.__name__}({self.__dict__})"
 
 
 @dataclass
@@ -212,13 +219,21 @@ class DropStmnt(Symbol):
 
 # create statement helpers
 
-class ColumnDef(Symbol):
 
-    def __init__(self, column_name: Tree = None, datatype: Tree = None, column_modifier=ColumnModifier.Nil):
+class ColumnDef(Symbol):
+    def __init__(
+        self,
+        column_name: Tree = None,
+        datatype: Tree = None,
+        column_modifier=ColumnModifier.Nil,
+    ):
         self.column_name = column_name
         self.datatype = datatype
         self.is_primary_key = column_modifier == ColumnModifier.PrimaryKey
-        self.is_nullable = column_modifier != ColumnModifier.NotNull and column_modifier != ColumnModifier.PrimaryKey
+        self.is_nullable = (
+            column_modifier != ColumnModifier.NotNull
+            and column_modifier != ColumnModifier.PrimaryKey
+        )
 
     def __repr__(self):
         return str(self)
@@ -248,14 +263,22 @@ class SelectStmnt(Symbol):
 
 # select stmnt helpers
 
+
 @dataclass
 class SelectClause(Symbol):
     selectables: List[Any]
 
 
 class FromClause(Symbol):
-    def __init__(self, source, where_clause=None, group_by_clause=None, having_clause=None, order_by_clause=None,
-                 limit_clause=None):
+    def __init__(
+        self,
+        source,
+        where_clause=None,
+        group_by_clause=None,
+        having_clause=None,
+        order_by_clause=None,
+        limit_clause=None,
+    ):
         self.source = source
         # where clause can only be defined if a from clause is defined
         self.where_clause = where_clause
@@ -263,7 +286,6 @@ class FromClause(Symbol):
         self.having_clause = having_clause
         self.order_by_clause = order_by_clause
         self.limit_clause = limit_clause
-
 
 
 @dataclass
@@ -386,7 +408,6 @@ class InsertStmnt(Symbol):
     value_list: ValueList
 
 
-
 @dataclass
 class ColumnNameList(Symbol):
     names: List[ColumnName]
@@ -416,7 +437,7 @@ class TableName(Symbol):
         return hash(self.table_name)
 
     def __eq__(self, other):
-        return hasattr(other, 'table_name') and self.table_name == other.table_name
+        return hasattr(other, "table_name") and self.table_name == other.table_name
 
 
 @dataclass
@@ -424,6 +445,7 @@ class ColumnName(Symbol):
     """
     Represents a column named like: 1) tbl.cola or 2) cola
     """
+
     name: Any
 
     def get_parent_alias(self) -> Optional[str]:
@@ -433,15 +455,14 @@ class ColumnName(Symbol):
         for name "cola", this method would return None
         """
 
-        parts = self.name.split('.')
+        parts = self.name.split(".")
         if len(parts) > 1:
             return ".".join(parts[:-1])
         return None
 
     def get_base_name(self) -> str:
-        """
-        """
-        return self.name.split('.')[-1]
+        """ """
+        return self.name.split(".")[-1]
 
 
 @dataclass
@@ -476,6 +497,7 @@ class ToAst(Transformer):
 
     NOTE: methods are organized logically by statement types
     """
+
     # helpers
 
     # simple classes - top level statements

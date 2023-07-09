@@ -13,7 +13,7 @@ def camel_to_snake(name: str) -> str:
     """
     change casing abcdXyz -> abcd_xyz
     """
-    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
 def pascal_to_snake(name) -> str:
@@ -27,9 +27,8 @@ def pascal_to_snake(name) -> str:
         if i == 0:
             snake_name.append(ch.lower())
         elif ch.isupper():
-            snake_name.append('_' + ch.lower())
+            snake_name.append("_" + ch.lower())
         else:
             snake_name.append(ch)
 
-    return ''.join(snake_name)
-
+    return "".join(snake_name)

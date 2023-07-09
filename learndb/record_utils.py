@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 Contains definitions and utilities to create and modifies Records.
 Records are data containing objects that conform to a schema.
@@ -19,6 +20,7 @@ class UnaggregatedGetOnUngroupedColumn(Exception):
     """
     Trying to access an ungrouped column without a reducing aggregate function
     """
+
     pass
 
 
@@ -28,6 +30,7 @@ class AbstractRecord:
     NOTE: this doesn't enforce that implementation classes implement all interface methods.
     TODO: Consider formalizing the interface using abc.ABCMeta; see: https://realpython.com/python-interface/
     """
+
     def get(self, column: str):
         raise NotImplementedError
 
@@ -42,6 +45,7 @@ class SimpleRecord(AbstractRecord):
     # TODO make this a readonly type  - since these are shallow copied,
     # if the returned pipe allows
     """
+
     def __init__(self, values: dict = None, schema: SimpleSchema = None):
         # unordered mapping from: column-name -> column-value
         self.values = values
@@ -100,11 +104,13 @@ class SimpleRecord(AbstractRecord):
 
 # section: utilities
 
+
 class ScopedRecord(AbstractRecord):
     """
     Represents scoped collection of record.
     These could be use generated from a single record, or a joining of multiple records.
     """
+
     # TODO: this should handle init records as two simple records, or a simple and JoinedRecord
     # for a joinedRecord, it should determine be able to flatten and store it
     # think through how this will generalize
@@ -113,20 +119,37 @@ class ScopedRecord(AbstractRecord):
         self.schema = schema
 
     @classmethod
-    def from_records(cls, left_rec: Union[SimpleRecord, ScopedRecord], right_rec: SimpleRecord, left_alias: Optional[str],
-                     right_alias: str, schema: ScopedSchema):
+    def from_records(
+        cls,
+        left_rec: Union[SimpleRecord, ScopedRecord],
+        right_rec: SimpleRecord,
+        left_alias: Optional[str],
+        right_alias: str,
+        schema: ScopedSchema,
+    ):
         if isinstance(left_rec, SimpleRecord):
             assert left_alias is not None
-            return cls.from_simple_records(left_rec, right_rec, left_alias, right_alias, schema)
+            return cls.from_simple_records(
+                left_rec, right_rec, left_alias, right_alias, schema
+            )
         else:
             # this mimics arguments to invoking method in vm
             assert isinstance(left_rec, ScopedRecord)
             # assert that the left alias is defined
             assert left_alias in left_rec.names
-            return cls.from_joined_and_simple_record(left_rec, right_rec, right_alias, schema)
+            return cls.from_joined_and_simple_record(
+                left_rec, right_rec, right_alias, schema
+            )
 
     @classmethod
-    def from_simple_records(cls, left_rec: SimpleRecord, right_rec: SimpleRecord, left_alias, right_alias, schema: ScopedSchema):
+    def from_simple_records(
+        cls,
+        left_rec: SimpleRecord,
+        right_rec: SimpleRecord,
+        left_alias,
+        right_alias,
+        schema: ScopedSchema,
+    ):
         """
         Construct a JoinedRecord for 2 simple records
         """
@@ -138,10 +161,18 @@ class ScopedRecord(AbstractRecord):
         return cls({alias: record}, schema)
 
     @classmethod
-    def from_joined_and_simple_record(cls, joined_rec: ScopedRecord, right_rec: SimpleRecord, right_alias, schema: ScopedSchema):
+    def from_joined_and_simple_record(
+        cls,
+        joined_rec: ScopedRecord,
+        right_rec: SimpleRecord,
+        right_alias,
+        schema: ScopedSchema,
+    ):
         names = joined_rec.names.copy()
         # make a shallow copy - don't need to copy records, since those are read-only
-        assert right_alias not in names, f"Create failed: {right_alias} already exists in [{names.keys()}]"
+        assert (
+            right_alias not in names
+        ), f"Create failed: {right_alias} already exists in [{names.keys()}]"
         names[right_alias] = right_rec
         return cls(names, schema)
 
@@ -151,7 +182,9 @@ class ScopedRecord(AbstractRecord):
         """
         parts = fqname.split(".")
         if len(parts) != 2:
-            raise InvalidNameException(f"Expected 2 part name formatted like <table-alias>.<column-name>; received {fqname}")
+            raise InvalidNameException(
+                f"Expected 2 part name formatted like <table-alias>.<column-name>; received {fqname}"
+            )
         table, column = parts
         if table not in self.names:
             raise ValueError(f"Uknown table alias [{table}]")
@@ -184,7 +217,12 @@ class GroupedRecord(AbstractRecord):
     suffix since it implements the Record interface.
     """
 
-    def __init__(self, schema: GroupedSchema, group_key: Tuple, group_recordset: List[Union[SimpleRecord, ScopedRecord]]):
+    def __init__(
+        self,
+        schema: GroupedSchema,
+        group_key: Tuple,
+        group_recordset: List[Union[SimpleRecord, ScopedRecord]],
+    ):
         # NOTE: this schema corresponds to the schema for the whole group
         self.schema = schema
         self.group_key = group_key
@@ -205,7 +243,9 @@ class GroupedRecord(AbstractRecord):
                 return self.group_key[idx]
 
         if self.schema.has_column(column):
-            raise UnaggregatedGetOnUngroupedColumn(f"Expected grouping column, received non-grouping column: [{column}]")
+            raise UnaggregatedGetOnUngroupedColumn(
+                f"Expected grouping column, received non-grouping column: [{column}]"
+            )
 
         return None
 
@@ -222,9 +262,12 @@ class GroupedRecord(AbstractRecord):
         return self.group_recordset
 
 
-
-def join_records(left_record: Union[SimpleRecord, ScopedRecord], right_record: Union[SimpleRecord, ScopedRecord],
-                 left_alias: Optional[str], right_alias: Optional[str]):
+def join_records(
+    left_record: Union[SimpleRecord, ScopedRecord],
+    right_record: Union[SimpleRecord, ScopedRecord],
+    left_alias: Optional[str],
+    right_alias: Optional[str],
+):
     """
     TODO: remove if unused
     join records and return a multi-record
@@ -276,44 +319,63 @@ def validate_record(record) -> Response:
         value = record.values.get(column.name)
         # check if value must be set
         if value is None and not column.is_nullable:
-            return Response(False, error_message=f'non-nullable field [{column.name}] is unset/null')
+            return Response(
+                False, error_message=f"non-nullable field [{column.name}] is unset/null"
+            )
         elif value is None and column.is_primary_key:
             # TODO: should I assert primary key is int?
-            return Response(False, error_message=f'primary-key field [{column.name}] is unset/null')
+            return Response(
+                False, error_message=f"primary-key field [{column.name}] is unset/null"
+            )
 
         # check if literals have valid value
         if value is not None and not column.datatype.is_valid_term(value):
-            return Response(False, error_message=f'Column [{column.name}, type: {column.datatype}] has invalid term [{value}] [term type: {type(value)}]')
+            return Response(
+                False,
+                error_message=f"Column [{column.name}, type: {column.datatype}] has invalid term [{value}] [term type: {type(value)}]",
+            )
 
     return Response(True)
 
 
-def create_record(column_name_list: ColumnNameList, value_list: ValueList, schema: SimpleSchema) -> Response:
+def create_record(
+    column_name_list: ColumnNameList, value_list: ValueList, schema: SimpleSchema
+) -> Response:
     """
     Create record. Note if the operation is successful, a valid record was read.
     :return:
     """
     if len(column_name_list.names) != len(value_list.values):
-        return Response(False, error_message=f'Number of column names [{len(column_name_list.names)}] '
-                                             f'does not equal number of values[{len(value_list.values)}]')
+        return Response(
+            False,
+            error_message=f"Number of column names [{len(column_name_list.names)}] "
+            f"does not equal number of values[{len(value_list.values)}]",
+        )
 
     # create record
     values = {}
     for idx, col_name in enumerate(column_name_list.names):
         value = value_list.values[idx]
-        values[col_name.name.lower()] = value.value if isinstance(value, Literal) else value
+        values[col_name.name.lower()] = (
+            value.value if isinstance(value, Literal) else value
+        )
 
     record = SimpleRecord(values, schema)
 
     # validate record; i.e. is consistent with schema
     resp = validate_record(record)
     if not resp.success:
-        return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
+        return Response(
+            False,
+            error_message=f"Record failed schema validation: [{resp.error_message}]",
+        )
 
     return Response(True, body=record)
 
 
-def create_record_from_raw_values(column_names: List[str], value_list: List[str], schema: SimpleSchema) -> Response:
+def create_record_from_raw_values(
+    column_names: List[str], value_list: List[str], schema: SimpleSchema
+) -> Response:
     """
     Needed for creating final output recordset;
     Uses raw values, i.e. unboxed values
@@ -321,8 +383,11 @@ def create_record_from_raw_values(column_names: List[str], value_list: List[str]
     """
 
     if len(column_names) != len(value_list):
-        return Response(False, error_message=f'Number of column names [{len(column_names)}] '
-                                             f'does not equal number of values[{len(value_list)}]')
+        return Response(
+            False,
+            error_message=f"Number of column names [{len(column_names)}] "
+            f"does not equal number of values[{len(value_list)}]",
+        )
 
     # create record
     values = {}
@@ -335,12 +400,21 @@ def create_record_from_raw_values(column_names: List[str], value_list: List[str]
     # validate record; i.e. is consistent with schema
     resp = validate_record(record)
     if not resp.success:
-        return Response(False, error_message=f'Record failed schema validation: [{resp.error_message}]')
+        return Response(
+            False,
+            error_message=f"Record failed schema validation: [{resp.error_message}]",
+        )
 
     return Response(True, body=record)
 
 
-def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_text: str, catalog_schema: CatalogSchema):
+def create_catalog_record(
+    pkey: int,
+    table_name: str,
+    root_page_num: int,
+    sql_text: str,
+    catalog_schema: CatalogSchema,
+):
     """
     Create a catalog record.
 
@@ -352,8 +426,15 @@ def create_catalog_record(pkey: int, table_name: str, root_page_num: int, sql_te
     :return:
     """
 
-    return create_record(ColumnNameList([ColumnName('pkey'), ColumnName('name'), ColumnName('root_pagenum'),
-                                         ColumnName('sql_text')]),
-                         ValueList([pkey, table_name, root_page_num, sql_text]),
-                         catalog_schema)
-
+    return create_record(
+        ColumnNameList(
+            [
+                ColumnName("pkey"),
+                ColumnName("name"),
+                ColumnName("root_pagenum"),
+                ColumnName("sql_text"),
+            ]
+        ),
+        ValueList([pkey, table_name, root_page_num, sql_text]),
+        catalog_schema,
+    )

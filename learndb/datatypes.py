@@ -22,6 +22,7 @@ class DataType:
     ways (i.e. details of the serde, encoding length)
 
     """
+
     __metaclass__ = ABCMeta
     # non-serializable types are fixed value types, e.g. null, true, false
     # which are in fact only encoded in the header, and not in the data payload
@@ -102,7 +103,7 @@ class Real(DataType):
         :return:
         """
         # encodes float according to native byteorder ('=')
-        return struct.pack('=f', value)
+        return struct.pack("=f", value)
 
     @staticmethod
     def deserialize(bstring) -> float:
@@ -110,7 +111,7 @@ class Real(DataType):
         :param value:
         :return:
         """
-        tpl = struct.unpack('=f', bstring)
+        tpl = struct.unpack("=f", bstring)
         return tpl[0]
 
     @staticmethod
@@ -122,6 +123,7 @@ class Text(DataType):
     """
     represents a variable length text
     """
+
     is_fixed_length = False
     fixed_length = 0
     is_serializable = True
@@ -144,6 +146,7 @@ class Boolean(DataType):
     """
     represents a variable length text
     """
+
     is_fixed_length = False
     fixed_length = 0
     is_serializable = True
@@ -151,11 +154,11 @@ class Boolean(DataType):
 
     @staticmethod
     def serialize(value: bool):
-        return struct.pack('=?', value)
+        return struct.pack("=?", value)
 
     @staticmethod
     def deserialize(bstring: bytes):
-        tpl = struct.unpack('=?', bstring)
+        tpl = struct.unpack("=?", bstring)
         return tpl[0]
 
     @staticmethod
@@ -179,6 +182,7 @@ class Null(DataType):
      needed to access the value.
 
     """
+
     is_fixed_length = True
     fixed_length = 0
     is_serializable = False
@@ -189,6 +193,7 @@ class Blob(DataType):
     """
     This represent an as-is byte string
     """
+
     is_fixed_length = False
     fixed_length = 0
     is_serializable = True

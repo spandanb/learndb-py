@@ -5,6 +5,7 @@ class Pipe:
     """
     Used to read results from select expr
     """
+
     def __init__(self):
         self.store = deque()
 

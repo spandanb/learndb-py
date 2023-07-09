@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """
 This contain structures to generate and manipulate
 logical schema- (column name, column type).
@@ -22,14 +23,21 @@ class Column:
     """
     Represents a column in a schema
     """
-    def __init__(self, name: str, datatype, is_primary_key: bool = False, is_nullable: bool = True):
+
+    def __init__(
+        self,
+        name: str,
+        datatype,
+        is_primary_key: bool = False,
+        is_nullable: bool = True,
+    ):
         self.name = name.lower()
         self.datatype = datatype
         self.is_primary_key = is_primary_key
         self.is_nullable = is_nullable
 
     def __str__(self):
-        return f'Column[{self.name}, {self.datatype}, is_primary: {self.is_primary_key}, is_nullable: {self.is_nullable}]'
+        return f"Column[{self.name}, {self.datatype}, is_primary: {self.is_primary_key}, is_nullable: {self.is_nullable}]"
 
     def __repr__(self):
         return self.__str__()
@@ -42,6 +50,7 @@ class AbstractSchema:
     NOTE: this doesn't enforce that implementation classes implement all interface methods.
     TODO: Consider formalizing the interface using abc.ABCMeta; see: https://realpython.com/python-interface/
     """
+
     @property
     def columns(self):
         raise NotImplementedError
@@ -68,6 +77,7 @@ class SimpleSchema(AbstractSchema):
 
     NOTE: once constructed a schema should be treated as read-only
     """
+
     def __init__(self, name: str = None, columns: List[Column] = None):
         # name of object/entity defined
         self.name = name
@@ -79,8 +89,8 @@ class SimpleSchema(AbstractSchema):
         return self.cols
 
     def __str__(self):
-        body = ' '.join([col.name for col in self.cols])
-        return f'Schema({str(self.name)}, {str(body)})'
+        body = " ".join([col.name for col in self.cols])
+        return f"Schema({str(self.name)}, {str(body)})"
 
     def __repr__(self):
         return str(self)
@@ -113,6 +123,7 @@ class ScopedSchema(AbstractSchema):
     """
     Represents a scoped (by table_alias) collection of schema
     """
+
     def __init__(self, schemas: dict):
         self.schemas = schemas  # table_name -> Schema
 
@@ -124,8 +135,13 @@ class ScopedSchema(AbstractSchema):
         return cls({alias: schema})
 
     @classmethod
-    def from_schemas(cls, left_schema: Union[SimpleSchema, ScopedSchema], right_schema: SimpleSchema, left_alias: Optional[str],
-                     right_alias: str):
+    def from_schemas(
+        cls,
+        left_schema: Union[SimpleSchema, ScopedSchema],
+        right_schema: SimpleSchema,
+        left_alias: Optional[str],
+        right_alias: str,
+    ):
         if isinstance(left_schema, SimpleSchema):
             assert left_alias is not None
             return cls({left_alias: left_schema, right_alias: right_schema})
@@ -137,7 +153,11 @@ class ScopedSchema(AbstractSchema):
 
     @property
     def columns(self):
-        return [col for table_alias, schema in self.schemas.items() for col in schema.columns]
+        return [
+            col
+            for table_alias, schema in self.schemas.items()
+            for col in schema.columns
+        ]
 
     def has_column(self, name: str) -> bool:
         column = self.get_column_by_name(name)
@@ -158,7 +178,12 @@ class GroupedSchema(AbstractSchema):
     """
     Represents a grouped multi or simple schema
     """
-    def __init__(self, schema: Union[SimpleSchema, ScopedSchema], group_by_columns: List[ColumnName]):
+
+    def __init__(
+        self,
+        schema: Union[SimpleSchema, ScopedSchema],
+        group_by_columns: List[ColumnName],
+    ):
         # all columns, i.e. group-by and non- group-by columns
         self.schema = schema
         # list of group-by columns, sorted by grouping order
@@ -231,12 +256,15 @@ class CatalogSchema(SimpleSchema):
     """
 
     def __init__(self):
-        super().__init__('catalog', [
-            Column('pkey', Integer, is_primary_key=True),
-            Column('name', Text),
-            Column('root_pagenum', Integer),
-            Column('sql_text', Text)
-        ])
+        super().__init__(
+            "catalog",
+            [
+                Column("pkey", Integer, is_primary_key=True),
+                Column("name", Text),
+                Column("root_pagenum", Integer),
+                Column("sql_text", Text),
+            ],
+        )
 
 
 def schema_to_ddl(schema: SimpleSchema) -> str:
@@ -263,13 +291,15 @@ def schema_to_ddl(schema: SimpleSchema) -> str:
         if column.is_primary_key:
             # key is the first column in ddl
             # primary key implies not null
-            column_defs.insert(0, f'{column.name} {column.datatype.typename} PRIMARY KEY')
+            column_defs.insert(
+                0, f"{column.name} {column.datatype.typename} PRIMARY KEY"
+            )
         else:
             null_cond = "" if column.is_nullable else "NOT NULL"
-            column_defs.append(f'{column.name} {column.datatype.typename} {null_cond}')
+            column_defs.append(f"{column.name} {column.datatype.typename} {null_cond}")
     column_def_body = ", ".join(column_defs)
     assert isinstance(schema.name, TableName)
-    return f'CREATE TABLE {schema.name.table_name} ( {column_def_body} )'
+    return f"CREATE TABLE {schema.name.table_name} ( {column_def_body} )"
 
 
 def validate_schema(schema: SimpleSchema) -> Response:
@@ -286,7 +316,7 @@ def validate_schema(schema: SimpleSchema) -> Response:
     """
     # validate - single column primary key
     if len([col for col in schema.columns if col.is_primary_key]) != 1:
-        return Response(False, error_message='missing primary key')
+        return Response(False, error_message="missing primary key")
 
     # validate - primary key is integer
     pkey = None
@@ -295,19 +325,19 @@ def validate_schema(schema: SimpleSchema) -> Response:
             pkey = col
             break
     if pkey.datatype != Integer:
-        return Response(False, error_message='primary key must be of integer type')
+        return Response(False, error_message="primary key must be of integer type")
 
     # validate column names are unique
     names = set()
     for col in schema.columns:
         if col.name in names:
-            return Response(False, error_message=f'duplicate column name [{col.name}]')
+            return Response(False, error_message=f"duplicate column name [{col.name}]")
         names.add(col.name)
 
     # validate column types are valid
     for col in schema.columns:
         if not issubclass(col.datatype, DataType):
-            return Response(False, error_message=f'invalid datatype for [{col.name}]')
+            return Response(False, error_message=f"invalid datatype for [{col.name}]")
 
     return Response(True)
 
@@ -326,7 +356,7 @@ def token_to_datatype(datatype: DataType) -> Response:
         return Response(True, body=Blob)
     elif datatype == SymbolicDataType.Real:
         return Response(True, body=Real)
-    return Response(False, error_message=f'Unrecognized datatype: [{datatype}]')
+    return Response(False, error_message=f"Unrecognized datatype: [{datatype}]")
 
 
 def generate_schema(create_stmnt) -> Response:
@@ -343,18 +373,27 @@ def generate_schema(create_stmnt) -> Response:
     for coldef in create_stmnt.columns:
         resp = token_to_datatype(coldef.datatype)
         if not resp.success:
-            return Response(False, error_message=f'Unable to parse datatype [{coldef.datatype}]')
+            return Response(
+                False, error_message=f"Unable to parse datatype [{coldef.datatype}]"
+            )
         datatype = resp.body
         #  NOTE: all column names are stored as lower case
         column_name = coldef.column_name.name.lower()
-        column = Column(column_name, datatype, is_primary_key=coldef.is_primary_key, is_nullable=coldef.is_nullable)
+        column = Column(
+            column_name,
+            datatype,
+            is_primary_key=coldef.is_primary_key,
+            is_nullable=coldef.is_nullable,
+        )
         columns.append(column)
     schema = SimpleSchema(name=create_stmnt.table_name, columns=columns)
 
     # validate schema
     resp = validate_schema(schema)
     if not resp.success:
-        return Response(False, error_message=f'schema validation due to [{resp.error_message}]')
+        return Response(
+            False, error_message=f"schema validation due to [{resp.error_message}]"
+        )
     return Response(True, body=schema)
 
 
