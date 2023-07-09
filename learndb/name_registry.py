@@ -1,3 +1,5 @@
+import logging
+
 from lark import Token
 
 from .dataexchange import Response
@@ -45,6 +47,8 @@ class NameRegistry:
                 val = self.record.get(operand.name)
                 return Response(True, body=val)
             except InvalidNameException as e:
+                logging.error(f"Attempted lookup on unknown column [{operand.name}]")
+                logging.error(f"Valid column choices are [{self.record.columns}]")
                 return Response(False, error_message=e.args[0])
 
         # NOTE: this was adapated from vm.check_resolve_name
