@@ -87,9 +87,8 @@ class SimpleRecord(AbstractRecord):
             raise ValueError(f"Invalid index {pos}; expected [0, {len(columns)-1}]")
         return self.values[columns[pos].name.lower()]
 
-    def has_columns(self, column: str) -> bool:
+    def has_column(self, column: str) -> bool:
         """
-        TODO: rename has_column
         check whether record has column
 
         :param column:
@@ -313,7 +312,6 @@ def validate_record(record) -> Response:
     :param record:
     :return:
     """
-    has_primary_key = False
     for column in record.schema.columns:
         # TODO: distinguish null from unset field
         value = record.values.get(column.name)
@@ -413,7 +411,7 @@ def create_catalog_record(
     table_name: str,
     root_page_num: int,
     sql_text: str,
-    catalog_schema: CatalogSchema,
+    catalog_schema: SimpleSchema,
 ):
     """
     Create a catalog record.
@@ -422,6 +420,7 @@ def create_catalog_record(
     :param pkey:
     :param table_name:
     :param root_page_num:
+    :param sql_text:
     :param catalog_schema:
     :return:
     """

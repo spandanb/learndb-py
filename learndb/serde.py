@@ -1,12 +1,11 @@
-import sys
 from enum import Enum
 from typing import Type
 
-from .constants import CELL_KEY_SIZE_SIZE, CELL_DATA_SIZE_SIZE, INTEGER_SIZE, REAL_SIZE
+from .constants import CELL_KEY_SIZE_SIZE, CELL_DATA_SIZE_SIZE, INTEGER_SIZE
 
 from .datatypes import DataType, Null, Integer, Text, Blob, Real
 from .dataexchange import Response
-from .schema import Integer, SimpleSchema
+from .schema import SimpleSchema
 from .record_utils import SimpleRecord
 
 
@@ -180,8 +179,8 @@ def deserialize_cell(cell: bytes, schema: SimpleSchema) -> Response:
     # read the columns in the cell
     offset = 0
     key_size = Integer.deserialize(cell[offset : offset + INTEGER_SIZE])
+    # skip past cell size fields
     offset += CELL_KEY_SIZE_SIZE
-    data_size = Integer.deserialize(cell[offset : offset + INTEGER_SIZE])
     offset += CELL_DATA_SIZE_SIZE
 
     # read key column

@@ -31,7 +31,6 @@ from .constants import (
     INTERNAL_NODE_KEY_SIZE,
     INTERNAL_NODE_CHILD_SIZE,
     INTERNAL_NODE_CELL_SIZE,
-    INTERNAL_NODE_SPACE_FOR_CELLS,
     INTERNAL_NODE_MAX_CELLS,  # for debugging
     INTERNAL_NODE_MAX_CHILDREN,
     # leaf node header layout
@@ -50,15 +49,12 @@ from .constants import (
     LEAF_NODE_FREE_LIST_HEAD_POINTER_OFFSET,
     LEAF_NODE_TOTAL_FREE_LIST_SPACE_SIZE,
     LEAF_NODE_TOTAL_FREE_LIST_SPACE_OFFSET,
-    CELL_KEY_SIZE_OFFSET,
-    CELL_KEY_SIZE_SIZE,
-    CELL_KEY_PAYLOAD_OFFSET,
     FREE_BLOCK_SIZE_SIZE,
     FREE_BLOCK_SIZE_OFFSET,
     FREE_BLOCK_NEXT_BLOCK_SIZE,
     FREE_BLOCK_NEXT_BLOCK_OFFSET,
-    FREE_BLOCK_HEADER_SIZE,
 )
+from .pager import Pager
 from .serde import get_cell_key, get_cell_key_in_page, get_cell_size
 
 
@@ -98,7 +94,7 @@ class Tree:
     level helpers that support find, insert, and delete.
     """
 
-    def __init__(self, pager: "Pager", root_page_num: int):
+    def __init__(self, pager: Pager, root_page_num: int):
         """
 
         :param pager:
@@ -609,15 +605,11 @@ class Tree:
 
         # 4. determine old_node's location
         old_child_num = self.internal_node_find(parent_page_num, old_child_max_key)
-        right_child_updated = (
-            False  # this is needed for old way of updating parent's ref key to child
-        )
         # 5. insert new node's at old's location
         if old_child_num == INTERNAL_NODE_MAX_CELLS:
             # old child is the right child, the splits must all be right of all other children
             # set right split as new right child
             self.set_internal_node_right_child(parent, right_child_page_num)
-            right_child_updated = True
 
             # insert left child at tail of existing children
             self.set_internal_node_child(parent, num_keys, left_child_page_num)
@@ -1386,7 +1378,6 @@ class Tree:
         # 1.1. get parent of compacted nodes
         node = self.pager.get_page(page_num)
         parent_page_num = self.get_parent_page_num(node)
-        parent = self.pager.get_page(parent_page_num)
 
         # 1.2. get siblings
         left_sib_page_num = self.get_left_sibling(page_num)

@@ -2,7 +2,7 @@ import numbers
 from typing import Any, Union
 
 from .constants import REAL_EPSILON
-from .datatypes import is_term_valid_for_datatype, DataType, Integer, Real, Text, Blob
+from .datatypes import is_term_valid_for_datatype
 from .functions import resolve_scalar_func_name, resolve_aggregate_func_name
 from .lang_parser.visitor import Visitor
 from .lang_parser.symbols import (
@@ -24,7 +24,6 @@ from .record_utils import (
     SimpleRecord,
     ScopedRecord,
     GroupedRecord,
-    InvalidNameException,
 )
 from .vm_utils import EvalMode, datatype_from_symbolic_datatype
 

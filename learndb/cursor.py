@@ -1,5 +1,6 @@
 from .constants import INTERNAL_NODE_MAX_CELLS
 from .btree import Tree, NodeType
+from .pager import Pager
 
 
 class Cursor:
@@ -9,7 +10,7 @@ class Cursor:
     A cursor exposes an interface to read, insert and delete rows.
     """
 
-    def __init__(self, pager: "Pager", tree: "Tree"):
+    def __init__(self, pager: Pager, tree: Tree):
         self.tree = tree
         self.pager = pager
         self.page_num = tree.root_page_num

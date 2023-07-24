@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Callable, Type, TypeVar, Union
 
 
 from .dataexchange import Response
-from .datatypes import DataType, Integer, Real, Text, Blob
+from .datatypes import DataType, Integer, Real
 
 
 T = TypeVar("T")
