@@ -4,13 +4,7 @@ it # Tasks
 
 - docs
   - architecture.md
-    - explain diagram
-    - abstract flow in diagram
-    - components
-    - relationship between component
-      - e.g. pager operates on files
-      - btree operates on node === page
-      - VM operates on rows
+    -  complete: flows, component breakdown
 
 - docs
   - tutorial.md

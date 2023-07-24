@@ -64,8 +64,7 @@ capabilities of the system. It also describes what is (un)supported and undefine
 
 ```
 source venv/bin/activate
-python learndb.py repl
-TODO: ^ validate
+python run_learndb.py repl
 ```
 
 ### Run Tests
@@ -96,8 +95,6 @@ TODO: ^ validate
 
 - Clear pytest cache
 `python -m pytest --cache-clear`
-
-- Run REPL: `python learndb.py repl`
 
 ### Generate Docs
 
