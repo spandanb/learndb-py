@@ -12,7 +12,7 @@ import logging
 
 from typing import List
 
-from .constants import DB_FILE, USAGE, EXIT_SUCCESS, EXIT_FAILURE
+from .constants import DB_FILE, USAGE, EXIT_SUCCESS
 from .lang_parser.sqlhandler import SqlFrontEnd
 from .lang_parser.symbols import Program
 from .dataexchange import Response, MetaCommandResult
@@ -283,16 +283,19 @@ def run_stress(db_filepath: str = DB_FILE):
 
 
 def devloop():
-    # todo: nuke me
+    """
+    This function can be in-place edited to run any arbitrary code
+    """
 
-    db = LearnDB(DB_FILE)  # nuke_db_file=True)
+    # db = LearnDB(DB_FILE, nuke_db_file=True)
+    db = LearnDB(DB_FILE)
 
     # texts = ["select name, salary from employees order by salary"]
     texts = ["select name, salary from employees order by salary asc, name desc"]
     texts = [
-        """CREATE TABLE fruits ( 
-        id INTEGER PRIMARY KEY, 
-        name TEXT, 
+        """CREATE TABLE fruits (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
         avg_weight INTEGER)
         """,
         "insert into fruits (id, name, avg_weight) values (1, 'apple', 200)",
@@ -332,7 +335,7 @@ python run.py devloop
     // start a dev-loop function
 python run.py file <filepath>
     // read file at <filepath>
-python stress.py 
+python stress.py
     // run stress test
     """
     if len(args) < 1:

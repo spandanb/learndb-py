@@ -45,7 +45,7 @@ jobs:
 #        pytest ./tests/pager_tests.py --cache-clear -v -x
     - name: Flake8
       run: |
-        flake8 learndb --ignore E501
+        flake8 learndb --ignore E501,E203,W503
     - name: All Tests
       run: |
         python -m pytest ./tests/*.py --cache-clear -v -x

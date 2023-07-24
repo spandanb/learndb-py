@@ -41,25 +41,6 @@ SelectableAtom = NewType(
 )
 
 
-class ValueExtractorFromRecord:
-    """
-    This is a simplified form of ValueGeneratorFromRecord of, which
-    extracts a single column value, i.e. without any transformation
-
-    TODO: nuke if this is covered by ValueGeneratorFromRecordOverExpr
-    """
-
-    def __init__(self, pos_arg: SelectableAtom):
-        self.pos_arg = pos_arg
-
-    def get_value(self, record) -> Any:
-        # as a perf improvement, for static values, we can do the check once, and store the static value
-        if isinstance(self.pos_arg, LiteralSelectableAtom):
-            return self.pos_arg.value
-        else:
-            return record.get(self.pos_arg.value)
-
-
 class ValueGeneratorFromRecordOverFunc:
     """
     Generate value from a single record.
@@ -71,9 +52,6 @@ class ValueGeneratorFromRecordOverFunc:
     or
 
     select upper(cola) from foo
-
-    TODO: nuke if this is covered by ValueGeneratorFromRecordOverExpr
-
     """
 
     def __init__(
@@ -86,8 +64,6 @@ class ValueGeneratorFromRecordOverFunc:
         pos_args: List of SelectableAtoms which represents either: 1) static values, 2) column identifiers
         named_args: Dict of ^
         func: should this be a FunctionDefinition or None
-            - if this None, then this means that this is a simple
-            # TODO: rename func to applyable
         """
         self.pos_args = pos_args
         self.named_args = named_args

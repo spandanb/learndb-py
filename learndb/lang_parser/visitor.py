@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 from .utils import camel_to_snake
 
@@ -7,7 +8,6 @@ class HandlerNotFoundException(Exception):
     A specific handler (method) is not found;
     defined by me
     """
-
     pass
 
 
@@ -25,7 +25,7 @@ class Visitor:
      https://refactoring.guru/design-patterns/visitor/python/example
     """
 
-    def visit(self, symbol: "Symbol"):
+    def visit(self, symbol: "Symbol"):  # noqa F821
         """
         this will determine which specific handler to invoke; dispatch
         """

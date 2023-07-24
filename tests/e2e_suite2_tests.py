@@ -1,4 +1,4 @@
-g"""
+"""
 Set of tests on employees schema
 """
 import pytest
