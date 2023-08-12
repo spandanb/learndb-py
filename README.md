@@ -96,10 +96,6 @@ python run_learndb.py repl
 - Clear pytest cache
 `python -m pytest --cache-clear`
 
-### Generate Docs
-
-e.g. ` python -m pydoc -w .\btree.py`
-
 
 ## References consulted
 
