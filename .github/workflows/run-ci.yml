@@ -1,19 +1,17 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: Python application
+name: Learndb build
 
 on:
   push:
-    branches: [ main, pre-release-4]
+    branches: [ main ]
   pull_request:
-    branches: [ main, pre-release-4]
+    branches: [ main ]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python 3.11
@@ -28,21 +26,6 @@ jobs:
         pip install flake8 pytest # pytest-cov
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-#    - name: E2E Tests
-#      run: |
-#        python -m pytest ./tests/e2e_tests.py --cache-clear -v -x
-#    - name: Btree Tests
-#      run: |
-#        python -m pytest ./tests/btree_tests.py --cache-clear -v -x
-#    - name: Language Tests
-#      run: |
-#        pytest ./tests/lang_tests.py --cache-clear -v -x
-#    - name: Serde Tests
-#      run: |
-#        pytest ./tests/serde_tests.py --cache-clear -v -x
-#    - name: Pager Tests
-#      run: |
-#        pytest ./tests/pager_tests.py --cache-clear -v -x
     - name: Flake8
       run: |
         flake8 learndb --ignore E501,E203,W503
