@@ -8,6 +8,7 @@ class HandlerNotFoundException(Exception):
     A specific handler (method) is not found;
     defined by me
     """
+
     pass
 
 
