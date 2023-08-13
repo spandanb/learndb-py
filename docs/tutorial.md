@@ -98,25 +98,16 @@ db > select name, avg_weight from fruits where (avg_weight >= 3.6 and avg_weight
 
 For this we'll introduce the `employees` schema
 ```
-create table employees (
-    id INTEGER PRIMARY KEY,
-    name TEXT,
-    salary INTEGER,
-    depid INTEGER
-);
+db > CREATE TABLE employees (id INTEGER PRIMARY KEY, name TEXT, salary INTEGER, depid INTEGER);
+db > INSERT INTO employees(id, name, salary, depid) VALUES (1, 'John', 100, 1);
+db > INSERT INTO employees(id, name, salary, depid) VALUES (2, 'Anita', 200, 1);
+db > INSERT INTO employees(id, name, salary, depid) VALUES (3, 'Gab', 100, 2);
 
-INSERT INTO employees(id, name, salary, depid) VALUES (1, 'John', 100, 1);
-INSERT INTO employees(id, name, salary, depid) VALUES (2, 'Anita', 200, 1);
-INSERT INTO employees(id, name, salary, depid) VALUES (3, 'Gab', 100, 2);
+db > CREATE TABLE department (depid INTEGER PRIMARY KEY, name TEXT);
 
-create table department (
-    depid INTEGER PRIMARY KEY,
-    name TEXT
-);
-
-INSERT INTO department(depid, name) VALUES (1, 'accounting');
-INSERT INTO department(depid, name) VALUES (2, 'sales');
-INSERT INTO department(depid, name) VALUES (3, 'engineering');
+db > INSERT INTO department(depid, name) VALUES (1, 'accounting');
+db > INSERT INTO department(depid, name) VALUES (2, 'sales');
+db > INSERT INTO department(depid, name) VALUES (3, 'engineering');
 ```
 
 Next, we can do join the two tables:
@@ -189,21 +180,17 @@ db > select name, salary from employees order by salary desc, name asc
 Note, however, the columns referred to in order by clause must be in the select clause. To illustrate this point, consider:
 
 ```
-db > CREATE TABLE fruits ( 
-        id INTEGER PRIMARY KEY, 
-        name TEXT, 
-        avg_weight INTEGER);
+db > CREATE TABLE fruits (id INTEGER PRIMARY KEY, name TEXT, avg_weight INTEGER);
 ...       
 db > INSERT INTO fruits (id, name, avg_weight) values (1, 'apple', 200);
 ...
 db > INSERT INTO fruits (id, name, avg_weight) values (2, 'orange', 140);
 ...
-....
 ```
 
 Specifically, the below will fail:
 ```
-select name from fruits order by id
+select name from fruits order by i
 ```
 However, by including the `id` in the select clause, this issue can be overcome, i.e.
 ```
@@ -224,7 +211,6 @@ print btree
 
 performs internal consistency checks on tree
 > .validate
-
 
 
 ## Hacking/Development.md
