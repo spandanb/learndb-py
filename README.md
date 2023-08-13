@@ -48,17 +48,17 @@ capabilities of the system. It also describes what is (un)supported and undefine
 
 ## Hacking
 
-### Install 
+### Install
 - System requirements
   - requires a linux/macos system, since it uses `fcntl` to get exclusive read access on database file
   - python >= 3.9
 - To install for development, i.e. src can be edited from without having to reinstall:
     - `cd <repo_root>`
     - create virtualenv: `python3 -m venv venv `
-    - activate: `source venv/bin/activate`
-    - `python -m pip install -r requirements.txt`
-    - install in edit mode: `python3 -m pip install -e .`
-    
+    - activate venv: `source venv/bin/activate`
+    - install requirements: `python -m pip install -r requirements.txt`
+    - install `Learndb` in edit mode: `python3 -m pip install -e .`
+
 ### Run REPL
 
 ```
