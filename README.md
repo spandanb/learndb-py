@@ -33,11 +33,10 @@ Learndb supports the following:
 
 ### Limitations
 
-- An approximately verfied system
-- Very simplified (and borderline incorrect)[^1] implementation of floating point number arithmetic, e.g. compared to
+- Very simplified [^1] implementation of floating point number arithmetic, e.g. compared to
   [IEEE754](https://en.wikipedia.org/wiki/IEEE_754)). 
 - No support for common utility features, like wildcard column expansion, e.g. `select * ...`
-
+- More [limitations](./docs/tutorial.md)
 
 ## Getting Started: Tinkering and Beyond
 
@@ -45,7 +44,7 @@ Learndb supports the following:
 - Then to understand the system at a deeper technical level read [`reference.md`](docs/reference.md). 
 This is essentially a complete reference manual directed at a user of the system. This outlines the operations and 
 capabilities of the system. It also describes what is (un)supported and undefined behavior. 
-- Architecture.md - this provides a component level breakdown of the repo and the system
+- `Architecture.md`` - this provides a component level breakdown of the repo and the system
 
 ## Hacking
 
