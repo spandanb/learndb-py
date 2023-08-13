@@ -190,7 +190,7 @@ db > INSERT INTO fruits (id, name, avg_weight) values (2, 'orange', 140);
 
 Specifically, the below will fail:
 ```
-select name from fruits order by i
+select name from fruits order by id
 ```
 However, by including the `id` in the select clause, this issue can be overcome, i.e.
 ```
